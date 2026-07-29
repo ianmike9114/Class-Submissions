@@ -1,7 +1,7 @@
 rules_version = '2';
 
-// TODO: set this to your actual Gmail before deploying.
 // This is the ONLY admin check in the whole app - no separate admin system.
+// Also duplicated in js/firebase-config.js - keep both in sync.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -31,8 +31,8 @@ service cloud.firestore {
       allow write: if isTeacher();
     }
 
-    // submissions: student creates their own, only teacher (or admin-SDK Cloud Function,
-    // which bypasses rules) updates AI draft / final grade / status
+    // submissions: student creates their own (a link, no file upload), only
+    // teacher updates AI draft / final grade / status
     match /submissions/{submissionId} {
       allow create: if isSignedIn()
                     && request.resource.data.studentUID == request.auth.uid;

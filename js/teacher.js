@@ -1,9 +1,9 @@
-import { db, functions } from "./firebase-config.js";
+import { db } from "./firebase-config.js";
 import { guardPage, signOutUser } from "./auth.js";
 import {
-  collection, addDoc, doc, updateDoc, getDoc, getDocs, query, where, orderBy,
+  collection, addDoc, doc, updateDoc, getDoc, getDocs, query, where,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
+import { getGeminiKey, setGeminiKey, runRubricCheck } from "./gemini.js";
 
 const state = { subjectId: null, sectionId: null, assignmentId: null };
 
@@ -181,16 +181,13 @@ async function loadSubmissions() {
     if (filter !== "all" && s.status !== filter) return;
     const row = document.createElement("div");
     row.className = "card";
-    const link = s.videoLink
-      ? `<a href="${s.videoLink}" target="_blank" rel="noopener">video link</a>`
-      : `<a href="${s.fileURL}" target="_blank" rel="noopener">uploaded file</a>`;
     row.innerHTML = `
       <strong>${s.studentName}</strong>
       <span class="status-${s.status}"> — ${s.status}</span>
-      <div class="muted">${link}</div>
+      <div class="muted"><a href="${s.link}" target="_blank" rel="noopener">${s.link}</a></div>
       <div id="detail-${d.id}"></div>
       <div style="margin-top:0.5rem;">
-        ${s.videoLink ? "" : `<button data-ai="${d.id}">Run AI Check</button>`}
+        <button data-ai="${d.id}">Run AI Check</button>
         <button class="secondary" data-review="${d.id}">Review / Grade</button>
       </div>`;
     list.appendChild(row);
@@ -206,8 +203,17 @@ async function runAiCheck(submissionId) {
   const btn = document.querySelector(`[data-ai="${submissionId}"]`);
   if (btn) { btn.disabled = true; btn.textContent = "Checking..."; }
   try {
-    const call = httpsCallable(functions, "runAiCheck");
-    await call({ submissionId });
+    const subRef = doc(db, "submissions", submissionId);
+    const submission = (await getDoc(subRef)).data();
+    const assignment = (await getDoc(doc(db, "assignments", submission.assignmentId))).data();
+
+    const aiDraft = await runRubricCheck({ link: submission.link, rubric: assignment.rubric });
+
+    await updateDoc(subRef, {
+      aiDraft,
+      status: "ai-drafted",
+      aiCheckedAt: Date.now(),
+    });
     loadSubmissions();
   } catch (e) {
     alert("AI check failed: " + e.message);
@@ -264,10 +270,18 @@ el("back-to-subject").addEventListener("click", () => show("view-subject"));
 el("back-to-section").addEventListener("click", () => show("view-section"));
 el("sign-out").addEventListener("click", signOutUser);
 
+// ---------- settings (Gemini key, kept in localStorage only) ----------
+el("settings-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  setGeminiKey(el("gemini-key").value);
+  el("settings-message").textContent = "Saved (kept in this browser only).";
+});
+
 // ---------- init ----------
 guardPage("teacher").then((user) => {
   if (!user) return;
   el("teacher-email").textContent = user.email;
+  el("gemini-key").value = getGeminiKey();
   addRubricRow();
   loadSubjects();
   show("view-subjects");

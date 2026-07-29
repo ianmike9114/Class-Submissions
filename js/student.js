@@ -1,11 +1,8 @@
-import { db, storage } from "./firebase-config.js";
+import { db } from "./firebase-config.js";
 import { guardPage, signOutUser } from "./auth.js";
 import {
   collection, addDoc, doc, getDoc, getDocs, query, where,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import {
-  ref, uploadBytes, getDownloadURL,
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 
 let currentUser = null;
 function el(id) { return document.getElementById(id); }
@@ -100,19 +97,19 @@ function renderResult(s) {
   return `<div class="card"><ul>${rows}</ul><p>${s.finalGrade.feedback || ""}</p></div>`;
 }
 
+const LINK_HINTS = {
+  document: "Paste a Google Doc/PDF link, shared as \"anyone with the link can view\"",
+  code: "Paste a GitHub Gist link",
+  image: "Paste a Drive or Google Slides link, shared as \"anyone with the link can view\"",
+  video: "Paste a YouTube link (unlisted is fine)",
+};
+
 function renderSubmitForm(assignmentId, type) {
-  if (type === "video") {
-    return `
-      <form class="submit-form" data-assignment="${assignmentId}" data-kind="video">
-        <label>Video link (YouTube unlisted or Google Drive)</label>
-        <input type="url" class="video-link" required placeholder="https://..." />
-        <button type="submit">Submit</button>
-      </form>`;
-  }
   return `
-    <form class="submit-form" data-assignment="${assignmentId}" data-kind="file">
-      <label>File</label>
-      <input type="file" class="file-input" required />
+    <form class="submit-form" data-assignment="${assignmentId}">
+      <label>Submission link</label>
+      <input type="url" class="submission-link" required placeholder="https://..." />
+      <p class="muted">${LINK_HINTS[type] || "Paste a shareable link"}</p>
       <button type="submit">Submit</button>
     </form>`;
 }
@@ -122,31 +119,19 @@ function attachSubmitHandlers() {
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       const assignmentId = form.dataset.assignment;
-      const kind = form.dataset.kind;
       const btn = form.querySelector("button");
       btn.disabled = true;
       btn.textContent = "Submitting...";
 
-      const base = {
-        assignmentId,
-        studentUID: currentUser.uid,
-        studentName: currentUser.displayName || currentUser.email,
-        status: "pending",
-        submittedAt: Date.now(),
-      };
-
       try {
-        if (kind === "video") {
-          base.videoLink = form.querySelector(".video-link").value.trim();
-        } else {
-          const file = form.querySelector(".file-input").files[0];
-          const path = `submissions/${currentUser.uid}/${assignmentId}/${file.name}`;
-          const storageRef = ref(storage, path);
-          await uploadBytes(storageRef, file);
-          base.fileURL = await getDownloadURL(storageRef);
-          base.fileName = file.name;
-        }
-        await addDoc(collection(db, "submissions"), base);
+        await addDoc(collection(db, "submissions"), {
+          assignmentId,
+          studentUID: currentUser.uid,
+          studentName: currentUser.displayName || currentUser.email,
+          link: form.querySelector(".submission-link").value.trim(),
+          status: "pending",
+          submittedAt: Date.now(),
+        });
         loadEverything();
       } catch (err) {
         alert("Submit failed: " + err.message);

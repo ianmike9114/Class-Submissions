@@ -1,10 +1,12 @@
 // Get these values from Firebase Console → Project Settings → General → Your apps → SDK setup.
-// Safe to be public in a static site - Firestore/Storage/Functions rules are the real gatekeepers.
+// Safe to be public in a static site - firestore.rules is the real gatekeeper.
+// No Storage, no Cloud Functions here on purpose: both require the paid Blaze
+// plan just to exist, even at zero usage. This app stays on the free Spark
+// plan by using links (Drive/YouTube/Gist) instead of file uploads, and
+// calling Gemini directly from the browser (see js/gemini.js).
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { getStorage } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
-import { getFunctions } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyB4Xz-u22jxEgipf9tc3RuRo4VIzphJcDI",
@@ -15,11 +17,9 @@ const firebaseConfig = {
   appId: "1:1077801155399:web:9a2c0d728da9a4a9dbaa62",
 };
 
-// Also update this in firestore.rules and storage.rules (both files hardcode it too).
+// Also update this in firestore.rules (which hardcodes it too).
 export const TEACHER_EMAIL = "galutira.ianjoseph.f@gmail.com";
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
-export const storage = getStorage(app);
-export const functions = getFunctions(app);

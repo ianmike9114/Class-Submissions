@@ -16,6 +16,17 @@
   </header>
 
   <main>
+    <div class="card">
+      <h2>Settings</h2>
+      <form id="settings-form">
+        <label>Gemini API key (for AI rubric-check)</label>
+        <input id="gemini-key" type="password" placeholder="Paste your key from aistudio.google.com/apikey" />
+        <p class="muted">Kept in this browser only - never saved to the repo or seen by students.</p>
+        <button type="submit">Save key</button>
+      </form>
+      <p id="settings-message" class="muted"></p>
+    </div>
+
     <!-- SUBJECTS -->
     <section id="view-subjects">
       <div class="card">
@@ -60,12 +71,12 @@
           <input id="assignment-title" required placeholder="e.g. Performance Task 1" />
           <label>Due date</label>
           <input id="assignment-due" type="date" />
-          <label>Allowed file type</label>
+          <label>Expected link type (shown to students as instructions)</label>
           <select id="assignment-filetype">
-            <option value="document">Document (docx/pdf)</option>
-            <option value="code">Code file</option>
-            <option value="image">Image / slides</option>
-            <option value="video">Video link</option>
+            <option value="document">Document (Google Doc/PDF - "anyone with link")</option>
+            <option value="code">Code (GitHub Gist link)</option>
+            <option value="image">Image / slides (Drive or Slides link, "anyone with link")</option>
+            <option value="video">Video (YouTube, unlisted)</option>
           </select>
           <label>Rubric</label>
           <div id="rubric-rows"></div>
