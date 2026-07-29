@@ -18,7 +18,9 @@ Quick pointers:
 - Roster upload / Records gradebook grid → `js/teacher.js` (reuses `js/class-record.js`'s `loadWorkbook()`), `teacher.html`'s `#view-records`
 - CodePen/embed patterns → `js/embed.js`
 - Image AI-check vision fetch (best-effort, has a fallback) → `js/gemini.js`'s `tryFetchImagePart()`
-- In-app camera photo capture (student, "image" assignments) → `js/student.js`'s `compressImage()` (saves `submissions.photoData`, compressed to fit Firestore's 1MiB doc cap - no Storage)
+- In-app camera photo capture (student, "image" and "document" assignments) → `js/student.js`'s `compressImage()` (saves `submissions.photoData`, compressed to fit Firestore's 1MiB doc cap - no Storage)
+- Enrolled students list (subject-wide) → `js/teacher.js`'s `openEnrolled()`, `teacher.html`'s `#view-enrolled`
+- Student's Assignments list grouped by subject → `js/student.js`'s `loadEverything()`
 - Delete a subject/section/assignment → `js/teacher.js`'s `loadSubjects()`/`loadSections()`/`loadAssignments()` (doc-only delete, no cascade — see `CLAUDE.md`)
 - Records grid Written Work / Performance Task grouping → `js/teacher.js`'s `loadRecords()` (plain `component` field, NOT weighted-grade math - see `CLAUDE.md`, don't build that without being asked)
 - Rubric reference PDF (AI-check context only, doesn't change what's scored) → `js/gemini.js`'s `runRubricCheck()`

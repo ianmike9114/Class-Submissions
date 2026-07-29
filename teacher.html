@@ -57,7 +57,15 @@
           <button type="submit">Add section</button>
         </form>
       </div>
+      <button class="secondary" id="open-enrolled">View Enrolled Students</button>
       <div id="sections-list"></div>
+    </section>
+
+    <!-- ONE SUBJECT -> ENROLLED STUDENTS (all sections combined) -->
+    <section id="view-enrolled" class="hidden">
+      <button class="secondary" id="back-to-subject-from-enrolled">&larr; Back</button>
+      <h2 id="enrolled-view-name"></h2>
+      <div id="enrolled-list" class="card"></div>
     </section>
 
     <!-- ONE SECTION -> ASSIGNMENTS -->

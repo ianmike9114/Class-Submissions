@@ -121,6 +121,40 @@ el("add-section-form").addEventListener("submit", async (e) => {
   loadSections();
 });
 
+// ---------- enrolled students (subject-wide, all its sections) ----------
+async function openEnrolled() {
+  const sectionsSnap = await getDocs(query(collection(db, "sections"), where("subjectId", "==", state.subjectId)));
+  const sectionMap = new Map(sectionsSnap.docs.map((d) => [d.id, d.data().sectionName]));
+  const sectionIds = [...sectionMap.keys()];
+
+  const list = el("enrolled-list");
+  if (sectionIds.length === 0) {
+    list.innerHTML = '<p class="muted">No sections yet.</p>';
+    show("view-enrolled");
+    return;
+  }
+
+  // Firestore 'in' queries cap at 30 - fine for a solo-teacher class load.
+  const enrollSnap = await getDocs(
+    query(collection(db, "enrollments"), where("sectionId", "in", sectionIds.slice(0, 30)))
+  );
+  const rows = enrollSnap.docs
+    .map((d) => d.data())
+    .sort((a, b) =>
+      (sectionMap.get(a.sectionId) || "").localeCompare(sectionMap.get(b.sectionId) || "")
+      || a.studentName.localeCompare(b.studentName));
+
+  list.innerHTML = rows.length
+    ? `<table class="records-grid"><thead><tr><th>Name</th><th>Gmail</th><th>Section</th></tr></thead><tbody>
+        ${rows.map((r) => `<tr><td>${r.studentName}</td><td>${r.studentEmail || ""}</td><td>${sectionMap.get(r.sectionId) || ""}</td></tr>`).join("")}
+      </tbody></table>`
+    : '<p class="muted">No students enrolled yet.</p>';
+
+  show("view-enrolled");
+}
+el("open-enrolled").addEventListener("click", openEnrolled);
+el("back-to-subject-from-enrolled").addEventListener("click", () => show("view-subject"));
+
 // ---------- assignments ----------
 async function openSection(sectionId) {
   state.sectionId = sectionId;
@@ -515,7 +549,7 @@ async function loadRecords() {
 
 // ---------- nav ----------
 function show(viewId) {
-  ["view-subjects", "view-subject", "view-section", "view-assignment", "view-records"].forEach((v) => {
+  ["view-subjects", "view-subject", "view-enrolled", "view-section", "view-assignment", "view-records"].forEach((v) => {
     el(v).classList.toggle("hidden", v !== viewId);
   });
 }

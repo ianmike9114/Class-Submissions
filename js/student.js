@@ -28,6 +28,7 @@ el("join-form").addEventListener("submit", async (e) => {
   await addDoc(collection(db, "enrollments"), {
     studentUID: currentUser.uid,
     studentName: currentUser.displayName || currentUser.email,
+    studentEmail: currentUser.email,
     subjectId: section.subjectId,
     subjectName: subject.name,
     sectionId: sectionDoc.id,
@@ -59,39 +60,57 @@ async function loadEverything() {
     query(collection(db, "assignments"), where("sectionId", "in", sectionIds.slice(0, 30)))
   );
 
+  // Group by subject so a student in multiple classes can tell which
+  // assignment belongs to which - a flat list gave no such signal.
+  const sectionToSubject = new Map(enrollments.map((en) => [en.sectionId, en.subjectName]));
+  const subjectOrder = [...new Set(enrollments.map((en) => en.subjectName))];
+  const assignmentsBySubject = new Map(subjectOrder.map((name) => [name, []]));
   for (const aDoc of assignSnap.docs) {
-    const a = aDoc.data();
-    const subDoc = (await getDocs(
-      query(collection(db, "submissions"),
-        where("assignmentId", "==", aDoc.id),
-        where("studentUID", "==", currentUser.uid))
-    )).docs[0];
+    const subjectName = sectionToSubject.get(aDoc.data().sectionId) || "Other";
+    if (!assignmentsBySubject.has(subjectName)) assignmentsBySubject.set(subjectName, []);
+    assignmentsBySubject.get(subjectName).push(aDoc);
+  }
 
-    const row = document.createElement("div");
-    row.className = "card";
+  for (const [subjectName, aDocs] of assignmentsBySubject) {
+    if (aDocs.length === 0) continue;
+    const heading = document.createElement("h3");
+    heading.textContent = subjectName;
+    list.appendChild(heading);
 
-    if (!subDoc) {
-      const instructionsEmbed = a.instructionsLink ? toEmbedUrl(a.instructionsLink) : null;
-      const instructionsFileBlock = a.instructionsLink
-        ? (instructionsEmbed
-          ? `<iframe src="${instructionsEmbed}" class="submission-preview"></iframe>`
-          : `<div class="muted"><a href="${a.instructionsLink}" target="_blank" rel="noopener">Instructions file</a></div>`)
-        : "";
-      row.innerHTML = `
-        <strong>${a.title}</strong> <span class="muted">due ${a.dueDate || "no date"}</span>
-        ${a.instructions ? `<p>${a.instructions}</p>` : ""}
-        ${instructionsFileBlock}
-        <div class="muted">Type: ${a.allowedFileTypes}</div>
-        <div>${renderRubric(a.rubric)}</div>
-        ${renderSubmitForm(aDoc.id, a.allowedFileTypes)}`;
-    } else {
-      const s = subDoc.data();
-      row.innerHTML = `
-        <strong>${a.title}</strong>
-        <span class="status-${s.status}"> — ${s.status === "published" ? "Graded" : "Submitted, pending review"}</span>
-        ${s.status === "published" ? renderResult(s) : ""}`;
+    for (const aDoc of aDocs) {
+      const a = aDoc.data();
+      const subDoc = (await getDocs(
+        query(collection(db, "submissions"),
+          where("assignmentId", "==", aDoc.id),
+          where("studentUID", "==", currentUser.uid))
+      )).docs[0];
+
+      const row = document.createElement("div");
+      row.className = "card";
+
+      if (!subDoc) {
+        const instructionsEmbed = a.instructionsLink ? toEmbedUrl(a.instructionsLink) : null;
+        const instructionsFileBlock = a.instructionsLink
+          ? (instructionsEmbed
+            ? `<iframe src="${instructionsEmbed}" class="submission-preview"></iframe>`
+            : `<div class="muted"><a href="${a.instructionsLink}" target="_blank" rel="noopener">Instructions file</a></div>`)
+          : "";
+        row.innerHTML = `
+          <strong>${a.title}</strong> <span class="muted">due ${a.dueDate || "no date"}</span>
+          ${a.instructions ? `<p>${a.instructions}</p>` : ""}
+          ${instructionsFileBlock}
+          <div class="muted">Type: ${a.allowedFileTypes}</div>
+          <div>${renderRubric(a.rubric)}</div>
+          ${renderSubmitForm(aDoc.id, a.allowedFileTypes)}`;
+      } else {
+        const s = subDoc.data();
+        row.innerHTML = `
+          <strong>${a.title}</strong>
+          <span class="status-${s.status}"> — ${s.status === "published" ? "Graded" : "Submitted, pending review"}</span>
+          ${s.status === "published" ? renderResult(s) : ""}`;
+      }
+      list.appendChild(row);
     }
-    list.appendChild(row);
   }
   attachSubmitHandlers();
 }
@@ -114,7 +133,7 @@ const LINK_HINTS = {
 };
 
 function renderSubmitForm(assignmentId, type) {
-  const photoBlock = type === "image" ? `
+  const photoBlock = (type === "image" || type === "document") ? `
       <label>Or take/upload a photo</label>
       <input type="file" accept="image/*" capture="environment" class="submission-photo" />
       <img class="photo-preview hidden" />
