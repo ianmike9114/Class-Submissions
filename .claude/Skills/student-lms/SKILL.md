@@ -13,6 +13,8 @@ Quick pointers:
 - Teacher-side change → `js/teacher.js` (+ `teacher.html` if UI markup)
 - Student-side change → `js/student.js` (+ `student.html` if UI markup)
 - AI rubric-check behavior (prompt, Gemini model, key storage) → `js/gemini.js`
+- Inline submission preview → `js/embed.js`
+- Class Record `.xlsx` export → `js/class-record.js`
 - Access control → `firestore.rules`
 - Deploy/setup steps → `README.md`
 
@@ -35,3 +37,7 @@ Reminders specific to this repo:
 - After any change to `firestore.rules`, remind the user they need to
   `firebase deploy --only firestore:rules` — local edits alone don't take
   effect.
+- Class Record export (`js/class-record.js`) writes into the teacher's
+  real gradebook file. Never auto-write a match without teacher
+  confirmation in the UI's match table first — this is a deliberate
+  correctness gate, not something to streamline away.

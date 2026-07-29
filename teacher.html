@@ -101,9 +101,30 @@
         <option value="published">Published</option>
       </select>
       <div id="submissions-list"></div>
+
+      <div class="card">
+        <h3>Export to Class Record (.xlsx)</h3>
+        <p class="muted">Writes published scores into your own Class Record file. Nothing is uploaded anywhere - it's read and downloaded in this browser only.</p>
+        <form id="export-config-form">
+          <label>Your Class Record file</label>
+          <input id="record-file" type="file" accept=".xlsx" required />
+          <label>Sheet name (leave blank for the first sheet)</label>
+          <input id="record-sheet" placeholder="e.g. Quarter 1" />
+          <label>Column letter with student names</label>
+          <input id="record-name-col" required placeholder="e.g. C" />
+          <label>Row number where the first student's name is</label>
+          <input id="record-start-row" type="number" required placeholder="e.g. 12" />
+          <label>Column letter to write the score into</label>
+          <input id="record-score-col" required placeholder="e.g. F" />
+          <button type="submit">Load &amp; Match</button>
+        </form>
+        <p id="export-message" class="muted"></p>
+        <div id="export-match-table"></div>
+      </div>
     </section>
   </main>
 
+  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
   <script type="module" src="js/teacher.js"></script>
 </body>
 </html>

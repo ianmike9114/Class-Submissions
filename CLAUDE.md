@@ -48,6 +48,8 @@ teacher's email, update both: `firestore.rules`, `js/firebase-config.js`.
 | Firebase project keys / teacher email constant (frontend) | `js/firebase-config.js` |
 | Who can read/write what in Firestore | `firestore.rules` |
 | AI rubric-check logic (prompt, Gemini model/params, key storage) | `js/gemini.js` |
+| Inline submission preview (which links embed vs. fall back to a plain link) | `js/embed.js` (`toEmbedUrl()`) |
+| Export published scores into the teacher's Class Record `.xlsx` | `js/class-record.js` (workbook read/match/write, client-side via SheetJS CDN script in `teacher.html`) |
 | Styling | `css/style.css` |
 | Firestore deploy config | `firebase.json`, `.firebaserc` |
 | Setup/deploy instructions | `README.md` |
@@ -70,7 +72,12 @@ teacher's email, update both: `firestore.rules`, `js/firebase-config.js`.
   understanding instead (more reliable). If a check fails or looks wrong,
   the teacher just grades manually in the same Review panel — nothing is
   blocked on it.
-- No roster CSV import — students self-enroll via section join-code only.
+- No roster CSV import — students self-enroll via section join-code only
+  (Class Record export is one-way: app → file, not the reverse).
+- Class Record name matching is exact/case-insensitive only, and always
+  requires teacher confirmation in the match table before any write — see
+  `js/class-record.js`. Never make this auto-write without confirmation;
+  it's writing into the teacher's real gradebook.
 - No real-time listeners (`onSnapshot`) — lists refresh on load/action, not
   live. Fine at single-class scale; add if it ever matters.
 
