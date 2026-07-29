@@ -3,6 +3,7 @@ import { guardPage, signOutUser } from "./auth.js";
 import {
   collection, addDoc, doc, getDoc, getDocs, query, where,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { toEmbedUrl } from "./embed.js";
 
 let currentUser = null;
 function el(id) { return document.getElementById(id); }
@@ -70,9 +71,16 @@ async function loadEverything() {
     row.className = "card";
 
     if (!subDoc) {
+      const instructionsEmbed = a.instructionsLink ? toEmbedUrl(a.instructionsLink) : null;
+      const instructionsFileBlock = a.instructionsLink
+        ? (instructionsEmbed
+          ? `<iframe src="${instructionsEmbed}" class="submission-preview"></iframe>`
+          : `<div class="muted"><a href="${a.instructionsLink}" target="_blank" rel="noopener">Instructions file</a></div>`)
+        : "";
       row.innerHTML = `
         <strong>${a.title}</strong> <span class="muted">due ${a.dueDate || "no date"}</span>
         ${a.instructions ? `<p>${a.instructions}</p>` : ""}
+        ${instructionsFileBlock}
         <div class="muted">Type: ${a.allowedFileTypes}</div>
         <div>${renderRubric(a.rubric)}</div>
         ${renderSubmitForm(aDoc.id, a.allowedFileTypes)}`;

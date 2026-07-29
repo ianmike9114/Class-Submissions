@@ -157,6 +157,7 @@ async function loadAssignments() {
     row.innerHTML = `
       <strong>${a.title}</strong> <span class="muted">due ${a.dueDate || "no date"}</span>
       ${a.instructions ? `<p class="muted">${a.instructions}</p>` : ""}
+      ${a.instructionsLink ? `<div class="muted"><a href="${a.instructionsLink}" target="_blank" rel="noopener">Instructions file</a></div>` : ""}
       <div class="muted">Allowed: ${a.allowedFileTypes} — ${a.rubric.length} rubric criteria</div>
       <div style="margin-top:0.5rem;"><button data-open="${d.id}">Open submissions</button></div>`;
     list.appendChild(row);
@@ -177,6 +178,7 @@ el("add-assignment-form").addEventListener("submit", async (e) => {
     sectionId: state.sectionId,
     title: el("assignment-title").value.trim(),
     instructions: el("assignment-instructions").value.trim(),
+    instructionsLink: el("assignment-instructions-link").value.trim(),
     dueDate: el("assignment-due").value,
     allowedFileTypes: el("assignment-filetype").value,
     rubric,
