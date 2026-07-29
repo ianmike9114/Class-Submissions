@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Class Submissions</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <main style="margin-top: 4rem; text-align: center;">
+    <div class="card" style="max-width: 400px; margin: 0 auto;">
+      <h1>Class Submissions</h1>
+      <p class="muted">Sign in with your Gmail to submit or check work.</p>
+      <button id="google-signin">Sign in with Google</button>
+      <p id="error" class="muted" style="color:#b91c1c;"></p>
+    </div>
+  </main>
+
+  <script type="module">
+    import { signIn } from "./js/auth.js";
+    import { auth, TEACHER_EMAIL } from "./js/firebase-config.js";
+    import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        window.location.href = user.email === TEACHER_EMAIL ? "teacher.html" : "student.html";
+      }
+    });
+
+    document.getElementById("google-signin").addEventListener("click", async () => {
+      try {
+        await signIn();
+      } catch (e) {
+        document.getElementById("error").textContent = e.message;
+      }
+    });
+  </script>
+</body>
+</html>

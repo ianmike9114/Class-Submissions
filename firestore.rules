@@ -1,0 +1,53 @@
+rules_version = '2';
+
+// TODO: set this to your actual Gmail before deploying.
+// This is the ONLY admin check in the whole app - no separate admin system.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isTeacher() {
+      return isSignedIn() && request.auth.token.email == "REPLACE-WITH-TEACHER-GMAIL@gmail.com";
+    }
+
+    // subjects: everyone signed in can read (for lists/join flow), only teacher writes
+    match /subjects/{subjectId} {
+      allow read: if isSignedIn();
+      allow write: if isTeacher();
+    }
+
+    // sections: read needed so students can validate a join code client-side
+    match /sections/{sectionId} {
+      allow read: if isSignedIn();
+      allow write: if isTeacher();
+    }
+
+    // assignments: read needed for students to see their section's work
+    match /assignments/{assignmentId} {
+      allow read: if isSignedIn();
+      allow write: if isTeacher();
+    }
+
+    // submissions: student creates their own, only teacher (or admin-SDK Cloud Function,
+    // which bypasses rules) updates AI draft / final grade / status
+    match /submissions/{submissionId} {
+      allow create: if isSignedIn()
+                    && request.resource.data.studentUID == request.auth.uid;
+      allow read: if isSignedIn()
+                  && (resource.data.studentUID == request.auth.uid || isTeacher());
+      allow update, delete: if isTeacher();
+    }
+
+    // enrollments: one doc per student linking them to a subject+section via join code
+    match /enrollments/{enrollmentId} {
+      allow read: if isSignedIn()
+                  && (resource.data.studentUID == request.auth.uid || isTeacher());
+      allow create: if isSignedIn()
+                    && request.resource.data.studentUID == request.auth.uid;
+      allow update, delete: if isTeacher();
+    }
+  }
+}

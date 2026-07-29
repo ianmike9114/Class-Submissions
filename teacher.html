@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Teacher Dashboard</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header>
+    <h1>Teacher Dashboard</h1>
+    <div>
+      <span id="teacher-email" class="muted" style="color:#dbe4ff;"></span>
+      <button class="secondary" id="sign-out">Sign out</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- SUBJECTS -->
+    <section id="view-subjects">
+      <div class="card">
+        <h2>Add subject</h2>
+        <form id="add-subject-form">
+          <label>Subject name</label>
+          <input id="subject-name" required placeholder="e.g. Grade 12 Philosophy" />
+          <label>Grade level</label>
+          <input id="subject-grade" required placeholder="e.g. Grade 12" />
+          <button type="submit">Add subject</button>
+        </form>
+      </div>
+      <label style="display:flex; align-items:center; gap:0.4rem; font-weight:normal;">
+        <input type="checkbox" id="toggle-archived" style="width:auto;" /> Show archived
+      </label>
+      <div id="subjects-list"></div>
+    </section>
+
+    <!-- ONE SUBJECT -> SECTIONS -->
+    <section id="view-subject" class="hidden">
+      <button class="secondary" id="back-to-subjects">&larr; All subjects</button>
+      <h2 id="subject-view-name"></h2>
+      <div class="card">
+        <h3>Add section</h3>
+        <form id="add-section-form">
+          <label>Section name</label>
+          <input id="section-name" required placeholder="e.g. Section A" />
+          <button type="submit">Add section</button>
+        </form>
+      </div>
+      <div id="sections-list"></div>
+    </section>
+
+    <!-- ONE SECTION -> ASSIGNMENTS -->
+    <section id="view-section" class="hidden">
+      <button class="secondary" id="back-to-subject">&larr; Back</button>
+      <h2 id="section-view-name"></h2>
+      <div class="card">
+        <h3>Add assignment</h3>
+        <form id="add-assignment-form">
+          <label>Title</label>
+          <input id="assignment-title" required placeholder="e.g. Performance Task 1" />
+          <label>Due date</label>
+          <input id="assignment-due" type="date" />
+          <label>Allowed file type</label>
+          <select id="assignment-filetype">
+            <option value="document">Document (docx/pdf)</option>
+            <option value="code">Code file</option>
+            <option value="image">Image / slides</option>
+            <option value="video">Video link</option>
+          </select>
+          <label>Rubric</label>
+          <div id="rubric-rows"></div>
+          <button type="button" class="secondary" id="add-rubric-row">+ Add criterion</button>
+          <div style="margin-top:0.75rem;">
+            <button type="submit">Add assignment</button>
+          </div>
+        </form>
+      </div>
+      <div id="assignments-list"></div>
+    </section>
+
+    <!-- ONE ASSIGNMENT -> SUBMISSIONS -->
+    <section id="view-assignment" class="hidden">
+      <button class="secondary" id="back-to-section">&larr; Back</button>
+      <h2 id="assignment-view-title"></h2>
+      <label>Filter</label>
+      <select id="submission-filter">
+        <option value="all">All</option>
+        <option value="pending">Pending</option>
+        <option value="ai-drafted">AI drafted</option>
+        <option value="published">Published</option>
+      </select>
+      <div id="submissions-list"></div>
+    </section>
+  </main>
+
+  <script type="module" src="js/teacher.js"></script>
+</body>
+</html>

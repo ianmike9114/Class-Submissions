@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My Submissions</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header>
+    <h1>My Submissions</h1>
+    <div>
+      <span id="student-email" class="muted" style="color:#dbe4ff;"></span>
+      <button class="secondary" id="sign-out">Sign out</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="card">
+      <h2>Join a class</h2>
+      <form id="join-form">
+        <label>Join code (given by your teacher)</label>
+        <input id="join-code" required placeholder="e.g. AB12CD" />
+        <button type="submit">Join</button>
+      </form>
+      <p id="join-message" class="muted"></p>
+    </div>
+
+    <h2>My classes</h2>
+    <div id="classes-list"></div>
+
+    <h2>Assignments</h2>
+    <div id="assignments-list"></div>
+  </main>
+
+  <script type="module" src="js/student.js"></script>
+</body>
+</html>
