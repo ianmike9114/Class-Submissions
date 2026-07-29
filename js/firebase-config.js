@@ -16,7 +16,7 @@ const firebaseConfig = {
 };
 
 // Also update this in firestore.rules and storage.rules (both files hardcode it too).
-export const TEACHER_EMAIL = "REPLACE-WITH-TEACHER-GMAIL@gmail.com";
+export const TEACHER_EMAIL = "galutira.ianjoseph.f@gmail.com";
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);

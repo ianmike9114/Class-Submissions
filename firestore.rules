@@ -10,7 +10,7 @@ service cloud.firestore {
     }
 
     function isTeacher() {
-      return isSignedIn() && request.auth.token.email == "REPLACE-WITH-TEACHER-GMAIL@gmail.com";
+      return isSignedIn() && request.auth.token.email == "galutira.ianjoseph.f@gmail.com";
     }
 
     // subjects: everyone signed in can read (for lists/join flow), only teacher writes

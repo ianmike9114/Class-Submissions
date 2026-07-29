@@ -8,7 +8,7 @@ service firebase.storage {
     }
 
     function isTeacher() {
-      return isSignedIn() && request.auth.token.email == "REPLACE-WITH-TEACHER-GMAIL@gmail.com";
+      return isSignedIn() && request.auth.token.email == "galutira.ianjoseph.f@gmail.com";
     }
 
     // submissions/{studentUID}/{assignmentId}/{fileName}

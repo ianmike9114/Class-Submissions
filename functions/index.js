@@ -9,7 +9,7 @@ const bucket = admin.storage().bucket();
 
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
 // Set this the same way as firestore.rules / storage.rules / js/firebase-config.js.
-const TEACHER_EMAIL = "REPLACE-WITH-TEACHER-GMAIL@gmail.com";
+const TEACHER_EMAIL = "galutira.ianjoseph.f@gmail.com";
 
 const TEXT_EXTENSIONS = [".txt", ".js", ".py", ".java", ".html", ".css", ".c", ".cpp", ".cs", ".json", ".md"];
 
