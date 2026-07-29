@@ -18,6 +18,13 @@ Quick pointers:
 - Access control → `firestore.rules`
 - Deploy/setup steps → `README.md`
 
+Sign-in uses Google Identity Services directly (`js/auth.js`'s
+`initGoogleSignIn()` + `signInWithCredential`), **not**
+`signInWithPopup`/`signInWithRedirect` — those were tried first and
+silently failed on Edge and Brave (cross-domain storage partitioning, zero
+console error). Don't revert to them without understanding why they were
+dropped; see `CLAUDE.md` for the full explanation.
+
 Reminders specific to this repo:
 - **No Firebase Storage, no Cloud Functions — this is deliberate**, not an
   oversight. Both require the paid Blaze plan just to exist, and staying

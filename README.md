@@ -32,6 +32,23 @@ from Firebase Console → Project Settings (gear icon) → General → scroll to
 
 Replace the project ID in `.firebaserc`.
 
+### 2b. Google Sign-In client ID + authorized origin
+
+Sign-in uses Google Identity Services directly (not Firebase's own popup/
+redirect flow — those silently fail on some browsers due to third-party
+storage blocking). This needs one more value plus one console setting:
+
+1. Firebase Console → **Authentication** → **Sign-in method** → click the
+   **Google** row → expand **Web SDK configuration** → copy the **Web
+   client ID** (ends in `.apps.googleusercontent.com`).
+2. Paste it into `js/firebase-config.js` → `GOOGLE_CLIENT_ID`.
+3. Go to [Google Cloud Console → Credentials](https://console.cloud.google.com/apis/credentials)
+   (same project), find that same OAuth client (named something like "Web
+   client (auto created by Google Service)"), open it, and under
+   **Authorized JavaScript origins** add your site's real origin — e.g.
+   `https://<username>.github.io` (origin only, no path, no trailing
+   slash). Save.
+
 ### 3. Deploy Firestore rules
 ```bash
 npm install -g firebase-tools   # if not already installed

@@ -11,13 +11,17 @@
     <div class="card" style="max-width: 400px; margin: 0 auto;">
       <h1>Class Submissions</h1>
       <p class="muted">Sign in with your Gmail to submit or check work.</p>
-      <button id="google-signin">Sign in with Google</button>
+      <div id="google-signin-button" style="display:flex; justify-content:center;"></div>
       <p id="error" class="muted" style="color:#b91c1c;"></p>
     </div>
   </main>
 
+  <!-- defer (not async), and placed before the module script below, so it's
+       guaranteed to run first: both defer and type=module scripts execute
+       in document order right before DOMContentLoaded. -->
+  <script src="https://accounts.google.com/gsi/client" defer></script>
   <script type="module">
-    import { signIn, checkRedirectResult } from "./js/auth.js";
+    import { initGoogleSignIn } from "./js/auth.js";
     import { auth, TEACHER_EMAIL } from "./js/firebase-config.js";
     import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
@@ -27,18 +31,8 @@
       }
     });
 
-    // Surfaces errors from a redirect-based sign-in that just completed
-    // (signIn() itself navigates away, so this is where failures show up).
-    checkRedirectResult().catch((e) => {
+    initGoogleSignIn("google-signin-button", (e) => {
       document.getElementById("error").textContent = e.message;
-    });
-
-    document.getElementById("google-signin").addEventListener("click", async () => {
-      try {
-        await signIn();
-      } catch (e) {
-        document.getElementById("error").textContent = e.message;
-      }
     });
   </script>
 </body>

@@ -1,27 +1,38 @@
-import { auth, TEACHER_EMAIL } from "./firebase-config.js";
+import { auth, TEACHER_EMAIL, GOOGLE_CLIENT_ID } from "./firebase-config.js";
 import {
   GoogleAuthProvider,
-  signInWithRedirect,
-  getRedirectResult,
+  signInWithCredential,
   signOut,
   onAuthStateChanged,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-const provider = new GoogleAuthProvider();
-
-// Redirect flow, not popup: popups need browser storage to hand state back
-// to the opening page, which mobile Safari and several mobile browsers
-// block or restrict ("Unable to save initial state"). Redirect just
-// navigates away and back, works everywhere popups don't.
-export function signIn() {
-  return signInWithRedirect(auth, provider);
-}
-
-// Call once on index.html load to surface any error from a redirect
-// sign-in attempt (e.g. popup-era code would have caught this via the
-// signInWithPopup promise rejection - redirect needs this instead).
-export function checkRedirectResult() {
-  return getRedirectResult(auth);
+// Uses Google Identity Services directly (the accounts.google.com/gsi/client
+// script tag on index.html) instead of Firebase's signInWithPopup/Redirect.
+// Both of those route through a cross-domain hop (your site -> Firebase's
+// *.firebaseapp.com authDomain -> Google -> back) that modern browsers'
+// third-party storage partitioning silently breaks with zero error, on
+// Edge/Brave/Safari alike. GIS talks to Google directly from this page, so
+// there's no cross-domain handoff to break - then the resulting ID token is
+// handed to Firebase via signInWithCredential (no redirect involved).
+//
+// Call once, on page load, on any page with a <div id="google-signin-button">.
+// onSignInError receives an Error if the Firebase credential exchange fails.
+export function initGoogleSignIn(buttonElementId, onSignInError) {
+  window.google.accounts.id.initialize({
+    client_id: GOOGLE_CLIENT_ID,
+    callback: async (response) => {
+      try {
+        const credential = GoogleAuthProvider.credential(response.credential);
+        await signInWithCredential(auth, credential);
+      } catch (e) {
+        onSignInError?.(e);
+      }
+    },
+  });
+  window.google.accounts.id.renderButton(document.getElementById(buttonElementId), {
+    theme: "outline",
+    size: "large",
+  });
 }
 
 export function signOutUser() {

@@ -20,6 +20,17 @@ const firebaseConfig = {
 // Also update this in firestore.rules (which hardcodes it too).
 export const TEACHER_EMAIL = "galutira.ianjoseph.f@gmail.com";
 
+// Google OAuth Web Client ID (NOT the same as apiKey above). Firebase
+// auto-creates one when you enable Google Sign-In: Firebase Console ->
+// Authentication -> Sign-in method -> Google row -> Web SDK configuration
+// -> "Web client ID" (ends in .apps.googleusercontent.com). Used directly
+// by Google Identity Services (js/auth.js), bypassing Firebase's own
+// signInWithRedirect/signInWithPopup - both route through a cross-domain
+// hop (your site -> *.firebaseapp.com -> accounts.google.com -> back) that
+// modern browsers' third-party storage partitioning silently breaks with
+// no error, on Edge/Brave/Safari alike. This avoids that hop entirely.
+export const GOOGLE_CLIENT_ID = "REPLACE-WITH-WEB-CLIENT-ID.apps.googleusercontent.com";
+
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);

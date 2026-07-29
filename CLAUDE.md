@@ -38,13 +38,30 @@ how to deploy.
 purpose (no shared config in a static-site setup) — if you ever change the
 teacher's email, update both: `firestore.rules`, `js/firebase-config.js`.
 
+**Sign-in uses Google Identity Services directly, not
+`signInWithPopup`/`signInWithRedirect`.** Both of those route through a
+cross-domain hop (this site → the Firebase `authDomain` → Google → back)
+that modern browsers' third-party storage partitioning silently breaks
+with zero console error, reproduced on Edge and Brave alike during setup.
+`js/auth.js`'s `initGoogleSignIn()` instead gets an ID token from Google's
+own widget (loaded via the `accounts.google.com/gsi/client` script tag on
+`index.html`) and hands it to Firebase via `signInWithCredential` — no
+cross-domain redirect involved. This needs `GOOGLE_CLIENT_ID` in
+`js/firebase-config.js` (Firebase Console → Authentication → Sign-in
+method → Google → Web SDK configuration → Web client ID) **and** that
+same client ID's Authorized JavaScript origins (Google Cloud Console →
+Credentials, separate from Firebase's own Authorized domains list) must
+include the site's real origin. Do not revert to
+`signInWithPopup`/`signInWithRedirect` without a strong reason — it was
+tried first and silently failed cross-browser.
+
 ## Task map — common changes → exact edit location
 
 | Change | Edit |
 |---|---|
 | Teacher dashboard UI/behavior (subjects/sections/assignments/rubric builder/submissions review/publish/Settings) | `js/teacher.js` + `teacher.html` |
 | Student dashboard UI/behavior (join class/submit a link/view results) | `js/student.js` + `student.html` |
-| Google Sign-In / role routing (teacher vs student) | `js/auth.js` |
+| Google Sign-In / role routing (teacher vs student) | `js/auth.js` (uses Google Identity Services directly + `signInWithCredential`, not Firebase's own popup/redirect — see note below) |
 | Firebase project keys / teacher email constant (frontend) | `js/firebase-config.js` |
 | Who can read/write what in Firestore | `firestore.rules` |
 | AI rubric-check logic (prompt, Gemini model/params, key storage) | `js/gemini.js` |
