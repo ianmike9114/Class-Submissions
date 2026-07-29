@@ -99,7 +99,7 @@ function renderResult(s) {
 
 const LINK_HINTS = {
   document: "Paste a Google Doc/PDF link, shared as \"anyone with the link can view\"",
-  code: "Paste a GitHub Gist link",
+  code: "Paste a CodePen link if it fits (single HTML/CSS/JS page - your teacher can see it run live), or a GitHub Gist link for anything else",
   image: "Paste a Drive or Google Slides link, shared as \"anyone with the link can view\"",
   video: "Paste a YouTube link (unlisted is fine)",
 };

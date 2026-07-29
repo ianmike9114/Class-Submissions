@@ -6,8 +6,8 @@ Guidance for Claude Code working in this repo.
 
 Static site (GitHub Pages) + Firebase **Auth + Firestore only** (free
 Spark plan — no credit card, ever). Students sign in with Gmail, submit a
-**link** (Google Doc/PDF, GitHub Gist, Drive, or YouTube — no file
-uploads) per subject/section/assignment. Teacher runs an AI rubric-check
+**link** (Google Doc/PDF, CodePen or GitHub Gist, Drive, or YouTube — no
+file uploads) per subject/section/assignment. Teacher runs an AI rubric-check
 that calls Gemini **directly from the browser** (teacher's own key,
 Settings box, localStorage only) to draft a score + feedback per
 criterion, then reviews/edits and publishes to the student. Single teacher
@@ -64,7 +64,8 @@ tried first and silently failed cross-browser.
 | Google Sign-In / role routing (teacher vs student) | `js/auth.js` (uses Google Identity Services directly + `signInWithCredential`, not Firebase's own popup/redirect — see note below) |
 | Firebase project keys / teacher email constant (frontend) | `js/firebase-config.js` |
 | Who can read/write what in Firestore | `firestore.rules` |
-| AI rubric-check logic (prompt, Gemini model/params, key storage) | `js/gemini.js` |
+| AI rubric-check logic (prompt, Gemini model/params, key storage, image-vision fetch) | `js/gemini.js` (`runRubricCheck()`; `tryFetchImagePart()` for "image" assignments — best-effort, see limitations) |
+| Delete a section | `js/teacher.js` (`loadSections()`'s delete button) — only removes the section doc itself, does NOT cascade-delete its assignments/submissions/enrollments (see limitations) |
 | Inline submission preview (which links embed vs. fall back to a plain link) | `js/embed.js` (`toEmbedUrl()`) |
 | Export published scores into the teacher's Class Record `.xlsx` | `js/class-record.js` (workbook read/match/write, client-side via SheetJS CDN script in `teacher.html`) |
 | Roster seeding (per section) / Records gradebook grid | `js/teacher.js` (`renderRosterPreview()`, `loadRecords()`) + `teacher.html` (`#view-records`) — reuses `js/class-record.js`'s `loadWorkbook()`/`totalScore()`, no new file |
@@ -95,9 +96,20 @@ tried first and silently failed cross-browser.
   them.
 - AI check quality depends on Gemini's `urlContext` tool successfully
   fetching the linked content; YouTube links use native video
-  understanding instead (more reliable). If a check fails or looks wrong,
-  the teacher just grades manually in the same Review panel — nothing is
-  blocked on it.
+  understanding instead (more reliable). "Image" assignments additionally
+  try fetching the actual Drive-hosted image bytes for vision input
+  (`js/gemini.js`'s `tryFetchImagePart()`) — best-effort, since Drive's
+  direct-view endpoint doesn't reliably expose CORS headers to `fetch()`;
+  falls back to `urlContext`-only silently (logged to console) if that
+  fetch fails. If a check fails or looks wrong regardless, the teacher
+  just grades manually in the same Review panel — nothing is blocked on
+  it.
+- Deleting a section (`js/teacher.js`) only removes the section document
+  itself — it does not cascade-delete assignments/submissions/enrollments
+  that reference it. Those become unreachable through the UI (nothing
+  queries a deleted `sectionId`) but still exist in Firestore. Deliberate
+  simplification, not a bug — flag to the user if this ever needs to
+  become a real cascade delete.
 - No roster CSV import — students self-enroll via section join-code only
   (Class Record export is one-way: app → file, not the reverse).
 - Class Record name matching is exact/case-insensitive only, and always

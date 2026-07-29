@@ -1,7 +1,7 @@
 import { db } from "./firebase-config.js";
 import { guardPage, signOutUser } from "./auth.js";
 import {
-  collection, addDoc, doc, updateDoc, getDoc, getDocs, query, where,
+  collection, addDoc, doc, updateDoc, deleteDoc, getDoc, getDocs, query, where,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getGeminiKey, setGeminiKey, runRubricCheck } from "./gemini.js";
 import { toEmbedUrl } from "./embed.js";
@@ -81,11 +81,23 @@ async function loadSections() {
     row.innerHTML = `
       <strong>${s.sectionName}</strong>
       <span class="muted"> — join code: <code>${s.joinCode}</code></span>
-      <div style="margin-top:0.5rem;"><button data-open="${d.id}">Open</button></div>`;
+      <div style="margin-top:0.5rem;">
+        <button data-open="${d.id}">Open</button>
+        <button class="danger" data-delete-section="${d.id}">Delete</button>
+      </div>`;
     list.appendChild(row);
   });
   list.querySelectorAll("[data-open]").forEach((b) =>
     b.addEventListener("click", () => openSection(b.dataset.open)));
+  list.querySelectorAll("[data-delete-section]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const ok = confirm(
+        "Delete this section? This only removes the section itself - any assignments/submissions/enrollments already under it are NOT deleted and will become unreachable in this app. This can't be undone."
+      );
+      if (!ok) return;
+      await deleteDoc(doc(db, "sections", b.dataset.deleteSection));
+      loadSections();
+    }));
 }
 
 el("add-section-form").addEventListener("submit", async (e) => {
@@ -215,7 +227,11 @@ async function runAiCheck(submissionId) {
     const submission = (await getDoc(subRef)).data();
     const assignment = (await getDoc(doc(db, "assignments", submission.assignmentId))).data();
 
-    const aiDraft = await runRubricCheck({ link: submission.link, rubric: assignment.rubric });
+    const aiDraft = await runRubricCheck({
+      link: submission.link,
+      rubric: assignment.rubric,
+      linkType: assignment.allowedFileTypes,
+    });
 
     await updateDoc(subRef, {
       aiDraft,
