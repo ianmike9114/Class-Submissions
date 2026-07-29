@@ -72,6 +72,7 @@ async function loadEverything() {
     if (!subDoc) {
       row.innerHTML = `
         <strong>${a.title}</strong> <span class="muted">due ${a.dueDate || "no date"}</span>
+        ${a.instructions ? `<p>${a.instructions}</p>` : ""}
         <div class="muted">Type: ${a.allowedFileTypes}</div>
         <div>${renderRubric(a.rubric)}</div>
         ${renderSubmitForm(aDoc.id, a.allowedFileTypes)}`;

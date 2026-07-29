@@ -156,6 +156,7 @@ async function loadAssignments() {
     row.className = "card";
     row.innerHTML = `
       <strong>${a.title}</strong> <span class="muted">due ${a.dueDate || "no date"}</span>
+      ${a.instructions ? `<p class="muted">${a.instructions}</p>` : ""}
       <div class="muted">Allowed: ${a.allowedFileTypes} — ${a.rubric.length} rubric criteria</div>
       <div style="margin-top:0.5rem;"><button data-open="${d.id}">Open submissions</button></div>`;
     list.appendChild(row);
@@ -175,6 +176,7 @@ el("add-assignment-form").addEventListener("submit", async (e) => {
     subjectId: state.subjectId,
     sectionId: state.sectionId,
     title: el("assignment-title").value.trim(),
+    instructions: el("assignment-instructions").value.trim(),
     dueDate: el("assignment-due").value,
     allowedFileTypes: el("assignment-filetype").value,
     rubric,

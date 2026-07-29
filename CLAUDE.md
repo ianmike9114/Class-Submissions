@@ -77,7 +77,7 @@ tried first and silently failed cross-browser.
 
 - `subjects` — name, gradeLevel, archived
 - `sections` — subjectId, sectionName, joinCode
-- `assignments` — subjectId, sectionId, title, dueDate, allowedFileTypes (a link-type hint, not an upload constraint), rubric[{criterion, maxPoints}]
+- `assignments` — subjectId, sectionId, title, instructions (free text shown to students - objective/output format/anything they need, not used by the AI check, just display), dueDate, allowedFileTypes (a link-type hint, not an upload constraint), rubric[{criterion, maxPoints}]
 - `submissions` — assignmentId, studentUID, studentName, link, status(pending/ai-drafted/published), aiDraft{scorePerCriterion, feedback}, finalGrade{scorePerCriterion, feedback}
 - `enrollments` — studentUID, subjectId, sectionId (created when a student enters a join code)
 - `sections.roster` — string[] of official student names, set via the Set
