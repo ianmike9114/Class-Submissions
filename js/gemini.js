@@ -56,7 +56,10 @@ async function tryFetchImagePart(link) {
 // Returns { scorePerCriterion, feedback } or throws.
 // linkType is the assignment's allowedFileTypes ("document"/"code"/"image"/
 // "video") - only "image" attempts the direct-fetch vision path above.
-export async function runRubricCheck({ link, rubric, linkType }) {
+// rubricReferenceLink (optional) is a PDF/doc with the full rubric
+// description - given as extra context only, doesn't change what's
+// actually scored (still the criterion/maxPoints rows in `rubric`).
+export async function runRubricCheck({ link, rubric, linkType, rubricReferenceLink }) {
   const apiKey = getGeminiKey();
   if (!apiKey) throw new Error("No Gemini API key set. Add one in Settings first.");
 
@@ -64,17 +67,21 @@ export async function runRubricCheck({ link, rubric, linkType }) {
     .map((r) => `- "${r.criterion}" (max ${r.maxPoints} points)`)
     .join("\n");
 
+  const referenceLine = rubricReferenceLink
+    ? `\nFor extra context on what each criterion means, also read this rubric reference document (use the URL context tool): ${rubricReferenceLink}\n`
+    : "";
+
   const promptText = `You are helping a teacher pre-score a student submission against a rubric.
 The submission is at this link: ${link}
 Read/watch its content (use the URL context tool, or native video understanding if it's a YouTube link) and score it.
-
+${referenceLine}
 Return ONLY valid JSON, no markdown fences, in this exact shape:
 {"scorePerCriterion": {"<criterion name>": <number>, ...}, "feedback": "<2-4 sentences, specific and constructive>"}
 
 Rubric:
 ${rubricText}
 
-Score each criterion using its own max-points scale. If you genuinely cannot access the link's content, set every score to 0 and say so plainly in the feedback field - do not guess.`;
+Score each criterion using its own max-points scale, exactly as named above (the reference document is context only - don't add or rename criteria). If you genuinely cannot access the submission link's content, set every score to 0 and say so plainly in the feedback field - do not guess.`;
 
   const parts = [{ text: promptText }];
   if (isYouTubeLink(link)) {

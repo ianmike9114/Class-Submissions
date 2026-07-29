@@ -97,6 +97,11 @@
           <textarea id="assignment-instructions" rows="4" placeholder="e.g. Explore a CSS-related career or business opportunity and present your findings. Output: 5-7 minute presentation (PowerPoint, Canva, Poster, or Infographic)."></textarea>
           <label>Instructions file link (optional - a Drive-hosted PDF/doc, shared as "anyone with the link". Shows embedded to students, not just as a link.)</label>
           <input id="assignment-instructions-link" type="url" placeholder="https://drive.google.com/file/d/..." />
+          <label>Component (for grouping in Records)</label>
+          <select id="assignment-component">
+            <option value="written">Written Work</option>
+            <option value="performance">Performance Task</option>
+          </select>
           <label>Due date</label>
           <input id="assignment-due" type="date" />
           <label>Expected link type (shown to students as instructions)</label>
@@ -109,6 +114,8 @@
           <label>Rubric</label>
           <div id="rubric-rows"></div>
           <button type="button" class="secondary" id="add-rubric-row">+ Add criterion</button>
+          <label style="margin-top:0.75rem;">Rubric reference file (optional - link to a PDF/doc with the full rubric description, given to the AI as extra context. Doesn't change the rubric rows above.)</label>
+          <input id="assignment-rubric-link" type="url" placeholder="https://drive.google.com/file/d/..." />
           <div style="margin-top:0.75rem;">
             <button type="submit">Add assignment</button>
           </div>

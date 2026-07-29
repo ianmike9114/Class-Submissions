@@ -159,11 +159,23 @@ async function loadAssignments() {
       ${a.instructions ? `<p class="muted">${a.instructions}</p>` : ""}
       ${a.instructionsLink ? `<div class="muted"><a href="${a.instructionsLink}" target="_blank" rel="noopener">Instructions file</a></div>` : ""}
       <div class="muted">Allowed: ${a.allowedFileTypes} — ${a.rubric.length} rubric criteria</div>
-      <div style="margin-top:0.5rem;"><button data-open="${d.id}">Open submissions</button></div>`;
+      <div style="margin-top:0.5rem;">
+        <button data-open="${d.id}">Open submissions</button>
+        <button class="danger" data-delete-assignment="${d.id}">Delete</button>
+      </div>`;
     list.appendChild(row);
   });
   list.querySelectorAll("[data-open]").forEach((b) =>
     b.addEventListener("click", () => openAssignment(b.dataset.open)));
+  list.querySelectorAll("[data-delete-assignment]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const ok = confirm(
+        "Delete this assignment? This only removes the assignment itself - any submissions already made for it are NOT deleted and will become unreachable in this app. This can't be undone."
+      );
+      if (!ok) return;
+      await deleteDoc(doc(db, "assignments", b.dataset.deleteAssignment));
+      loadAssignments();
+    }));
 }
 
 el("add-assignment-form").addEventListener("submit", async (e) => {
@@ -179,9 +191,11 @@ el("add-assignment-form").addEventListener("submit", async (e) => {
     title: el("assignment-title").value.trim(),
     instructions: el("assignment-instructions").value.trim(),
     instructionsLink: el("assignment-instructions-link").value.trim(),
+    component: el("assignment-component").value,
     dueDate: el("assignment-due").value,
     allowedFileTypes: el("assignment-filetype").value,
     rubric,
+    rubricReferenceLink: el("assignment-rubric-link").value.trim(),
     createdAt: Date.now(),
   });
   e.target.reset();
@@ -245,6 +259,7 @@ async function runAiCheck(submissionId) {
       link: submission.link,
       rubric: assignment.rubric,
       linkType: assignment.allowedFileTypes,
+      rubricReferenceLink: assignment.rubricReferenceLink,
     });
 
     await updateDoc(subRef, {
@@ -456,10 +471,24 @@ async function loadRecords() {
     submissionsByAssignment[a.id] = byStudent;
   }
 
-  const headerCells = assignments.map((a) => `<th>${a.title}</th>`).join("");
+  // Group by component (Written Work / Performance Task) for the header,
+  // in that order. Older assignments made before this field existed have
+  // no component - they land in a fallback "Other" group instead of being
+  // dropped.
+  const COMPONENT_LABELS = { written: "Written Work", performance: "Performance Task" };
+  const groups = ["written", "performance"]
+    .map((key) => ({ key, label: COMPONENT_LABELS[key], assignments: assignments.filter((a) => a.component === key) }))
+    .filter((g) => g.assignments.length > 0);
+  const other = assignments.filter((a) => a.component !== "written" && a.component !== "performance");
+  if (other.length > 0) groups.push({ key: "other", label: "Other", assignments: other });
+
+  const orderedAssignments = groups.flatMap((g) => g.assignments);
+  const groupHeaderCells = groups.map((g) => `<th colspan="${g.assignments.length}">${g.label}</th>`).join("");
+  const titleHeaderCells = orderedAssignments.map((a) => `<th>${a.title}</th>`).join("");
+
   const bodyRows = roster.map((name) => {
     const enrollment = enrollments.find((en) => en.studentName.toLowerCase() === name.toLowerCase());
-    const cells = assignments.map((a) => {
+    const cells = orderedAssignments.map((a) => {
       if (!enrollment) return `<td class="muted">Not joined</td>`;
       const sub = submissionsByAssignment[a.id].get(enrollment.studentUID);
       if (!sub) return `<td class="muted">No submission</td>`;
@@ -473,7 +502,10 @@ async function loadRecords() {
 
   container.innerHTML = `
     <table class="records-grid">
-      <thead><tr><th>Student</th>${headerCells}</tr></thead>
+      <thead>
+        <tr><th></th>${groupHeaderCells}</tr>
+        <tr><th>Student</th>${titleHeaderCells}</tr>
+      </thead>
       <tbody>${bodyRows}</tbody>
     </table>`;
 }

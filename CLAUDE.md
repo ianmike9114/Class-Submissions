@@ -65,10 +65,10 @@ tried first and silently failed cross-browser.
 | Firebase project keys / teacher email constant (frontend) | `js/firebase-config.js` |
 | Who can read/write what in Firestore | `firestore.rules` |
 | AI rubric-check logic (prompt, Gemini model/params, key storage, image-vision fetch) | `js/gemini.js` (`runRubricCheck()`; `tryFetchImagePart()` for "image" assignments — best-effort, see limitations) |
-| Delete a subject or section | `js/teacher.js` (`loadSubjects()`/`loadSections()`'s delete buttons) — only removes that doc itself, does NOT cascade-delete what's under it (see limitations); subjects also have Archive as a non-destructive alternative |
+| Delete a subject, section, or assignment | `js/teacher.js` (`loadSubjects()`/`loadSections()`/`loadAssignments()`'s delete buttons) — only removes that doc itself, does NOT cascade-delete what's under it (see limitations); subjects also have Archive as a non-destructive alternative |
 | Inline submission preview (which links embed vs. fall back to a plain link) | `js/embed.js` (`toEmbedUrl()`) |
 | Export published scores into the teacher's Class Record `.xlsx` | `js/class-record.js` (workbook read/match/write, client-side via SheetJS CDN script in `teacher.html`) |
-| Roster seeding (per section) / Records gradebook grid | `js/teacher.js` (`renderRosterPreview()`, `loadRecords()`) + `teacher.html` (`#view-records`) — reuses `js/class-record.js`'s `loadWorkbook()`/`totalScore()`, no new file |
+| Roster seeding (per section) / Records gradebook grid (grouped by component - Written Work / Performance Task) | `js/teacher.js` (`renderRosterPreview()`, `loadRecords()`) + `teacher.html` (`#view-records`) — reuses `js/class-record.js`'s `loadWorkbook()`/`totalScore()`, no new file |
 | Styling | `css/style.css` |
 | Firestore deploy config | `firebase.json`, `.firebaserc` |
 | Setup/deploy instructions | `README.md` |
@@ -77,7 +77,7 @@ tried first and silently failed cross-browser.
 
 - `subjects` — name, gradeLevel, archived
 - `sections` — subjectId, sectionName, joinCode
-- `assignments` — subjectId, sectionId, title, instructions (free text shown to students - objective/output format/anything they need, not used by the AI check, just display), instructionsLink (optional Drive/Docs link to an instructions file, embedded via `js/embed.js`'s `toEmbedUrl()` same as submission previews), dueDate, allowedFileTypes (a link-type hint, not an upload constraint), rubric[{criterion, maxPoints}]
+- `assignments` — subjectId, sectionId, title, instructions (free text shown to students - objective/output format/anything they need, not used by the AI check, just display), instructionsLink (optional Drive/Docs link to an instructions file, embedded via `js/embed.js`'s `toEmbedUrl()` same as submission previews), component ("written" | "performance" - drives the Records grid's grouped header, older assignments without this land in a fallback "Other" group), dueDate, allowedFileTypes (a link-type hint, not an upload constraint), rubric[{criterion, maxPoints}], rubricReferenceLink (optional - extra context given to the AI check, does NOT change what's actually scored, see `js/gemini.js`)
 - `submissions` — assignmentId, studentUID, studentName, link, status(pending/ai-drafted/published), aiDraft{scorePerCriterion, feedback}, finalGrade{scorePerCriterion, feedback}
 - `enrollments` — studentUID, subjectId, sectionId (created when a student enters a join code)
 - `sections.roster` — string[] of official student names, set via the Set
@@ -104,13 +104,19 @@ tried first and silently failed cross-browser.
   fetch fails. If a check fails or looks wrong regardless, the teacher
   just grades manually in the same Review panel — nothing is blocked on
   it.
-- Deleting a subject or section (`js/teacher.js`) only removes that
-  document itself — it does not cascade-delete what references it
-  (sections/assignments/submissions/enrollments). Those become
-  unreachable through the UI (nothing queries a deleted
-  `subjectId`/`sectionId`) but still exist in Firestore. Deliberate
-  simplification, not a bug — flag to the user if this ever needs to
-  become a real cascade delete.
+- Deleting a subject, section, or assignment (`js/teacher.js`) only
+  removes that document itself — it does not cascade-delete what
+  references it (sections/assignments/submissions/enrollments). Those
+  become unreachable through the UI (nothing queries a deleted
+  `subjectId`/`sectionId`/`assignmentId`) but still exist in Firestore.
+  Deliberate simplification, not a bug — flag to the user if this ever
+  needs to become a real cascade delete.
+- Records grid's Written Work / Performance Task grouping is a plain
+  `component` field on the assignment, not any weighted-grade computation
+  — deliberately does not replicate DepEd's WW/PT/QA percentage +
+  transmutation math. Teacher confirmed raw per-assignment totals are
+  enough; they finalize grades themselves in their real Class Record. Do
+  not build weighted/transmuted grade computation without being asked.
 - No roster CSV import — students self-enroll via section join-code only
   (Class Record export is one-way: app → file, not the reverse).
 - Class Record name matching is exact/case-insensitive only, and always

@@ -18,7 +18,9 @@ Quick pointers:
 - Roster upload / Records gradebook grid → `js/teacher.js` (reuses `js/class-record.js`'s `loadWorkbook()`), `teacher.html`'s `#view-records`
 - CodePen/embed patterns → `js/embed.js`
 - Image AI-check vision fetch (best-effort, has a fallback) → `js/gemini.js`'s `tryFetchImagePart()`
-- Delete a section → `js/teacher.js`'s `loadSections()` (doc-only delete, no cascade — see `CLAUDE.md`)
+- Delete a subject/section/assignment → `js/teacher.js`'s `loadSubjects()`/`loadSections()`/`loadAssignments()` (doc-only delete, no cascade — see `CLAUDE.md`)
+- Records grid Written Work / Performance Task grouping → `js/teacher.js`'s `loadRecords()` (plain `component` field, NOT weighted-grade math - see `CLAUDE.md`, don't build that without being asked)
+- Rubric reference PDF (AI-check context only, doesn't change what's scored) → `js/gemini.js`'s `runRubricCheck()`
 - Access control → `firestore.rules`
 - Deploy/setup steps → `README.md`
 

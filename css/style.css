@@ -105,6 +105,12 @@ label { font-weight: 600; font-size: 0.85rem; display: block; margin-bottom: 0.2
   position: sticky;
   top: 0;
 }
+.records-grid thead tr:first-child th {
+  background: var(--blue);
+  color: white;
+  text-align: center;
+  top: -1px;
+}
 .records-grid td.muted { font-style: italic; }
 
 details.card summary { cursor: pointer; }
