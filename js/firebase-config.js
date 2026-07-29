@@ -7,12 +7,12 @@ import { getStorage } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-
 import { getFunctions } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 
 const firebaseConfig = {
-  apiKey: "REPLACE-ME",
-  authDomain: "REPLACE-ME.firebaseapp.com",
-  projectId: "REPLACE-ME",
-  storageBucket: "REPLACE-ME.appspot.com",
-  messagingSenderId: "REPLACE-ME",
-  appId: "REPLACE-ME",
+  apiKey: "AIzaSyB4Xz-u22jxEgipf9tc3RuRo4VIzphJcDI",
+  authDomain: "simple-lms-40950.firebaseapp.com",
+  projectId: "simple-lms-40950",
+  storageBucket: "simple-lms-40950.firebasestorage.app",
+  messagingSenderId: "1077801155399",
+  appId: "1:1077801155399:web:9a2c0d728da9a4a9dbaa62",
 };
 
 // Also update this in firestore.rules and storage.rules (both files hardcode it too).
