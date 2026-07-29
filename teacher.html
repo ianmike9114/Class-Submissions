@@ -17,7 +17,7 @@
 
   <main>
     <div class="card">
-      <h2>Settings</h2>
+      <h2>General Settings</h2>
       <form id="settings-form">
         <label>Gemini API key (for AI rubric-check)</label>
         <input id="gemini-key" type="password" placeholder="Paste your key from aistudio.google.com/apikey" />
@@ -65,23 +65,26 @@
       <button class="secondary" id="back-to-subject">&larr; Back</button>
       <h2 id="section-view-name"></h2>
 
-      <div class="card">
-        <h3>Set Roster</h3>
-        <p class="muted">Seeds the Records grid with your official student list, so students who haven't joined/submitted still show up (instead of being invisible). Nothing is uploaded anywhere.</p>
-        <form id="roster-config-form">
-          <label>Your Class Record file</label>
-          <input id="roster-file" type="file" accept=".xlsx" required />
-          <label>Sheet name (leave blank for the first sheet)</label>
-          <input id="roster-sheet" placeholder="e.g. TERM1" />
-          <label>Column letter with student names</label>
-          <input id="roster-name-col" required placeholder="e.g. B" />
-          <label>Row number where the first student's name is</label>
-          <input id="roster-start-row" type="number" required placeholder="e.g. 12" />
-          <button type="submit">Load Names</button>
-        </form>
-        <p id="roster-message" class="muted"></p>
-        <div id="roster-preview"></div>
-      </div>
+      <details class="card">
+        <summary><strong>Section Settings</strong></summary>
+        <div style="margin-top:0.75rem;">
+          <h3>Set Roster</h3>
+          <p class="muted">Seeds the Records grid with your official student list, so students who haven't joined/submitted still show up (instead of being invisible). Nothing is uploaded anywhere.</p>
+          <form id="roster-config-form">
+            <label>Your Class Record file</label>
+            <input id="roster-file" type="file" accept=".xlsx" required />
+            <label>Sheet name (leave blank for the first sheet)</label>
+            <input id="roster-sheet" placeholder="e.g. TERM1" />
+            <label>Column letter with student names</label>
+            <input id="roster-name-col" required placeholder="e.g. B" />
+            <label>Row number where the first student's name is</label>
+            <input id="roster-start-row" type="number" required placeholder="e.g. 12" />
+            <button type="submit">Load Names</button>
+          </form>
+          <p id="roster-message" class="muted"></p>
+          <div id="roster-preview"></div>
+        </div>
+      </details>
 
       <button id="view-records-btn">View Records</button>
 

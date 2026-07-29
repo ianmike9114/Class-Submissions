@@ -106,3 +106,6 @@ label { font-weight: 600; font-size: 0.85rem; display: block; margin-bottom: 0.2
   top: 0;
 }
 .records-grid td.muted { font-style: italic; }
+
+details.card summary { cursor: pointer; }
+details.card summary::marker { color: var(--blue); }
