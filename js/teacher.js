@@ -34,6 +34,7 @@ async function loadSubjects() {
         <button class="secondary" data-archive="${d.id}" data-value="${!s.archived}">
           ${s.archived ? "Unarchive" : "Archive"}
         </button>
+        <button class="danger" data-delete-subject="${d.id}">Delete</button>
       </div>`;
     list.appendChild(row);
   });
@@ -42,6 +43,15 @@ async function loadSubjects() {
   list.querySelectorAll("[data-archive]").forEach((b) =>
     b.addEventListener("click", async () => {
       await updateDoc(doc(db, "subjects", b.dataset.archive), { archived: b.dataset.value === "true" });
+      loadSubjects();
+    }));
+  list.querySelectorAll("[data-delete-subject]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const ok = confirm(
+        "Delete this subject? This only removes the subject itself - any sections/assignments/submissions/enrollments already under it are NOT deleted and will become unreachable in this app. If you just want it out of the way but might need it later, use Archive instead. This can't be undone."
+      );
+      if (!ok) return;
+      await deleteDoc(doc(db, "subjects", b.dataset.deleteSubject));
       loadSubjects();
     }));
 }

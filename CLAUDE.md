@@ -65,7 +65,7 @@ tried first and silently failed cross-browser.
 | Firebase project keys / teacher email constant (frontend) | `js/firebase-config.js` |
 | Who can read/write what in Firestore | `firestore.rules` |
 | AI rubric-check logic (prompt, Gemini model/params, key storage, image-vision fetch) | `js/gemini.js` (`runRubricCheck()`; `tryFetchImagePart()` for "image" assignments — best-effort, see limitations) |
-| Delete a section | `js/teacher.js` (`loadSections()`'s delete button) — only removes the section doc itself, does NOT cascade-delete its assignments/submissions/enrollments (see limitations) |
+| Delete a subject or section | `js/teacher.js` (`loadSubjects()`/`loadSections()`'s delete buttons) — only removes that doc itself, does NOT cascade-delete what's under it (see limitations); subjects also have Archive as a non-destructive alternative |
 | Inline submission preview (which links embed vs. fall back to a plain link) | `js/embed.js` (`toEmbedUrl()`) |
 | Export published scores into the teacher's Class Record `.xlsx` | `js/class-record.js` (workbook read/match/write, client-side via SheetJS CDN script in `teacher.html`) |
 | Roster seeding (per section) / Records gradebook grid | `js/teacher.js` (`renderRosterPreview()`, `loadRecords()`) + `teacher.html` (`#view-records`) — reuses `js/class-record.js`'s `loadWorkbook()`/`totalScore()`, no new file |
@@ -104,10 +104,11 @@ tried first and silently failed cross-browser.
   fetch fails. If a check fails or looks wrong regardless, the teacher
   just grades manually in the same Review panel — nothing is blocked on
   it.
-- Deleting a section (`js/teacher.js`) only removes the section document
-  itself — it does not cascade-delete assignments/submissions/enrollments
-  that reference it. Those become unreachable through the UI (nothing
-  queries a deleted `sectionId`) but still exist in Firestore. Deliberate
+- Deleting a subject or section (`js/teacher.js`) only removes that
+  document itself — it does not cascade-delete what references it
+  (sections/assignments/submissions/enrollments). Those become
+  unreachable through the UI (nothing queries a deleted
+  `subjectId`/`sectionId`) but still exist in Firestore. Deliberate
   simplification, not a bug — flag to the user if this ever needs to
   become a real cascade delete.
 - No roster CSV import — students self-enroll via section join-code only
