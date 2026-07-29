@@ -88,6 +88,13 @@ label { font-weight: 600; font-size: 0.85rem; display: block; margin-bottom: 0.2
   margin: 0.5rem 0;
 }
 
+.photo-preview {
+  max-width: 100%;
+  border: 1px solid var(--gray-border);
+  border-radius: 6px;
+  margin: 0.5rem 0;
+}
+
 .records-grid {
   width: 100%;
   border-collapse: collapse;

@@ -225,10 +225,12 @@ async function loadSubmissions() {
     const row = document.createElement("div");
     row.className = "card";
     const embedUrl = toEmbedUrl(s.link);
-    const linkBlock = embedUrl
-      ? `<iframe src="${embedUrl}" class="submission-preview"></iframe>
+    const linkBlock = s.photoData
+      ? `<img src="${s.photoData}" class="photo-preview" />`
+      : embedUrl
+        ? `<iframe src="${embedUrl}" class="submission-preview"></iframe>
          <div class="muted"><a href="${s.link}" target="_blank" rel="noopener">open in new tab</a></div>`
-      : `<div class="muted"><a href="${s.link}" target="_blank" rel="noopener">${s.link}</a></div>`;
+        : `<div class="muted"><a href="${s.link}" target="_blank" rel="noopener">${s.link}</a></div>`;
     row.innerHTML = `
       <strong>${s.studentName}</strong>
       <span class="status-${s.status}"> — ${s.status}</span>
@@ -257,6 +259,7 @@ async function runAiCheck(submissionId) {
 
     const aiDraft = await runRubricCheck({
       link: submission.link,
+      photoData: submission.photoData,
       rubric: assignment.rubric,
       linkType: assignment.allowedFileTypes,
       rubricReferenceLink: assignment.rubricReferenceLink,

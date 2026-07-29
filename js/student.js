@@ -114,21 +114,98 @@ const LINK_HINTS = {
 };
 
 function renderSubmitForm(assignmentId, type) {
+  const photoBlock = type === "image" ? `
+      <label>Or take/upload a photo</label>
+      <input type="file" accept="image/*" capture="environment" class="submission-photo" />
+      <img class="photo-preview hidden" />
+      <p class="muted">Photo is compressed and saved directly - skip the link above if you use this.</p>` : "";
   return `
     <form class="submit-form" data-assignment="${assignmentId}">
       <label>Submission link</label>
-      <input type="url" class="submission-link" required placeholder="https://..." />
+      <input type="url" class="submission-link" placeholder="https://..." />
       <p class="muted">${LINK_HINTS[type] || "Paste a shareable link"}</p>
+      ${photoBlock}
       <button type="submit">Submit</button>
     </form>`;
 }
 
+// Resizes/compresses a photo client-side so it fits in a Firestore document
+// (1MiB doc cap) - there's no Storage in this app, the photo is saved
+// straight into the submission doc as a base64 data URL. Shrinks dimensions
+// first, then quality, until the encoded string is comfortably under the cap.
+function compressImage(file) {
+  const MAX_DATA_URL_LEN = 700000;
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Couldn't read that photo."));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Couldn't read that photo."));
+      img.onload = () => {
+        let { width, height } = img;
+        const maxDim = 1280;
+        if (width > maxDim || height > maxDim) {
+          const scale = maxDim / Math.max(width, height);
+          width = Math.round(width * scale);
+          height = Math.round(height * scale);
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+
+        let quality = 0.8;
+        let dataUrl = canvas.toDataURL("image/jpeg", quality);
+        while (dataUrl.length > MAX_DATA_URL_LEN && quality > 0.3) {
+          quality -= 0.1;
+          dataUrl = canvas.toDataURL("image/jpeg", quality);
+        }
+        if (dataUrl.length > MAX_DATA_URL_LEN) {
+          reject(new Error("Photo is too large even after compression - try a simpler/lighter shot."));
+          return;
+        }
+        resolve(dataUrl);
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 function attachSubmitHandlers() {
+  document.querySelectorAll(".submission-photo").forEach((input) => {
+    input.addEventListener("change", async () => {
+      const file = input.files[0];
+      const preview = input.parentElement.querySelector(".photo-preview");
+      if (!file) return;
+      delete input.dataset.compressed;
+      preview.classList.add("hidden");
+      try {
+        const dataUrl = await compressImage(file);
+        input.dataset.compressed = dataUrl;
+        preview.src = dataUrl;
+        preview.classList.remove("hidden");
+      } catch (err) {
+        alert(err.message);
+        input.value = "";
+      }
+    });
+  });
+
   document.querySelectorAll(".submit-form").forEach((form) => {
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       const assignmentId = form.dataset.assignment;
       const btn = form.querySelector("button");
+      const link = form.querySelector(".submission-link").value.trim();
+      const photoInput = form.querySelector(".submission-photo");
+      const photoData = photoInput?.dataset.compressed || "";
+
+      if (!link && !photoData) {
+        alert("Add a link or take a photo first.");
+        return;
+      }
+
       btn.disabled = true;
       btn.textContent = "Submitting...";
 
@@ -137,7 +214,8 @@ function attachSubmitHandlers() {
           assignmentId,
           studentUID: currentUser.uid,
           studentName: currentUser.displayName || currentUser.email,
-          link: form.querySelector(".submission-link").value.trim(),
+          link,
+          photoData,
           status: "pending",
           submittedAt: Date.now(),
         });

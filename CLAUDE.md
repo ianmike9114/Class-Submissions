@@ -64,7 +64,8 @@ tried first and silently failed cross-browser.
 | Google Sign-In / role routing (teacher vs student) | `js/auth.js` (uses Google Identity Services directly + `signInWithCredential`, not Firebase's own popup/redirect — see note below) |
 | Firebase project keys / teacher email constant (frontend) | `js/firebase-config.js` |
 | Who can read/write what in Firestore | `firestore.rules` |
-| AI rubric-check logic (prompt, Gemini model/params, key storage, image-vision fetch) | `js/gemini.js` (`runRubricCheck()`; `tryFetchImagePart()` for "image" assignments — best-effort, see limitations) |
+| AI rubric-check logic (prompt, Gemini model/params, key storage, image-vision fetch) | `js/gemini.js` (`runRubricCheck()`; `tryFetchImagePart()` for "image" assignments — best-effort, see limitations; `photoData` param sends an in-app camera capture directly as inline image data, no link needed) |
+| In-app camera photo capture (student, "image" assignments only) | `js/student.js` (`compressImage()` — resizes/JPEG-compresses client-side to fit Firestore's 1MiB doc cap, saved as `submissions.photoData` base64 data URL, no Storage involved) + `teacher.html`/`js/teacher.js` (renders `<img>` preview instead of iframe when `photoData` is set) |
 | Delete a subject, section, or assignment | `js/teacher.js` (`loadSubjects()`/`loadSections()`/`loadAssignments()`'s delete buttons) — only removes that doc itself, does NOT cascade-delete what's under it (see limitations); subjects also have Archive as a non-destructive alternative |
 | Inline submission preview (which links embed vs. fall back to a plain link) | `js/embed.js` (`toEmbedUrl()`) |
 | Export published scores into the teacher's Class Record `.xlsx` | `js/class-record.js` (workbook read/match/write, client-side via SheetJS CDN script in `teacher.html`) |
@@ -78,7 +79,7 @@ tried first and silently failed cross-browser.
 - `subjects` — name, gradeLevel, archived
 - `sections` — subjectId, sectionName, joinCode
 - `assignments` — subjectId, sectionId, title, instructions (free text shown to students - objective/output format/anything they need, not used by the AI check, just display), instructionsLink (optional Drive/Docs link to an instructions file, embedded via `js/embed.js`'s `toEmbedUrl()` same as submission previews), component ("written" | "performance" - drives the Records grid's grouped header, older assignments without this land in a fallback "Other" group), dueDate, allowedFileTypes (a link-type hint, not an upload constraint), rubric[{criterion, maxPoints}], rubricReferenceLink (optional - extra context given to the AI check, does NOT change what's actually scored, see `js/gemini.js`)
-- `submissions` — assignmentId, studentUID, studentName, link, status(pending/ai-drafted/published), aiDraft{scorePerCriterion, feedback}, finalGrade{scorePerCriterion, feedback}
+- `submissions` — assignmentId, studentUID, studentName, link (may be empty if `photoData` is used instead), photoData (optional - base64 `data:image/jpeg;base64,...` from in-app camera capture on "image" assignments, compressed client-side to fit the 1MiB Firestore doc cap; no Storage), status(pending/ai-drafted/published), aiDraft{scorePerCriterion, feedback}, finalGrade{scorePerCriterion, feedback}
 - `enrollments` — studentUID, subjectId, sectionId (created when a student enters a join code)
 - `sections.roster` — string[] of official student names, set via the Set
   Roster upload in `view-section` (same `.xlsx`-reading approach as Class
@@ -131,6 +132,14 @@ tried first and silently failed cross-browser.
   would sweep those up as fake students. Don't loosen this check.
 - No real-time listeners (`onSnapshot`) — lists refresh on load/action, not
   live. Fine at single-class scale; add if it ever matters.
+- In-app camera capture (`photoData`) only exists for "image" assignments,
+  as an alternative to pasting a link — not a general file-upload feature.
+  `js/student.js`'s `compressImage()` resizes to max 1280px and drops JPEG
+  quality until the base64 string is under ~700KB, to stay well inside
+  Firestore's 1MiB per-document cap alongside the rest of the submission's
+  fields. Very detailed/high-res photos (e.g. dense handwriting) can lose
+  some sharpness to this compression — if that's ever a problem, the
+  student can still fall back to the Drive-link path instead.
 
 ## Conventions
 

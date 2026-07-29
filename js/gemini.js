@@ -59,7 +59,10 @@ async function tryFetchImagePart(link) {
 // rubricReferenceLink (optional) is a PDF/doc with the full rubric
 // description - given as extra context only, doesn't change what's
 // actually scored (still the criterion/maxPoints rows in `rubric`).
-export async function runRubricCheck({ link, rubric, linkType, rubricReferenceLink }) {
+// photoData (optional) is a "data:image/...;base64,..." string from the
+// student's in-app camera capture (js/student.js's compressImage()) -
+// when present it's sent as inline image data instead of reading `link`.
+export async function runRubricCheck({ link, photoData, rubric, linkType, rubricReferenceLink }) {
   const apiKey = getGeminiKey();
   if (!apiKey) throw new Error("No Gemini API key set. Add one in Settings first.");
 
@@ -71,9 +74,12 @@ export async function runRubricCheck({ link, rubric, linkType, rubricReferenceLi
     ? `\nFor extra context on what each criterion means, also read this rubric reference document (use the URL context tool): ${rubricReferenceLink}\n`
     : "";
 
+  const submissionLine = photoData
+    ? "The student's submission is an attached photo (see the image data below) - score what you see in it directly."
+    : `The submission is at this link: ${link}\nRead/watch its content (use the URL context tool, or native video understanding if it's a YouTube link) and score it.`;
+
   const promptText = `You are helping a teacher pre-score a student submission against a rubric.
-The submission is at this link: ${link}
-Read/watch its content (use the URL context tool, or native video understanding if it's a YouTube link) and score it.
+${submissionLine}
 ${referenceLine}
 Return ONLY valid JSON, no markdown fences, in this exact shape:
 {"scorePerCriterion": {"<criterion name>": <number>, ...}, "feedback": "<2-4 sentences, specific and constructive>"}
@@ -81,10 +87,13 @@ Return ONLY valid JSON, no markdown fences, in this exact shape:
 Rubric:
 ${rubricText}
 
-Score each criterion using its own max-points scale, exactly as named above (the reference document is context only - don't add or rename criteria). If you genuinely cannot access the submission link's content, set every score to 0 and say so plainly in the feedback field - do not guess.`;
+Score each criterion using its own max-points scale, exactly as named above (the reference document is context only - don't add or rename criteria). If you genuinely cannot access/read the submission, set every score to 0 and say so plainly in the feedback field - do not guess.`;
 
   const parts = [{ text: promptText }];
-  if (isYouTubeLink(link)) {
+  if (photoData) {
+    const match = photoData.match(/^data:([^;]+);base64,(.*)$/);
+    if (match) parts.push({ inlineData: { mimeType: match[1], data: match[2] } });
+  } else if (isYouTubeLink(link)) {
     parts.push({ fileData: { fileUri: link } });
   } else if (linkType === "image") {
     const imagePart = await tryFetchImagePart(link);
