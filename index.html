@@ -17,7 +17,7 @@
   </main>
 
   <script type="module">
-    import { signIn } from "./js/auth.js";
+    import { signIn, checkRedirectResult } from "./js/auth.js";
     import { auth, TEACHER_EMAIL } from "./js/firebase-config.js";
     import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
@@ -25,6 +25,12 @@
       if (user) {
         window.location.href = user.email === TEACHER_EMAIL ? "teacher.html" : "student.html";
       }
+    });
+
+    // Surfaces errors from a redirect-based sign-in that just completed
+    // (signIn() itself navigates away, so this is where failures show up).
+    checkRedirectResult().catch((e) => {
+      document.getElementById("error").textContent = e.message;
     });
 
     document.getElementById("google-signin").addEventListener("click", async () => {

@@ -1,15 +1,27 @@
 import { auth, TEACHER_EMAIL } from "./firebase-config.js";
 import {
   GoogleAuthProvider,
-  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signOut,
   onAuthStateChanged,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 const provider = new GoogleAuthProvider();
 
+// Redirect flow, not popup: popups need browser storage to hand state back
+// to the opening page, which mobile Safari and several mobile browsers
+// block or restrict ("Unable to save initial state"). Redirect just
+// navigates away and back, works everywhere popups don't.
 export function signIn() {
-  return signInWithPopup(auth, provider);
+  return signInWithRedirect(auth, provider);
+}
+
+// Call once on index.html load to surface any error from a redirect
+// sign-in attempt (e.g. popup-era code would have caught this via the
+// signInWithPopup promise rejection - redirect needs this instead).
+export function checkRedirectResult() {
+  return getRedirectResult(auth);
 }
 
 export function signOutUser() {
