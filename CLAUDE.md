@@ -67,6 +67,7 @@ tried first and silently failed cross-browser.
 | AI rubric-check logic (prompt, Gemini model/params, key storage) | `js/gemini.js` |
 | Inline submission preview (which links embed vs. fall back to a plain link) | `js/embed.js` (`toEmbedUrl()`) |
 | Export published scores into the teacher's Class Record `.xlsx` | `js/class-record.js` (workbook read/match/write, client-side via SheetJS CDN script in `teacher.html`) |
+| Roster seeding (per section) / Records gradebook grid | `js/teacher.js` (`renderRosterPreview()`, `loadRecords()`) + `teacher.html` (`#view-records`) — reuses `js/class-record.js`'s `loadWorkbook()`/`totalScore()`, no new file |
 | Styling | `css/style.css` |
 | Firestore deploy config | `firebase.json`, `.firebaserc` |
 | Setup/deploy instructions | `README.md` |
@@ -78,6 +79,14 @@ tried first and silently failed cross-browser.
 - `assignments` — subjectId, sectionId, title, dueDate, allowedFileTypes (a link-type hint, not an upload constraint), rubric[{criterion, maxPoints}]
 - `submissions` — assignmentId, studentUID, studentName, link, status(pending/ai-drafted/published), aiDraft{scorePerCriterion, feedback}, finalGrade{scorePerCriterion, feedback}
 - `enrollments` — studentUID, subjectId, sectionId (created when a student enters a join code)
+- `sections.roster` — string[] of official student names, set via the Set
+  Roster upload in `view-section` (same `.xlsx`-reading approach as Class
+  Record export). Drives the Records grid's rows — matched against
+  `enrollments.studentName` (case-insensitive) to find each roster
+  student's actual submissions. A roster name with no matching enrollment
+  shows as "Not joined" rather than being silently omitted — that's the
+  whole point of seeding from the real roster instead of just listing
+  whoever self-enrolled.
 
 ## Known v1 limitations (deliberate, see README)
 
@@ -95,6 +104,12 @@ tried first and silently failed cross-browser.
   requires teacher confirmation in the match table before any write — see
   `js/class-record.js`. Never make this auto-write without confirmation;
   it's writing into the teacher's real gradebook.
+- `js/class-record.js`'s `loadWorkbook()` row-walk stops on the first cell
+  that isn't SheetJS type `"s"` (string), deliberately — not just "isn't
+  empty". Confirmed against a real DepEd Class Record: unused rows below
+  the last real student aren't blank, they hold a formula that evaluates
+  to the number `0`, out to row 119+. A plain non-null/non-empty check
+  would sweep those up as fake students. Don't loosen this check.
 - No real-time listeners (`onSnapshot`) — lists refresh on load/action, not
   live. Fine at single-class scale; add if it ever matters.
 

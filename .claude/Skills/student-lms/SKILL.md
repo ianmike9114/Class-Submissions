@@ -15,6 +15,7 @@ Quick pointers:
 - AI rubric-check behavior (prompt, Gemini model, key storage) → `js/gemini.js`
 - Inline submission preview → `js/embed.js`
 - Class Record `.xlsx` export → `js/class-record.js`
+- Roster upload / Records gradebook grid → `js/teacher.js` (reuses `js/class-record.js`'s `loadWorkbook()`), `teacher.html`'s `#view-records`
 - Access control → `firestore.rules`
 - Deploy/setup steps → `README.md`
 

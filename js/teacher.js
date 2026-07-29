@@ -5,7 +5,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getGeminiKey, setGeminiKey, runRubricCheck } from "./gemini.js";
 import { toEmbedUrl } from "./embed.js";
-import { loadWorkbook, matchStudents, applyAndDownload } from "./class-record.js";
+import { loadWorkbook, matchStudents, applyAndDownload, totalScore } from "./class-record.js";
 
 const state = { subjectId: null, sectionId: null, assignmentId: null };
 let exportState = { matches: [], rosterRows: [], scoreCol: "", fileBaseName: "" };
@@ -334,15 +334,130 @@ function renderMatchTable() {
   });
 }
 
+// ---------- roster (per-section, seeds the Records grid's rows) ----------
+let rosterPreviewNames = [];
+
+el("roster-config-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const msg = el("roster-message");
+  msg.textContent = "";
+  el("roster-preview").innerHTML = "";
+  try {
+    const file = el("roster-file").files[0];
+    if (!file) throw new Error("Choose a file first.");
+    const rows = await loadWorkbook(file, {
+      sheet: el("roster-sheet").value,
+      nameCol: el("roster-name-col").value,
+      dataStartRow: el("roster-start-row").value,
+    });
+    if (rows.length === 0) {
+      throw new Error("No names found there - check the sheet name, column letter, and start row.");
+    }
+    rosterPreviewNames = rows.map((r) => r.name);
+    renderRosterPreview();
+  } catch (err) {
+    msg.textContent = err.message;
+  }
+});
+
+function renderRosterPreview() {
+  const container = el("roster-preview");
+  const rows = rosterPreviewNames.map((name, i) => `
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.3rem;">
+      <span>${name}</span>
+      <button type="button" class="secondary" data-remove-name="${i}">Remove</button>
+    </div>`).join("");
+
+  container.innerHTML = `
+    <p class="muted">${rosterPreviewNames.length} name(s) found. Remove any that aren't actual students (e.g. a "MALE"/"FEMALE" header row), then save.</p>
+    ${rows}
+    <button id="roster-save">Save Roster (${rosterPreviewNames.length})</button>`;
+
+  container.querySelectorAll("[data-remove-name]").forEach((b) => {
+    b.addEventListener("click", () => {
+      rosterPreviewNames.splice(Number(b.dataset.removeName), 1);
+      renderRosterPreview();
+    });
+  });
+
+  el("roster-save").addEventListener("click", async () => {
+    await updateDoc(doc(db, "sections", state.sectionId), { roster: rosterPreviewNames });
+    el("roster-message").textContent = `Saved ${rosterPreviewNames.length} name(s) to this section's roster.`;
+    el("roster-preview").innerHTML = "";
+  });
+}
+
+// ---------- records (gradebook grid, one section at a time) ----------
+async function openRecords() {
+  show("view-records");
+  loadRecords();
+}
+el("view-records-btn").addEventListener("click", openRecords);
+
+async function loadRecords() {
+  const container = el("records-table");
+  container.innerHTML = `<p class="muted">Loading...</p>`;
+
+  const section = (await getDoc(doc(db, "sections", state.sectionId))).data();
+  el("records-view-title").textContent = section.sectionName;
+  const roster = section.roster || [];
+
+  if (roster.length === 0) {
+    container.innerHTML = `<p class="muted">No roster set for this section yet - go back and use "Set Roster" first.</p>`;
+    return;
+  }
+
+  const assignSnap = await getDocs(query(collection(db, "assignments"), where("sectionId", "==", state.sectionId)));
+  const assignments = assignSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+  if (assignments.length === 0) {
+    container.innerHTML = `<p class="muted">No assignments yet in this section.</p>`;
+    return;
+  }
+
+  const enrollSnap = await getDocs(query(collection(db, "enrollments"), where("sectionId", "==", state.sectionId)));
+  const enrollments = enrollSnap.docs.map((d) => d.data());
+
+  const submissionsByAssignment = {};
+  for (const a of assignments) {
+    const subSnap = await getDocs(query(collection(db, "submissions"), where("assignmentId", "==", a.id)));
+    const byStudent = new Map();
+    subSnap.forEach((d) => byStudent.set(d.data().studentUID, d.data()));
+    submissionsByAssignment[a.id] = byStudent;
+  }
+
+  const headerCells = assignments.map((a) => `<th>${a.title}</th>`).join("");
+  const bodyRows = roster.map((name) => {
+    const enrollment = enrollments.find((en) => en.studentName.toLowerCase() === name.toLowerCase());
+    const cells = assignments.map((a) => {
+      if (!enrollment) return `<td class="muted">Not joined</td>`;
+      const sub = submissionsByAssignment[a.id].get(enrollment.studentUID);
+      if (!sub) return `<td class="muted">No submission</td>`;
+      if (sub.status === "published") {
+        return `<td>${totalScore(sub.finalGrade?.scorePerCriterion)}</td>`;
+      }
+      return `<td class="status-${sub.status}">${sub.status}</td>`;
+    }).join("");
+    return `<tr><td>${name}</td>${cells}</tr>`;
+  }).join("");
+
+  container.innerHTML = `
+    <table class="records-grid">
+      <thead><tr><th>Student</th>${headerCells}</tr></thead>
+      <tbody>${bodyRows}</tbody>
+    </table>`;
+}
+
 // ---------- nav ----------
 function show(viewId) {
-  ["view-subjects", "view-subject", "view-section", "view-assignment"].forEach((v) => {
+  ["view-subjects", "view-subject", "view-section", "view-assignment", "view-records"].forEach((v) => {
     el(v).classList.toggle("hidden", v !== viewId);
   });
 }
 el("back-to-subjects").addEventListener("click", () => { show("view-subjects"); loadSubjects(); });
 el("back-to-subject").addEventListener("click", () => show("view-subject"));
 el("back-to-section").addEventListener("click", () => show("view-section"));
+el("back-to-section-from-records").addEventListener("click", () => show("view-section"));
 el("sign-out").addEventListener("click", signOutUser);
 
 // ---------- settings (Gemini key, kept in localStorage only) ----------

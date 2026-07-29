@@ -87,3 +87,22 @@ label { font-weight: 600; font-size: 0.85rem; display: block; margin-bottom: 0.2
   border-radius: 6px;
   margin: 0.5rem 0;
 }
+
+.records-grid {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  font-size: 0.9rem;
+}
+.records-grid th, .records-grid td {
+  border: 1px solid var(--gray-border);
+  padding: 0.5rem;
+  text-align: left;
+  white-space: nowrap;
+}
+.records-grid thead th {
+  background: var(--gray-bg);
+  position: sticky;
+  top: 0;
+}
+.records-grid td.muted { font-style: italic; }

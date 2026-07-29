@@ -19,7 +19,12 @@ function cellRef(colLetter, row) {
 }
 
 // Loads the workbook and extracts { row, name } pairs from the given
-// column, starting at startRowNum, stopping at the first empty cell.
+// column, starting at startRowNum, stopping at the first row whose cell
+// isn't text. Deliberately checks cell.t === "s" (SheetJS's type tag for
+// string cells), not just "is this cell non-empty" - DepEd's Class Record
+// template pre-fills unused rows out to row 119+ with a formula that
+// evaluates to the *number* 0, not a blank cell, so a plain "empty?" check
+// would sweep up dozens of fake "0" students past the real roster.
 export async function loadWorkbook(file, { sheet, nameCol, dataStartRow }) {
   const buffer = await file.arrayBuffer();
   workbook = XLSX.read(buffer, { type: "array" });
@@ -36,7 +41,8 @@ export async function loadWorkbook(file, { sheet, nameCol, dataStartRow }) {
   let row = startRow;
   while (true) {
     const cell = ws[cellRef(nameColLetter, row)];
-    const name = cell?.v != null ? String(cell.v).trim() : "";
+    const isTextCell = cell && cell.t === "s" && cell.v != null;
+    const name = isTextCell ? String(cell.v).trim() : "";
     if (!name) break;
     rows.push({ row, name });
     row++;
