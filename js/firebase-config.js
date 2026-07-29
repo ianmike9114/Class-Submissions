@@ -29,7 +29,7 @@ export const TEACHER_EMAIL = "galutira.ianjoseph.f@gmail.com";
 // hop (your site -> *.firebaseapp.com -> accounts.google.com -> back) that
 // modern browsers' third-party storage partitioning silently breaks with
 // no error, on Edge/Brave/Safari alike. This avoids that hop entirely.
-export const GOOGLE_CLIENT_ID = "REPLACE-WITH-WEB-CLIENT-ID.apps.googleusercontent.com";
+export const GOOGLE_CLIENT_ID = "1077801155399-94fs3d8c4k1guh7h0tg77j8gg3lbthtv.apps.googleusercontent.com";
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
