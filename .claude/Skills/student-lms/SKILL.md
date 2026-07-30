@@ -26,6 +26,8 @@ Quick pointers:
 - Editing an existing Subject's Year/Term / Section's name → `js/teacher.js`'s `editSubjectYearTerm()` / `editSectionName()`
 - "Who's submitting" pending-count badge → `js/teacher.js`'s `getPendingCounts()`/`pendingBadge()`, wired into `loadSubjects()`/`loadSections()`/`loadAssignments()` — in-app only, real push needs a server piece (out of scope, see `CLAUDE.md`)
 - Per-assignment scores summary (graded students only) → `js/teacher.js`'s `renderScoresSummary()` (called from `loadSubmissions()`), `teacher.html`'s `#scores-summary` — distinct from the section-wide Records grid
+- Instructions/rubric reference on the submissions view → `js/teacher.js`'s `renderAssignmentContext()` (called from `openAssignment()`), `teacher.html`'s `#assignment-context`
+- Fixing a garbled student name (from Enrolled Students OR a submission card) → `js/teacher.js`'s `renameStudentEverywhere(studentUID, newName)` — updates enrollments AND cached submission names together, single shared helper for both entry points
 - Home button → `teacher.html`'s `#go-home`, `js/teacher.js`'s listener
 - In-app-browser sign-in warning (Messenger/Instagram/etc. block Google OAuth) → `index.html`'s `isInAppBrowser()` + `#in-app-browser-warning`
 - Sign-in failure notification / duplicate-enrollment prevention → `index.html`'s `showError()`, `js/student.js`'s `join-form` handler

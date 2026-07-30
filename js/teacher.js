@@ -85,6 +85,22 @@ function pendingBadge(count) {
   return count ? `<span class="status-pending"> — ${count} pending</span>` : "";
 }
 
+// A student's display name is cached on every submission at submit time
+// (not looked up live from their enrollment), so fixing a garbled Google
+// name has to touch both: every enrollment AND every submission for that
+// studentUID, or old submission cards/scores summaries would keep showing
+// the stale name forever.
+async function renameStudentEverywhere(studentUID, newName) {
+  const [enrollSnap, subSnap] = await Promise.all([
+    getDocs(query(collection(db, "enrollments"), where("studentUID", "==", studentUID))),
+    getDocs(query(collection(db, "submissions"), where("studentUID", "==", studentUID))),
+  ]);
+  await Promise.all([
+    ...enrollSnap.docs.map((d) => updateDoc(d.ref, { studentName: newName })),
+    ...subSnap.docs.map((d) => updateDoc(d.ref, { studentName: newName })),
+  ]);
+}
+
 // ---------- subjects ----------
 async function loadSubjects() {
   const showArchived = el("toggle-archived").checked;
@@ -287,7 +303,7 @@ async function openEnrolled(onlySectionId) {
   list.innerHTML = rows.length
     ? `<table class="records-grid"><thead><tr><th>Name</th><th>Gmail</th><th>Section</th><th></th></tr></thead><tbody>
         ${rows.map((r) => `<tr><td id="enroll-name-${r.id}">${r.studentName}</td><td>${r.studentEmail || ""}</td><td>${sectionMap.get(r.sectionId) || ""}</td><td>
-          <button class="secondary" data-edit-enrollment="${r.id}">Edit name</button>
+          <button class="secondary" data-edit-enrollment="${r.id}" data-uid="${r.studentUID}">Edit name</button>
           <button class="danger" data-remove-enrollment="${r.id}">Remove</button>
         </td></tr>`).join("")}
       </tbody></table>`
@@ -295,7 +311,9 @@ async function openEnrolled(onlySectionId) {
 
   // Fixes a garbled/raw Google display name (common when a section had no
   // roster to pick from at join time) without needing the student to
-  // rejoin - edits the enrollment's studentName in place.
+  // rejoin - renameStudentEverywhere() also updates that student's
+  // existing submissions, not just this one enrollment doc, so their
+  // corrected name shows consistently everywhere.
   list.querySelectorAll("[data-edit-enrollment]").forEach((b) =>
     b.addEventListener("click", () => {
       const enrollmentId = b.dataset.editEnrollment;
@@ -311,7 +329,7 @@ async function openEnrolled(onlySectionId) {
         saved = true;
         const name = input.value.trim();
         if (name && name !== current) {
-          await updateDoc(doc(db, "enrollments", enrollmentId), { studentName: name });
+          await renameStudentEverywhere(b.dataset.uid, name);
         }
         openEnrolled(onlySectionId);
       };
@@ -409,10 +427,36 @@ el("add-assignment-form").addEventListener("submit", async (e) => {
 });
 
 // ---------- submissions ----------
+function renderAssignmentContext(a) {
+  const container = el("assignment-context");
+  const instructionsEmbed = a.instructionsLink ? toEmbedUrl(a.instructionsLink) : null;
+  const rubricEmbed = a.rubricReferenceLink ? toEmbedUrl(a.rubricReferenceLink) : null;
+  const nothingToShow = !a.instructions && !a.instructionsLink && !a.rubricReferenceLink;
+  container.innerHTML = `
+    <details class="card">
+      <summary><strong>Instructions &amp; rubric (reference)</strong></summary>
+      <div style="margin-top:0.75rem;">
+        ${nothingToShow ? '<p class="muted">No instructions or rubric reference set for this assignment.</p>' : ""}
+        ${a.instructions ? `<p>${a.instructions}</p>` : ""}
+        ${a.instructionsLink
+          ? (instructionsEmbed
+            ? `<iframe src="${instructionsEmbed}" class="submission-preview"></iframe>`
+            : `<div class="muted"><a href="${a.instructionsLink}" target="_blank" rel="noopener">Instructions file</a></div>`)
+          : ""}
+        ${a.rubricReferenceLink ? `
+          <label style="margin-top:0.75rem;">Rubric reference</label>
+          ${rubricEmbed
+            ? `<iframe src="${rubricEmbed}" class="submission-preview"></iframe>`
+            : `<div class="muted"><a href="${a.rubricReferenceLink}" target="_blank" rel="noopener">${a.rubricReferenceLink}</a></div>`}` : ""}
+      </div>
+    </details>`;
+}
+
 async function openAssignment(assignmentId) {
   state.assignmentId = assignmentId;
   const a = await getDoc(doc(db, "assignments", assignmentId));
   el("assignment-view-title").textContent = a.data().title;
+  renderAssignmentContext(a.data());
   show("view-assignment");
   loadSubmissions();
 }
@@ -458,7 +502,8 @@ async function loadSubmissions() {
          <div class="muted"><a href="${s.link}" target="_blank" rel="noopener">open in new tab</a></div>`
         : `<div class="muted"><a href="${s.link}" target="_blank" rel="noopener">${s.link}</a></div>`;
     row.innerHTML = `
-      <strong>${s.studentName}</strong>
+      <strong id="sub-name-${d.id}">${s.studentName}</strong>
+      <button type="button" class="secondary" data-edit-sub-name="${d.id}" data-uid="${s.studentUID}" style="margin-left:0.4rem;">Edit name</button>
       <span class="status-${s.status}"> — ${s.status}</span>
       ${linkBlock}
       <div id="detail-${d.id}"></div>
@@ -474,6 +519,31 @@ async function loadSubmissions() {
   }
   list.querySelectorAll("[data-review]").forEach((b) =>
     b.addEventListener("click", () => openReview(b.dataset.review)));
+
+  // Fix a garbled name right while reviewing the work, instead of having to
+  // go find the student in Enrolled Students first.
+  list.querySelectorAll("[data-edit-sub-name]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const submissionId = b.dataset.editSubName;
+      const nameEl = el(`sub-name-${submissionId}`);
+      const current = nameEl.textContent;
+      nameEl.innerHTML = `<input id="edit-sub-name-input-${submissionId}" value="${current}" style="width:auto; display:inline-block; margin-bottom:0;" />`;
+      const input = el(`edit-sub-name-input-${submissionId}`);
+      input.focus();
+      input.select();
+      let saved = false;
+      const save = async () => {
+        if (saved) return;
+        saved = true;
+        const name = input.value.trim();
+        if (name && name !== current) {
+          await renameStudentEverywhere(b.dataset.uid, name);
+        }
+        loadSubmissions();
+      };
+      input.addEventListener("keydown", (e) => { if (e.key === "Enter") save(); });
+      input.addEventListener("blur", save);
+    }));
 }
 el("submission-filter").addEventListener("change", loadSubmissions);
 
