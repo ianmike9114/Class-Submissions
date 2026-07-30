@@ -9,6 +9,12 @@ Don't explore the codebase first — `CLAUDE.md` in the repo root has the
 full task map (change → exact file) and architecture summary. Read that
 file, jump straight to the named file(s).
 
+**Any UI/CSS/markup change → read `DESIGN_SYSTEM.md` first, not
+`css/style.css`.** It has every pattern (cards, buttons, collapsible
+details/summary, tables, status colors, embed iframes) as copy-pasteable
+HTML with the exact class names — written specifically so you don't have
+to re-derive the design system from the stylesheet every session.
+
 Quick pointers:
 - Teacher-side change → `js/teacher.js` (+ `teacher.html` if UI markup)
 - Student-side change → `js/student.js` (+ `student.html` if UI markup)

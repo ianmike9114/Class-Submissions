@@ -89,7 +89,7 @@ tried first and silently failed cross-browser.
 | Enrolled students list (subject-wide from `#view-subject`, or one section only from `#view-section`'s own "View Enrolled Students" button) + removing a wrong/duplicate enrollment | `js/teacher.js` (`openEnrolled(onlySectionId)` - omit the arg for subject-wide, pass `state.sectionId` for one section; `deleteDoc` on the Remove button) + `teacher.html` (`#view-enrolled`, shared by both entry points) |
 | Join flow / pick-your-name-from-roster | `js/student.js` (`join-form` handler, `renderNamePicker()`, `claimedNames()`, `enroll()`) + `student.html`'s `#join-name-picker` — only kicks in when the section already has a roster (`sections.roster`), otherwise falls back to using the Google account name |
 | Student's Assignments list grouping by subject | `js/student.js` (`loadEverything()` — groups by `subjectName` via a `sectionId → subjectName` map built from the student's own enrollments) |
-| Styling | `css/style.css` |
+| Styling / UI patterns (cards, buttons, tables, collapsibles, status colors) | `DESIGN_SYSTEM.md` first — has every pattern with copy-pasteable HTML, avoids re-reading `css/style.css` from scratch. Only open `css/style.css` itself for a genuinely new pattern not covered there. |
 | Firestore deploy config | `firebase.json`, `.firebaserc` |
 | Setup/deploy instructions | `README.md` |
 
