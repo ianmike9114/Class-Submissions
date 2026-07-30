@@ -81,40 +81,55 @@ el("join-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const code = el("join-code").value.trim().toUpperCase();
   const msg = el("join-message");
+  const btn = e.target.querySelector("button");
   msg.textContent = "";
   el("join-name-picker").innerHTML = "";
 
-  const q = query(collection(db, "sections"), where("joinCode", "==", code));
-  const snap = await getDocs(q);
-  if (snap.empty) {
-    msg.textContent = "No class found with that code.";
-    return;
-  }
-  const sectionDoc = snap.docs[0];
-  const section = sectionDoc.data();
-
-  const already = await getDocs(query(
-    collection(db, "enrollments"),
-    where("sectionId", "==", sectionDoc.id),
-    where("studentUID", "==", currentUser.uid)
-  ));
-  if (!already.empty) {
-    msg.textContent = "You're already enrolled in this class.";
+  if (!currentUser) {
+    msg.textContent = "Still loading your account - wait a moment and try again.";
     return;
   }
 
-  const subject = (await getDoc(doc(db, "subjects", section.subjectId))).data();
+  btn.disabled = true;
+  btn.textContent = "Joining...";
+  try {
+    const q = query(collection(db, "sections"), where("joinCode", "==", code));
+    const snap = await getDocs(q);
+    if (snap.empty) {
+      msg.textContent = "No class found with that code.";
+      return;
+    }
+    const sectionDoc = snap.docs[0];
+    const section = sectionDoc.data();
 
-  if (!section.roster || section.roster.length === 0) {
-    await enroll(sectionDoc.id, section, subject, currentUser.displayName || currentUser.email);
-    e.target.reset();
-    msg.textContent = `Joined ${section.sectionName}!`;
-    loadEverything();
-    return;
+    const already = await getDocs(query(
+      collection(db, "enrollments"),
+      where("sectionId", "==", sectionDoc.id),
+      where("studentUID", "==", currentUser.uid)
+    ));
+    if (!already.empty) {
+      msg.textContent = "You're already enrolled in this class.";
+      return;
+    }
+
+    const subject = (await getDoc(doc(db, "subjects", section.subjectId))).data();
+
+    if (!section.roster || section.roster.length === 0) {
+      await enroll(sectionDoc.id, section, subject, currentUser.displayName || currentUser.email);
+      e.target.reset();
+      msg.textContent = `Joined ${section.sectionName}!`;
+      loadEverything();
+      return;
+    }
+
+    pendingJoin = { sectionDoc, section, subject };
+    renderNamePicker();
+  } catch (err) {
+    msg.textContent = "Join failed: " + err.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Join";
   }
-
-  pendingJoin = { sectionDoc, section, subject };
-  renderNamePicker();
 });
 
 // ---------- load classes + assignments + submissions ----------
