@@ -70,6 +70,7 @@ tried first and silently failed cross-browser.
 | Inline submission preview (which links embed vs. fall back to a plain link) | `js/embed.js` (`toEmbedUrl()`) |
 | Roster seeding (per section) / Records gradebook grid (grouped by component - Written Work / Performance Task) | `js/teacher.js` (`renderRosterPreview()`, `loadRecords()`) + `teacher.html` (`#view-records`) — reuses `js/class-record.js`'s `loadWorkbook()`/`totalScore()`, no new file |
 | Home button (jump to `view-subjects` from any depth) | `teacher.html`'s header `#go-home` + `js/teacher.js`'s listener (same body as `back-to-subjects`) |
+| In-app-browser sign-in warning (Messenger/Instagram/Line/TikTok links) | `index.html`'s inline module script, `isInAppBrowser()` (user-agent sniff) + `#in-app-browser-warning` banner - Google blocks OAuth inside these embedded WebViews on purpose (`disallowed_useragent`), can't be bypassed, only worked around by pointing the user at a real browser (Android gets an `intent://` "Open in Chrome" button, everyone gets "Copy link") |
 | Settings panel toggle (Gemini key, hidden by default) | `teacher.html`'s header `#toggle-settings` button + `#settings-panel` (starts with `hidden` class, independent of the `show()` view stack so it stays open/closed across navigation) |
 | Enrolled students list (subject-wide, all its sections combined - Name/Gmail/Section) + removing a wrong/duplicate enrollment | `js/teacher.js` (`openEnrolled()`, `deleteDoc` on the Remove button) + `teacher.html` (`#view-enrolled`, "View Enrolled Students" button in `#view-subject`) |
 | Join flow / pick-your-name-from-roster | `js/student.js` (`join-form` handler, `renderNamePicker()`, `claimedNames()`, `enroll()`) + `student.html`'s `#join-name-picker` — only kicks in when the section already has a roster (`sections.roster`), otherwise falls back to using the Google account name |
@@ -149,6 +150,15 @@ tried first and silently failed cross-browser.
   would sweep those up as fake students. Don't loosen this check.
 - No real-time listeners (`onSnapshot`) — lists refresh on load/action, not
   live. Fine at single-class scale; add if it ever matters.
+- Sign-in genuinely cannot work inside Facebook/Messenger/Instagram/Line/
+  TikTok's embedded in-app browsers — Google's OAuth rejects the request
+  itself (`disallowed_useragent`), this app has zero ability to bypass it.
+  `index.html`'s `isInAppBrowser()` detects the common ones and shows an
+  escape-hatch banner (Copy link, and on Android an `intent://` "Open in
+  Chrome" button) instead of leaving the user on a dead sign-in screen. The
+  UA-sniff list is best-effort, not exhaustive — add more app signatures to
+  it if a teacher reports the same blank-screen symptom from a different
+  app's share link.
 - Removing an enrollment (the "Remove" button in Enrolled Students,
   `js/teacher.js`) only deletes that `enrollments` doc — same
   non-cascading simplification as the subject/section/assignment deletes.

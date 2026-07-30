@@ -11,6 +11,15 @@
     <div class="card" style="max-width: 400px; margin: 0 auto;">
       <h1>Class Submissions</h1>
       <p class="muted">Sign in with your Gmail to submit or check work.</p>
+
+      <div id="in-app-browser-warning" class="hidden" style="text-align:left; border:1px solid var(--amber); border-radius:6px; padding:0.75rem; margin-bottom:1rem;">
+        <p><strong>Can't sign in here</strong></p>
+        <p class="muted">This looks like it's opened inside an app's built-in browser (e.g. Messenger), which Google blocks for sign-in. Open this page in Chrome or your regular browser instead:</p>
+        <button type="button" id="open-in-chrome" class="hidden" style="margin-bottom:0.5rem;">Open in Chrome</button>
+        <button type="button" id="copy-link">Copy link</button>
+        <p class="muted">Or tap the &#8942;/&#9776; menu above and choose "Open in Chrome"/"Open in browser".</p>
+      </div>
+
       <div id="google-signin-button" style="display:flex; justify-content:center;"></div>
       <p id="error" class="muted" style="color:#b91c1c;"></p>
     </div>
@@ -34,6 +43,38 @@
     initGoogleSignIn("google-signin-button", (e) => {
       document.getElementById("error").textContent = e.message;
     });
+
+    // Facebook/Messenger, Instagram, Line, TikTok etc. open shared links in
+    // their own embedded WebView, which Google's OAuth deliberately blocks
+    // (disallowed_useragent) - can't be bypassed from this page, only worked
+    // around by getting the user into a real browser. Detect the common ones
+    // by user-agent and point the user at an escape hatch instead of leaving
+    // them on a blank/broken sign-in screen with no explanation.
+    function isInAppBrowser() {
+      return /FBAN|FBAV|FB_IAB|FBIOS|Instagram|Line\/|MicroMessenger|TikTok|musical_ly|Twitter/i.test(navigator.userAgent || "");
+    }
+
+    if (isInAppBrowser()) {
+      document.getElementById("in-app-browser-warning").classList.remove("hidden");
+
+      if (/Android/i.test(navigator.userAgent)) {
+        const openBtn = document.getElementById("open-in-chrome");
+        openBtn.classList.remove("hidden");
+        openBtn.addEventListener("click", () => {
+          const bare = location.href.replace(/^https?:\/\//, "");
+          window.location.href = `intent://${bare}#Intent;scheme=https;package=com.android.chrome;end`;
+        });
+      }
+
+      document.getElementById("copy-link").addEventListener("click", async (e) => {
+        try {
+          await navigator.clipboard.writeText(location.href);
+          e.target.textContent = "Copied!";
+        } catch {
+          alert("Copy this link:\n" + location.href);
+        }
+      });
+    }
   </script>
 </body>
 </html>
