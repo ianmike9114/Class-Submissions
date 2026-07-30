@@ -371,9 +371,41 @@ async function openSection(sectionId) {
   loadAssignments();
 }
 
+function renderActivitiesSummary(assignments) {
+  const container = el("activities-summary");
+  if (assignments.length === 0) {
+    container.innerHTML = "";
+    return;
+  }
+  const groups = [
+    ["Written Work", assignments.filter((a) => a.component === "written")],
+    ["Performance Task", assignments.filter((a) => a.component === "performance")],
+  ];
+  const rows = groups
+    .filter(([, items]) => items.length > 0)
+    .map(([label, items]) => `
+      <tr class="gender-group"><td colspan="3">${label}</td></tr>
+      ${items.map((a) => `
+        <tr>
+          <td>${a.title}</td>
+          <td>${a.totalPoints}</td>
+          <td>${a.dueDate || "—"}</td>
+        </tr>`).join("")}`)
+    .join("");
+  container.innerHTML = `
+    <details class="card">
+      <summary><strong>Activities overview (${assignments.length})</strong></summary>
+      <table class="records-grid" style="margin-top:0.75rem;">
+        <thead><tr><th>Title</th><th>Points</th><th>Due</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </details>`;
+}
+
 async function loadAssignments() {
   const q = query(collection(db, "assignments"), where("sectionId", "==", state.sectionId));
   const [snap, counts] = await Promise.all([getDocs(q), getPendingCounts()]);
+  renderActivitiesSummary(snap.docs.map((d) => d.data()));
   const list = el("assignments-list");
   list.innerHTML = "";
   snap.forEach((d) => {

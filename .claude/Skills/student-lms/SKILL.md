@@ -40,6 +40,7 @@ Quick pointers:
 - Delete a subject/section/assignment (cascades to everything under it) → `js/teacher.js`'s `cascadeDeleteSubject()`/`cascadeDeleteSection()`/`cascadeDeleteAssignment()` + shared `deleteWhere()` helper — see `CLAUDE.md`
 - Student fixing their own garbled name → `js/student.js`'s inline edit on "My classes" cards (`loadEverything()`) + `firestore.rules`'s `enrollments` update rule (studentName-only)
 - Records grid Written Work / Performance Task grouping → `js/teacher.js`'s `loadRecords()` (plain `component` field, NOT weighted-grade math - see `CLAUDE.md`, don't build that without being asked)
+- Section-wide activities overview (all assignments, grouped Written Work / Performance Task, title+points+due, for eyeballing/encoding into the Class Record) → `js/teacher.js`'s `renderActivitiesSummary()` (called from `loadAssignments()`), `teacher.html`'s `#activities-summary` — collapsed by default, distinct from the per-assignment scores summary and the Records grid
 - Rubric reference file (Drive/Docs link, shown embedded on the Review screen for the teacher's own eyes only — not parsed, doesn't feed any scoring) → `assignments.rubricReferenceLink`, rendered in `js/teacher.js`'s `openReview()`
 - Access control → `firestore.rules`
 - Deploy/setup steps → `README.md`
