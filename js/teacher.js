@@ -112,7 +112,7 @@ async function openSubject(subjectId) {
   state.sectionId = null;
   state.assignmentId = null;
   const subject = (await getDoc(doc(db, "subjects", subjectId))).data();
-  el("subject-view-name").textContent = `${subject.name} (SY ${subject.schoolYear || "—"} · Term ${subject.term || "—"})`;
+  el("subject-view-name").textContent = `${subject.name} (${subject.gradeLevel || "—"} — SY ${subject.schoolYear || "—"} · Term ${subject.term || "—"})`;
   show("view-subject");
   loadSections();
 }
