@@ -127,16 +127,20 @@ async function loadSections() {
     const row = document.createElement("div");
     row.className = "card";
     row.innerHTML = `
-      <strong>${s.sectionName}</strong>
+      <strong id="section-name-${d.id}">${s.sectionName}</strong>
       <span class="muted"> — join code: <code>${s.joinCode}</code></span>
+      <div id="section-edit-${d.id}"></div>
       <div style="margin-top:0.5rem;">
         <button data-open="${d.id}">Open</button>
+        <button class="secondary" data-edit-section="${d.id}">Edit name</button>
         <button class="danger" data-delete-section="${d.id}">Delete</button>
       </div>`;
     list.appendChild(row);
   });
   list.querySelectorAll("[data-open]").forEach((b) =>
     b.addEventListener("click", () => openSection(b.dataset.open)));
+  list.querySelectorAll("[data-edit-section]").forEach((b) =>
+    b.addEventListener("click", () => editSectionName(b.dataset.editSection)));
   list.querySelectorAll("[data-delete-section]").forEach((b) =>
     b.addEventListener("click", async () => {
       const ok = confirm(
@@ -146,6 +150,22 @@ async function loadSections() {
       await deleteDoc(doc(db, "sections", b.dataset.deleteSection));
       loadSections();
     }));
+}
+
+async function editSectionName(sectionId) {
+  const s = (await getDoc(doc(db, "sections", sectionId))).data();
+  const container = el(`section-edit-${sectionId}`);
+  container.innerHTML = `
+    <label>Section name</label>
+    <input id="edit-section-name-${sectionId}" value="${s.sectionName}" />
+    <button data-save-section="${sectionId}">Save</button>`;
+
+  container.querySelector("[data-save-section]").addEventListener("click", async () => {
+    const name = el(`edit-section-name-${sectionId}`).value.trim();
+    if (!name) return;
+    await updateDoc(doc(db, "sections", sectionId), { sectionName: name });
+    loadSections();
+  });
 }
 
 el("add-section-form").addEventListener("submit", async (e) => {
