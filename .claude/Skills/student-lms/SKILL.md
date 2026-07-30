@@ -17,6 +17,7 @@ Quick pointers:
 - Roster upload / Records gradebook grid → `js/teacher.js` (reuses `js/class-record.js`'s `loadWorkbook()`), `teacher.html`'s `#view-records`
 - Home button → `teacher.html`'s `#go-home`, `js/teacher.js`'s listener
 - In-app-browser sign-in warning (Messenger/Instagram/etc. block Google OAuth) → `index.html`'s `isInAppBrowser()` + `#in-app-browser-warning`
+- Sign-in failure notification / duplicate-enrollment prevention → `index.html`'s `showError()`, `js/student.js`'s `join-form` handler
 - CodePen/embed patterns → `js/embed.js`
 - Image AI-check vision fetch (best-effort, has a fallback) → `js/gemini.js`'s `tryFetchImagePart()`
 - In-app camera photo capture (student, "image" and "document" assignments) → `js/student.js`'s `compressImage()` (saves `submissions.photoData`, compressed to fit Firestore's 1MiB doc cap - no Storage)

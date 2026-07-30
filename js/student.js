@@ -63,10 +63,12 @@ async function renderNamePicker() {
         renderNamePicker();
         return;
       }
+      const sectionName = pendingJoin.section.sectionName;
       await enroll(pendingJoin.sectionDoc.id, pendingJoin.section, pendingJoin.subject, chosen);
       pendingJoin = null;
       el("join-form").reset();
       container.innerHTML = "";
+      el("join-message").textContent = `Joined ${sectionName} as ${chosen}!`;
       loadEverything();
     } catch (err) {
       el("join-name-message").textContent = "Join failed: " + err.message;
@@ -90,11 +92,23 @@ el("join-form").addEventListener("submit", async (e) => {
   }
   const sectionDoc = snap.docs[0];
   const section = sectionDoc.data();
+
+  const already = await getDocs(query(
+    collection(db, "enrollments"),
+    where("sectionId", "==", sectionDoc.id),
+    where("studentUID", "==", currentUser.uid)
+  ));
+  if (!already.empty) {
+    msg.textContent = "You're already enrolled in this class.";
+    return;
+  }
+
   const subject = (await getDoc(doc(db, "subjects", section.subjectId))).data();
 
   if (!section.roster || section.roster.length === 0) {
     await enroll(sectionDoc.id, section, subject, currentUser.displayName || currentUser.email);
     e.target.reset();
+    msg.textContent = `Joined ${section.sectionName}!`;
     loadEverything();
     return;
   }

@@ -21,7 +21,7 @@
       </div>
 
       <div id="google-signin-button" style="display:flex; justify-content:center;"></div>
-      <p id="error" class="muted" style="color:#b91c1c;"></p>
+      <div id="error" class="hidden" style="text-align:left; border:1px solid #b91c1c; border-radius:6px; padding:0.75rem; margin-top:1rem; color:#b91c1c;"></div>
     </div>
   </main>
 
@@ -34,14 +34,25 @@
     import { auth, TEACHER_EMAIL } from "./js/firebase-config.js";
     import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
+    const errorEl = document.getElementById("error");
+    function showError(message) {
+      errorEl.textContent = message;
+      errorEl.classList.remove("hidden");
+    }
+
+    // Firebase auth error codes we're likely to actually see here, translated
+    // to plain language - anything not in this list falls back to e.message.
+    const FRIENDLY_ERRORS = {
+      "auth/network-request-failed": "Network error - check your internet connection and try again.",
+      "auth/invalid-credential": "Sign-in failed - please try again.",
+      "auth/user-disabled": "This account has been disabled.",
+      "auth/too-many-requests": "Too many attempts - wait a bit and try again.",
+    };
+
     onAuthStateChanged(auth, (user) => {
       if (user) {
         window.location.href = user.email === TEACHER_EMAIL ? "teacher.html" : "student.html";
       }
-    });
-
-    initGoogleSignIn("google-signin-button", (e) => {
-      document.getElementById("error").textContent = e.message;
     });
 
     // Facebook/Messenger, Instagram, Line, TikTok etc. open shared links in
@@ -74,6 +85,38 @@
           alert("Copy this link:\n" + location.href);
         }
       });
+    }
+
+    // Three distinct "can't sign in" failure modes, each silent before this:
+    // (1) the GIS script itself never loaded (blocked/network issue) - would
+    // otherwise throw an uncaught error the user never sees; (2) the sign-in
+    // button renders but the Firebase credential exchange fails; (3) nothing
+    // ever renders and nothing ever throws (slow network, third-party cookie
+    // issues) - caught by the timeout below. Skip the generic messages when
+    // isInAppBrowser() already explained it, to avoid two conflicting banners.
+    if (typeof window.google === "undefined" || !window.google.accounts) {
+      if (!isInAppBrowser()) {
+        showError("Sign-in couldn't load. Check your internet connection, then try refreshing this page.");
+      }
+    } else {
+      try {
+        initGoogleSignIn("google-signin-button", (e) => {
+          showError(FRIENDLY_ERRORS[e.code] || e.message || "Something went wrong signing in - please try again.");
+        });
+      } catch (e) {
+        if (!isInAppBrowser()) {
+          showError("Sign-in couldn't load (" + (e.message || "unknown error") + "). Try refreshing the page.");
+        }
+      }
+    }
+
+    if (!isInAppBrowser()) {
+      setTimeout(() => {
+        const rendered = document.getElementById("google-signin-button").children.length > 0;
+        if (!rendered && errorEl.classList.contains("hidden")) {
+          showError("Sign-in button is taking too long to load. Check your internet connection and try refreshing the page.");
+        }
+      }, 6000);
     }
   </script>
 </body>
