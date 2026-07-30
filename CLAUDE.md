@@ -68,8 +68,8 @@ tried first and silently failed cross-browser.
 | In-app camera photo capture (student, "image" and "document" assignments) | `js/student.js` (`compressImage()` — resizes/JPEG-compresses client-side to fit Firestore's 1MiB doc cap, saved as `submissions.photoData` base64 data URL, no Storage involved; `renderSubmitForm()`'s type check gates which assignment types show the camera input) + `teacher.html`/`js/teacher.js` (renders `<img>` preview instead of iframe when `photoData` is set) |
 | Delete a subject, section, or assignment | `js/teacher.js` (`loadSubjects()`/`loadSections()`/`loadAssignments()`'s delete buttons) — only removes that doc itself, does NOT cascade-delete what's under it (see limitations); subjects also have Archive as a non-destructive alternative |
 | Inline submission preview (which links embed vs. fall back to a plain link) | `js/embed.js` (`toEmbedUrl()`) |
-| Export published scores into the teacher's Class Record `.xlsx` | `js/class-record.js` (workbook read/match/write, client-side via SheetJS CDN script in `teacher.html`) |
 | Roster seeding (per section) / Records gradebook grid (grouped by component - Written Work / Performance Task) | `js/teacher.js` (`renderRosterPreview()`, `loadRecords()`) + `teacher.html` (`#view-records`) — reuses `js/class-record.js`'s `loadWorkbook()`/`totalScore()`, no new file |
+| Home button (jump to `view-subjects` from any depth) | `teacher.html`'s header `#go-home` + `js/teacher.js`'s listener (same body as `back-to-subjects`) |
 | Enrolled students list (subject-wide, all its sections combined - Name/Gmail/Section) | `js/teacher.js` (`openEnrolled()`) + `teacher.html` (`#view-enrolled`, "View Enrolled Students" button in `#view-subject`) — distinct from the roster-matched Records grid, this is just "who has joined", no roster upload involved |
 | Student's Assignments list grouping by subject | `js/student.js` (`loadEverything()` — groups by `subjectName` via a `sectionId → subjectName` map built from the student's own enrollments) |
 | Styling | `css/style.css` |
@@ -120,12 +120,14 @@ tried first and silently failed cross-browser.
   transmutation math. Teacher confirmed raw per-assignment totals are
   enough; they finalize grades themselves in their real Class Record. Do
   not build weighted/transmuted grade computation without being asked.
-- No roster CSV import — students self-enroll via section join-code only
-  (Class Record export is one-way: app → file, not the reverse).
-- Class Record name matching is exact/case-insensitive only, and always
-  requires teacher confirmation in the match table before any write — see
-  `js/class-record.js`. Never make this auto-write without confirmation;
-  it's writing into the teacher's real gradebook.
+- No roster CSV import — students self-enroll via section join-code only.
+- **No Class Record `.xlsx` export.** Removed by request — the teacher
+  finalizes and encodes all final grades themselves in their real Class
+  Record; the app deliberately doesn't write scores into it. `js/class-record.js`
+  now only exposes `loadWorkbook()` (used by roster seeding, see above) and
+  `totalScore()` (used by the Records grid) — no `matchStudents()`/
+  `applyAndDownload()`, no export UI in `teacher.html`. Don't re-add an
+  export feature without being asked.
 - `js/class-record.js`'s `loadWorkbook()` row-walk stops on the first cell
   that isn't SheetJS type `"s"` (string), deliberately — not just "isn't
   empty". Confirmed against a real DepEd Class Record: unused rows below

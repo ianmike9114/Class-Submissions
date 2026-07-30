@@ -5,10 +5,9 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getGeminiKey, setGeminiKey, runRubricCheck } from "./gemini.js";
 import { toEmbedUrl } from "./embed.js";
-import { loadWorkbook, matchStudents, applyAndDownload, totalScore } from "./class-record.js";
+import { loadWorkbook, totalScore } from "./class-record.js";
 
 const state = { subjectId: null, sectionId: null, assignmentId: null };
-let exportState = { matches: [], rosterRows: [], scoreCol: "", fileBaseName: "" };
 
 function el(id) { return document.getElementById(id); }
 function genJoinCode() {
@@ -349,73 +348,6 @@ async function openReview(submissionId) {
   });
 }
 
-// ---------- export to Class Record (.xlsx) ----------
-el("export-config-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const msg = el("export-message");
-  msg.textContent = "";
-  el("export-match-table").innerHTML = "";
-  try {
-    const file = el("record-file").files[0];
-    if (!file) throw new Error("Choose a file first.");
-
-    const rosterRows = await loadWorkbook(file, {
-      sheet: el("record-sheet").value,
-      nameCol: el("record-name-col").value,
-      dataStartRow: el("record-start-row").value,
-    });
-    if (rosterRows.length === 0) {
-      throw new Error("No names found there - check the sheet name, column letter, and start row.");
-    }
-
-    const q = query(
-      collection(db, "submissions"),
-      where("assignmentId", "==", state.assignmentId),
-      where("status", "==", "published")
-    );
-    const snap = await getDocs(q);
-    const submissions = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    if (submissions.length === 0) throw new Error("No published submissions for this assignment yet.");
-
-    exportState = {
-      matches: matchStudents(submissions, rosterRows),
-      rosterRows,
-      scoreCol: el("record-score-col").value,
-      fileBaseName: file.name.replace(/\.xlsx$/i, ""),
-    };
-    renderMatchTable();
-  } catch (err) {
-    msg.textContent = err.message;
-  }
-});
-
-function renderMatchTable() {
-  const container = el("export-match-table");
-  const rows = exportState.matches.map((m, i) => `
-    <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; margin-bottom:0.4rem;">
-      <span>${m.studentName} <span class="muted">(score: ${m.score})</span></span>
-      <select data-match-idx="${i}">
-        <option value="">-- not found, skip --</option>
-        ${exportState.rosterRows.map((r) => `
-          <option value="${r.row}" ${r.row === m.matchedRow ? "selected" : ""}>${r.name} (row ${r.row})</option>
-        `).join("")}
-      </select>
-    </div>`).join("");
-
-  container.innerHTML = `${rows}<button id="export-apply">Apply &amp; Download</button>`;
-
-  container.querySelectorAll("[data-match-idx]").forEach((sel) => {
-    sel.addEventListener("change", () => {
-      const idx = Number(sel.dataset.matchIdx);
-      exportState.matches[idx].matchedRow = sel.value ? Number(sel.value) : null;
-    });
-  });
-
-  el("export-apply").addEventListener("click", () => {
-    applyAndDownload(exportState.matches, exportState.scoreCol, `${exportState.fileBaseName}-updated.xlsx`);
-  });
-}
-
 // ---------- roster (per-section, seeds the Records grid's rows) ----------
 let rosterPreviewNames = [];
 
@@ -553,6 +485,7 @@ function show(viewId) {
     el(v).classList.toggle("hidden", v !== viewId);
   });
 }
+el("go-home").addEventListener("click", () => { show("view-subjects"); loadSubjects(); });
 el("back-to-subjects").addEventListener("click", () => { show("view-subjects"); loadSubjects(); });
 el("back-to-subject").addEventListener("click", () => show("view-subject"));
 el("back-to-section").addEventListener("click", () => show("view-section"));

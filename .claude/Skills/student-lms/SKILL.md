@@ -14,8 +14,8 @@ Quick pointers:
 - Student-side change → `js/student.js` (+ `student.html` if UI markup)
 - AI rubric-check behavior (prompt, Gemini model, key storage) → `js/gemini.js`
 - Inline submission preview → `js/embed.js`
-- Class Record `.xlsx` export → `js/class-record.js`
 - Roster upload / Records gradebook grid → `js/teacher.js` (reuses `js/class-record.js`'s `loadWorkbook()`), `teacher.html`'s `#view-records`
+- Home button → `teacher.html`'s `#go-home`, `js/teacher.js`'s listener
 - CodePen/embed patterns → `js/embed.js`
 - Image AI-check vision fetch (best-effort, has a fallback) → `js/gemini.js`'s `tryFetchImagePart()`
 - In-app camera photo capture (student, "image" and "document" assignments) → `js/student.js`'s `compressImage()` (saves `submissions.photoData`, compressed to fit Firestore's 1MiB doc cap - no Storage)
@@ -53,7 +53,7 @@ Reminders specific to this repo:
 - After any change to `firestore.rules`, remind the user they need to
   `firebase deploy --only firestore:rules` — local edits alone don't take
   effect.
-- Class Record export (`js/class-record.js`) writes into the teacher's
-  real gradebook file. Never auto-write a match without teacher
-  confirmation in the UI's match table first — this is a deliberate
-  correctness gate, not something to streamline away.
+- **No Class Record `.xlsx` export** — removed by request, teacher
+  finalizes/encodes all grades themselves. `js/class-record.js` only has
+  `loadWorkbook()` (roster seeding) and `totalScore()` (Records grid) left.
+  Don't re-add without being asked.
