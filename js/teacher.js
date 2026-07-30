@@ -330,9 +330,11 @@ async function loadSubmissions() {
     const row = document.createElement("div");
     row.className = "card";
     const embedUrl = toEmbedUrl(s.link);
-    const linkBlock = s.photoData
-      ? `<img src="${s.photoData}" class="photo-preview" />`
-      : embedUrl
+    const linkBlock = (s.photoPages && s.photoPages.length > 0)
+      ? `<div class="photo-thumbs">${s.photoPages.map((p) => `<a href="${p}" target="_blank" rel="noopener"><img src="${p}" /></a>`).join("")}</div>`
+      : s.photoData // legacy single-photo submissions made before multi-page support
+        ? `<img src="${s.photoData}" class="photo-preview" />`
+        : embedUrl
         ? `<iframe src="${embedUrl}" class="submission-preview"></iframe>
          <div class="muted"><a href="${s.link}" target="_blank" rel="noopener">open in new tab</a></div>`
         : `<div class="muted"><a href="${s.link}" target="_blank" rel="noopener">${s.link}</a></div>`;

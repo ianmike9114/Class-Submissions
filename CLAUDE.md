@@ -77,7 +77,7 @@ tried first and silently failed cross-browser.
 | Firebase project keys / teacher email constant (frontend) | `js/firebase-config.js` |
 | Who can read/write what in Firestore | `firestore.rules` |
 | AI rubric-check logic (prompt, Gemini model/params, key storage, image-vision fetch) | `js/gemini.js` (`runRubricCheck()`; `tryFetchImagePart()` for "image" assignments — best-effort, see limitations; `photoData` param sends an in-app camera capture directly as inline image data, no link needed) |
-| In-app camera photo capture (student, "image" and "document" assignments) | `js/student.js` (`compressImage()` — resizes/JPEG-compresses client-side to fit Firestore's 1MiB doc cap, saved as `submissions.photoData` base64 data URL, no Storage involved; `renderSubmitForm()`'s type check gates which assignment types show the camera input) + `teacher.html`/`js/teacher.js` (renders `<img>` preview instead of iframe when `photoData` is set) |
+| In-app camera photo capture, multi-page (student, "image" and "document" assignments) | `js/student.js` (`compressImage()` per photo, `pendingPhotos` Map + `renderPhotoThumbs()` — up to `MAX_PHOTOS` (3) pages per submission, each capped at `PER_PHOTO_MAX_LEN` chars so all of them together still fit Firestore's 1MiB doc cap; saved as `submissions.photoPages` string[] of base64 data URLs, no Storage involved; `renderSubmitForm()`'s type check gates which assignment types show the camera input) + `js/teacher.js` (`loadSubmissions()` renders a `.photo-thumbs` row when `photoPages` is set, falls back to the legacy single `photoData` field for submissions made before multi-page support) |
 | Delete a subject, section, or assignment | `js/teacher.js` (`loadSubjects()`/`loadSections()`/`loadAssignments()`'s delete buttons) — only removes that doc itself, does NOT cascade-delete what's under it (see limitations); subjects also have Archive as a non-destructive alternative |
 | Inline submission preview (which links embed vs. fall back to a plain link) | `js/embed.js` (`toEmbedUrl()`) |
 | Roster seeding (per section) / Records gradebook grid (grouped by component - Written Work / Performance Task) | `js/teacher.js` (`renderRosterPreview()`, `addRosterNames()` for manual typed/pasted entry, `loadRecords()`) + `teacher.html` (`#view-records`) — the Class Record `.xlsx` upload (`loadWorkbook()`, `js/class-record.js`) is still there as a "Or upload instead" fallback, but manual entry is the default path; `openSection()` preloads the section's already-saved roster into the same editable list so it's not a one-shot upload-only flow |
@@ -98,7 +98,7 @@ tried first and silently failed cross-browser.
 - `subjects` — name, gradeLevel, schoolYear (free text, e.g. "2026-2027"), term ("1"|"2"|"3"), archived. Old subjects from before Term/Year existed just show "—" for both — not backfilled.
 - `sections` — subjectId, sectionName, joinCode
 - `assignments` — subjectId, sectionId, title, instructions (free text shown to students - objective/output format/anything they need), instructionsLink (optional Drive/Docs link to an instructions file, embedded via `js/embed.js`'s `toEmbedUrl()` same as submission previews), component ("written" | "performance" - drives the Records grid's grouped header, older assignments without this land in a fallback "Other" group), dueDate, allowedFileTypes (a link-type hint, not an upload constraint), totalPoints (number - the score cap, teacher grades one raw number against this), rubricReferenceLink (optional Drive/Docs link to the teacher's own rubric PDF/Word, shown embedded on the Review screen for the teacher's reference only - not parsed, not used to compute anything)
-- `submissions` — assignmentId, studentUID, studentName, link (may be empty if `photoData` is used instead), photoData (optional - base64 `data:image/jpeg;base64,...` from in-app camera capture on "image" assignments, compressed client-side to fit the 1MiB Firestore doc cap; no Storage), status(pending/published — "ai-drafted" only appears on submissions graded before AI check was hidden), finalGrade{score, feedback} (score is a single number out of the assignment's `totalPoints`)
+- `submissions` — assignmentId, studentUID, studentName, link (may be empty if `photoPages` is used instead), photoPages (optional - string[] of base64 `data:image/jpeg;base64,...` pages from in-app camera capture on "image"/"document" assignments, up to `MAX_PHOTOS` (3), each compressed client-side to `PER_PHOTO_MAX_LEN` so the whole array still fits the 1MiB Firestore doc cap; no Storage; older submissions may instead have a single `photoData` string field - both are handled on display), status(pending/published — "ai-drafted" only appears on submissions graded before AI check was hidden), finalGrade{score, feedback} (score is a single number out of the assignment's `totalPoints`)
 - `enrollments` — studentUID, studentName (if the section had a roster at
   join time, this is the exact roster spelling the student picked via
   `js/student.js`'s name picker, not their Google account name - see
@@ -184,15 +184,18 @@ tried first and silently failed cross-browser.
   they rejoin (even picking a different roster name), those old
   submissions won't reappear under the new enrollment. Deliberate, not a
   bug — flag if this ever needs real cleanup.
-- In-app camera capture (`photoData`) only exists for "image" and
+- In-app camera capture (`photoPages`) only exists for "image" and
   "document" assignments, as an alternative to pasting a link — not a
-  general file-upload feature.
-  `js/student.js`'s `compressImage()` resizes to max 1280px and drops JPEG
-  quality until the base64 string is under ~700KB, to stay well inside
-  Firestore's 1MiB per-document cap alongside the rest of the submission's
-  fields. Very detailed/high-res photos (e.g. dense handwriting) can lose
-  some sharpness to this compression — if that's ever a problem, the
-  student can still fall back to the Drive-link path instead.
+  general file-upload feature. Capped at `MAX_PHOTOS` (3) pages per
+  submission — enough for a typical multi-page handwritten answer, but not
+  unlimited (shared 1MiB Firestore doc budget across however many pages
+  are added). `js/student.js`'s `compressImage()` resizes each photo to
+  max 1280px and drops JPEG quality until it's under `PER_PHOTO_MAX_LEN`
+  (300,000 chars/photo, so 3 photos stay well inside the 1MiB cap
+  alongside the rest of the submission's fields). Very detailed/high-res
+  photos (e.g. dense handwriting) can lose some sharpness to this
+  compression — if that's ever a problem, the student can still fall back
+  to the Drive-link path instead.
 
 ## Conventions
 

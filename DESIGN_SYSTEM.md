@@ -117,6 +117,24 @@ plain `<a href>` in that case, see any existing call site for the pattern).
 ```
 For in-app camera captures — `max-width:100%`, bordered.
 
+## Photo thumbnail row (multi-page camera submissions)
+
+```html
+<div class="photo-thumbs">
+  <div class="photo-thumb">
+    <img src="${dataUrl}" />
+    <button type="button" data-remove-photo="${i}">x</button>
+  </div>
+</div>
+```
+100x100 cropped thumbnails in a wrapping flex row, small circular remove
+button top-right — used on the student side while building a multi-page
+submission (`js/student.js`'s `renderPhotoThumbs()`). On the teacher's
+read-only submission-review side, wrap each thumb in `<a href="${dataUrl}"
+target="_blank"><img></a>` instead of a remove button (`.photo-thumbs a
+img` bumps them to 150x150, no remove control needed there) — see
+`js/teacher.js`'s `loadSubmissions()`.
+
 ## Hiding an element
 
 `class="hidden"` → `display: none !important`. This is the ONLY

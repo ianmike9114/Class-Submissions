@@ -220,12 +220,19 @@ const LINK_HINTS = {
   video: "Paste a YouTube link (unlisted is fine)",
 };
 
+// Multiple photos share one Firestore document's 1MiB cap, so each photo
+// gets a smaller slice than the old single-photo budget (700,000 chars) -
+// MAX_PHOTOS * PER_PHOTO_MAX_LEN stays comfortably under the cap with room
+// left for the submission doc's other fields.
+const MAX_PHOTOS = 3;
+const PER_PHOTO_MAX_LEN = 300000;
+
 function renderSubmitForm(assignmentId, type) {
   const photoBlock = (type === "image" || type === "document") ? `
-      <label>Or take/upload a photo</label>
-      <input type="file" accept="image/*" capture="environment" class="submission-photo" />
-      <img class="photo-preview hidden" />
-      <p class="muted">Photo is compressed and saved directly - skip the link above if you use this. For full-quality photos, check if your teacher gave a shared folder link in the Instructions above - upload there instead and paste that file's link.</p>` : "";
+      <label>Or take/upload photos (up to ${MAX_PHOTOS} pages - add one at a time for back-to-back work)</label>
+      <input type="file" accept="image/*" capture="environment" class="submission-photo" data-assignment="${assignmentId}" />
+      <div class="photo-thumbs" data-thumbs="${assignmentId}"></div>
+      <p class="muted">Each photo is compressed and saved directly - skip the link above if you use this. For full-quality photos, check if your teacher gave a shared folder link in the Instructions above - upload there instead and paste that file's link.</p>` : "";
   return `
     <form class="submit-form" data-assignment="${assignmentId}">
       <label>Submission link</label>
@@ -239,9 +246,9 @@ function renderSubmitForm(assignmentId, type) {
 // Resizes/compresses a photo client-side so it fits in a Firestore document
 // (1MiB doc cap) - there's no Storage in this app, the photo is saved
 // straight into the submission doc as a base64 data URL. Shrinks dimensions
-// first, then quality, until the encoded string is comfortably under the cap.
-function compressImage(file) {
-  const MAX_DATA_URL_LEN = 700000;
+// first, then quality, until the encoded string is comfortably under maxLen.
+function compressImage(file, maxLen = PER_PHOTO_MAX_LEN) {
+  const MAX_DATA_URL_LEN = maxLen;
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error("Couldn't read that photo."));
@@ -279,22 +286,46 @@ function compressImage(file) {
   });
 }
 
+// assignmentId -> string[] of already-compressed photo data URLs, in the
+// order the student added them (i.e. page order).
+const pendingPhotos = new Map();
+
+function renderPhotoThumbs(assignmentId) {
+  const container = document.querySelector(`[data-thumbs="${assignmentId}"]`);
+  if (!container) return;
+  const photos = pendingPhotos.get(assignmentId) || [];
+  container.innerHTML = photos.map((src, i) => `
+    <div class="photo-thumb">
+      <img src="${src}" />
+      <button type="button" data-remove-photo="${i}">x</button>
+    </div>`).join("");
+  container.querySelectorAll("[data-remove-photo]").forEach((b) =>
+    b.addEventListener("click", () => {
+      photos.splice(Number(b.dataset.removePhoto), 1);
+      renderPhotoThumbs(assignmentId);
+    }));
+}
+
 function attachSubmitHandlers() {
   document.querySelectorAll(".submission-photo").forEach((input) => {
     input.addEventListener("change", async () => {
+      const assignmentId = input.dataset.assignment;
       const file = input.files[0];
-      const preview = input.parentElement.querySelector(".photo-preview");
+      input.value = ""; // let the same input capture another page next
       if (!file) return;
-      delete input.dataset.compressed;
-      preview.classList.add("hidden");
+
+      const photos = pendingPhotos.get(assignmentId) || [];
+      if (photos.length >= MAX_PHOTOS) {
+        alert(`Up to ${MAX_PHOTOS} pages only - remove one first if you need to swap.`);
+        return;
+      }
       try {
         const dataUrl = await compressImage(file);
-        input.dataset.compressed = dataUrl;
-        preview.src = dataUrl;
-        preview.classList.remove("hidden");
+        photos.push(dataUrl);
+        pendingPhotos.set(assignmentId, photos);
+        renderPhotoThumbs(assignmentId);
       } catch (err) {
         alert(err.message);
-        input.value = "";
       }
     });
   });
@@ -305,10 +336,9 @@ function attachSubmitHandlers() {
       const assignmentId = form.dataset.assignment;
       const btn = form.querySelector("button");
       const link = form.querySelector(".submission-link").value.trim();
-      const photoInput = form.querySelector(".submission-photo");
-      const photoData = photoInput?.dataset.compressed || "";
+      const photoPages = pendingPhotos.get(assignmentId) || [];
 
-      if (!link && !photoData) {
+      if (!link && photoPages.length === 0) {
         alert("Add a link or take a photo first.");
         return;
       }
@@ -322,10 +352,11 @@ function attachSubmitHandlers() {
           studentUID: currentUser.uid,
           studentName: currentUser.displayName || currentUser.email,
           link,
-          photoData,
+          photoPages,
           status: "pending",
           submittedAt: Date.now(),
         });
+        pendingPhotos.delete(assignmentId);
         loadEverything();
       } catch (err) {
         alert("Submit failed: " + err.message);
