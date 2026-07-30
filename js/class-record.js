@@ -34,7 +34,3 @@ export async function loadWorkbook(file, { sheet, nameCol, dataStartRow }) {
   }
   return rows;
 }
-
-export function totalScore(scorePerCriterion) {
-  return Object.values(scorePerCriterion || {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
-}

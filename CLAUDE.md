@@ -7,12 +7,21 @@ Guidance for Claude Code working in this repo.
 Static site (GitHub Pages) + Firebase **Auth + Firestore only** (free
 Spark plan — no credit card, ever). Students sign in with Gmail, submit a
 **link** (Google Doc/PDF, CodePen or GitHub Gist, Drive, or YouTube — no
-file uploads) per subject/section/assignment. Teacher runs an AI rubric-check
-that calls Gemini **directly from the browser** (teacher's own key,
-Settings box, localStorage only) to draft a score + feedback per
-criterion, then reviews/edits and publishes to the student. Single teacher
-= the only admin, hardcoded by email — no multi-admin system, no password
-system (Google Sign-In only).
+file uploads) per subject/section/assignment. Teacher grades each
+submission with a single score out of the assignment's total points, with
+an optional Drive/Docs rubric-reference link shown alongside the score box
+for their own use, then publishes to the student. Single teacher = the
+only admin, hardcoded by email — no multi-admin system, no password system
+(Google Sign-In only).
+
+**AI rubric-check is hidden, not deleted.** `js/teacher.js`'s
+`AI_CHECK_ENABLED` flag (currently `false`) gates the "Run AI Check"
+button, the Settings gear (only the Gemini key box lives there today), and
+the "AI drafted" filter option — flip it back to `true` to restore all
+three. `js/gemini.js` (`runRubricCheck()`, calls Gemini directly from the
+browser with the teacher's own key) is untouched underneath. Hidden
+because per-call Gemini cost wasn't worth it for real usage; see the
+grading-model note below for why re-enabling isn't a pure flip.
 
 **No Firebase Storage, no Cloud Functions — deliberately.** Both require
 the paid Blaze plan just to exist, even at zero usage, which was a hard
@@ -59,7 +68,10 @@ tried first and silently failed cross-browser.
 
 | Change | Edit |
 |---|---|
-| Teacher dashboard UI/behavior (subjects/sections/assignments/rubric builder/submissions review/publish/Settings) | `js/teacher.js` + `teacher.html` |
+| Teacher dashboard UI/behavior (subjects/sections/assignments/submissions review/publish/Settings) | `js/teacher.js` + `teacher.html` |
+| Grading (single score out of an assignment's total points, optional rubric-reference link/embed on Review) | `js/teacher.js` (`openReview()`, `totalPoints` on `assignments`, `finalGrade{score,feedback}` on `submissions`) — replaced the old per-criterion rubric builder; see limitations |
+| AI rubric-check on/off | `js/teacher.js`'s `AI_CHECK_ENABLED` flag (top of file) — hidden by default, code (`js/gemini.js`) untouched |
+| School Year / Term on a Subject | `js/teacher.js` (`add-subject-form` handler, `loadSubjects()`, `openSubject()`) + `teacher.html`'s `#subject-year`/`#subject-term` — one Subject per term, teacher creates a new one each term |
 | Student dashboard UI/behavior (join class/submit a link/view results) | `js/student.js` + `student.html` |
 | Google Sign-In / role routing (teacher vs student) | `js/auth.js` (uses Google Identity Services directly + `signInWithCredential`, not Firebase's own popup/redirect — see note below) |
 | Firebase project keys / teacher email constant (frontend) | `js/firebase-config.js` |
@@ -83,10 +95,10 @@ tried first and silently failed cross-browser.
 
 ## Data model (Firestore)
 
-- `subjects` — name, gradeLevel, archived
+- `subjects` — name, gradeLevel, schoolYear (free text, e.g. "2026-2027"), term ("1"|"2"|"3"), archived. Old subjects from before Term/Year existed just show "—" for both — not backfilled.
 - `sections` — subjectId, sectionName, joinCode
-- `assignments` — subjectId, sectionId, title, instructions (free text shown to students - objective/output format/anything they need, not used by the AI check, just display), instructionsLink (optional Drive/Docs link to an instructions file, embedded via `js/embed.js`'s `toEmbedUrl()` same as submission previews), component ("written" | "performance" - drives the Records grid's grouped header, older assignments without this land in a fallback "Other" group), dueDate, allowedFileTypes (a link-type hint, not an upload constraint), rubric[{criterion, maxPoints}], rubricReferenceLink (optional - extra context given to the AI check, does NOT change what's actually scored, see `js/gemini.js`)
-- `submissions` — assignmentId, studentUID, studentName, link (may be empty if `photoData` is used instead), photoData (optional - base64 `data:image/jpeg;base64,...` from in-app camera capture on "image" assignments, compressed client-side to fit the 1MiB Firestore doc cap; no Storage), status(pending/ai-drafted/published), aiDraft{scorePerCriterion, feedback}, finalGrade{scorePerCriterion, feedback}
+- `assignments` — subjectId, sectionId, title, instructions (free text shown to students - objective/output format/anything they need), instructionsLink (optional Drive/Docs link to an instructions file, embedded via `js/embed.js`'s `toEmbedUrl()` same as submission previews), component ("written" | "performance" - drives the Records grid's grouped header, older assignments without this land in a fallback "Other" group), dueDate, allowedFileTypes (a link-type hint, not an upload constraint), totalPoints (number - the score cap, teacher grades one raw number against this), rubricReferenceLink (optional Drive/Docs link to the teacher's own rubric PDF/Word, shown embedded on the Review screen for the teacher's reference only - not parsed, not used to compute anything)
+- `submissions` — assignmentId, studentUID, studentName, link (may be empty if `photoData` is used instead), photoData (optional - base64 `data:image/jpeg;base64,...` from in-app camera capture on "image" assignments, compressed client-side to fit the 1MiB Firestore doc cap; no Storage), status(pending/published — "ai-drafted" only appears on submissions graded before AI check was hidden), finalGrade{score, feedback} (score is a single number out of the assignment's `totalPoints`)
 - `enrollments` — studentUID, studentName (if the section had a roster at
   join time, this is the exact roster spelling the student picked via
   `js/student.js`'s name picker, not their Google account name - see
@@ -113,16 +125,14 @@ tried first and silently failed cross-browser.
 - No file uploads — everything is a link. Non-YouTube links must be shared
   "anyone with the link can view" or the AI (and the teacher) can't open
   them.
-- AI check quality depends on Gemini's `urlContext` tool successfully
-  fetching the linked content; YouTube links use native video
-  understanding instead (more reliable). "Image" assignments additionally
-  try fetching the actual Drive-hosted image bytes for vision input
-  (`js/gemini.js`'s `tryFetchImagePart()`) — best-effort, since Drive's
-  direct-view endpoint doesn't reliably expose CORS headers to `fetch()`;
-  falls back to `urlContext`-only silently (logged to console) if that
-  fetch fails. If a check fails or looks wrong regardless, the teacher
-  just grades manually in the same Review panel — nothing is blocked on
-  it.
+- AI rubric-check is hidden by default (`AI_CHECK_ENABLED = false` in
+  `js/teacher.js`) — real usage showed the per-call Gemini cost wasn't
+  worth it. The code underneath (`js/gemini.js`'s `runRubricCheck()`,
+  `tryFetchImagePart()` for image-vision input) is untouched, but it still
+  expects `assignment.rubric` (per-criterion), which assignments no longer
+  have now that grading is a single `totalPoints` score — re-enabling the
+  flag would need a small adapter (e.g. treat the whole assignment as one
+  criterion) before `runAiCheck()` would work again, not a pure flip.
 - Deleting a subject, section, or assignment (`js/teacher.js`) only
   removes that document itself — it does not cascade-delete what
   references it (sections/assignments/submissions/enrollments). Those
@@ -140,10 +150,15 @@ tried first and silently failed cross-browser.
 - **No Class Record `.xlsx` export.** Removed by request — the teacher
   finalizes and encodes all final grades themselves in their real Class
   Record; the app deliberately doesn't write scores into it. `js/class-record.js`
-  now only exposes `loadWorkbook()` (used by roster seeding, see above) and
-  `totalScore()` (used by the Records grid) — no `matchStudents()`/
-  `applyAndDownload()`, no export UI in `teacher.html`. Don't re-add an
-  export feature without being asked.
+  now only exposes `loadWorkbook()` (used by roster seeding, see above) —
+  no `matchStudents()`/`applyAndDownload()`, no export UI in `teacher.html`.
+  Don't re-add an export feature without being asked.
+- **Grading is a single raw score, not rubric criteria.** Switched from a
+  per-criterion rubric builder to one `totalPoints` number per assignment
+  and one `finalGrade.score` per submission — teacher found typing rubric
+  rows for every assignment more setup than it was worth. The Drive/Docs
+  rubric-reference link still exists but is purely visual now (embedded on
+  the Review screen next to the score box), not parsed by anything.
 - `js/class-record.js`'s `loadWorkbook()` row-walk stops on the first cell
   that isn't SheetJS type `"s"` (string), deliberately — not just "isn't
   empty". Confirmed against a real DepEd Class Record: unused rows below

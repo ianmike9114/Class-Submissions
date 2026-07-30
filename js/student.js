@@ -194,14 +194,14 @@ async function loadEverything() {
           ${a.instructions ? `<p>${a.instructions}</p>` : ""}
           ${instructionsFileBlock}
           <div class="muted">Type: ${a.allowedFileTypes}</div>
-          <div>${renderRubric(a.rubric)}</div>
+          <div class="muted">Total points: ${a.totalPoints}</div>
           ${renderSubmitForm(aDoc.id, a.allowedFileTypes)}`;
       } else {
         const s = subDoc.data();
         row.innerHTML = `
           <strong>${a.title}</strong>
           <span class="status-${s.status}"> — ${s.status === "published" ? "Graded" : "Submitted, pending review"}</span>
-          ${s.status === "published" ? renderResult(s) : ""}`;
+          ${s.status === "published" ? renderResult(s, a) : ""}`;
       }
       list.appendChild(row);
     }
@@ -209,14 +209,8 @@ async function loadEverything() {
   attachSubmitHandlers();
 }
 
-function renderRubric(rubric) {
-  return `<ul class="muted">${rubric.map((r) => `<li>${r.criterion} (${r.maxPoints} pts)</li>`).join("")}</ul>`;
-}
-
-function renderResult(s) {
-  const rows = Object.entries(s.finalGrade.scorePerCriterion)
-    .map(([k, v]) => `<li>${k}: ${v}</li>`).join("");
-  return `<div class="card"><ul>${rows}</ul><p>${s.finalGrade.feedback || ""}</p></div>`;
+function renderResult(s, a) {
+  return `<div class="card"><p><strong>${s.finalGrade.score} / ${a.totalPoints}</strong></p><p>${s.finalGrade.feedback || ""}</p></div>`;
 }
 
 const LINK_HINTS = {

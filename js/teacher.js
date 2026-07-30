@@ -5,7 +5,16 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getGeminiKey, setGeminiKey, runRubricCheck } from "./gemini.js";
 import { toEmbedUrl } from "./embed.js";
-import { loadWorkbook, totalScore } from "./class-record.js";
+import { loadWorkbook } from "./class-record.js";
+
+// AI rubric-check is hidden (not deleted) - per-call Gemini cost isn't
+// worth it right now. Flip this back to true to restore the Run AI Check
+// button, the Settings gear (only the Gemini key box lives there), and
+// the "AI drafted" filter option. Note: runAiCheck() below still expects
+// assignment.rubric (per-criterion), which assignments no longer have
+// since grading switched to a single total-points score - re-enabling
+// would need a small adapter first.
+const AI_CHECK_ENABLED = false;
 
 const state = { subjectId: null, sectionId: null, assignmentId: null };
 
@@ -26,7 +35,7 @@ async function loadSubjects() {
     const row = document.createElement("div");
     row.className = "card";
     row.innerHTML = `
-      <strong>${s.name}</strong> <span class="muted">(${s.gradeLevel})</span>
+      <strong>${s.name}</strong> <span class="muted">(${s.gradeLevel} — SY ${s.schoolYear || "—"} · Term ${s.term || "—"})</span>
       ${s.archived ? '<span class="muted"> — archived</span>' : ""}
       <div style="margin-top:0.5rem;">
         <button data-open="${d.id}">Open</button>
@@ -60,6 +69,8 @@ el("add-subject-form").addEventListener("submit", async (e) => {
   await addDoc(collection(db, "subjects"), {
     name: el("subject-name").value.trim(),
     gradeLevel: el("subject-grade").value.trim(),
+    schoolYear: el("subject-year").value.trim(),
+    term: el("subject-term").value,
     archived: false,
   });
   e.target.reset();
@@ -72,8 +83,8 @@ async function openSubject(subjectId) {
   state.subjectId = subjectId;
   state.sectionId = null;
   state.assignmentId = null;
-  const subject = await getDoc(doc(db, "subjects", subjectId));
-  el("subject-view-name").textContent = subject.data().name;
+  const subject = (await getDoc(doc(db, "subjects", subjectId))).data();
+  el("subject-view-name").textContent = `${subject.name} (SY ${subject.schoolYear || "—"} · Term ${subject.term || "—"})`;
   show("view-subject");
   loadSections();
 }
@@ -197,20 +208,6 @@ async function openSection(sectionId) {
   loadAssignments();
 }
 
-let rubricRowCount = 0;
-function addRubricRow(criterion = "", maxPoints = "", description = "") {
-  rubricRowCount++;
-  const row = document.createElement("div");
-  row.className = "rubric-row";
-  row.innerHTML = `
-    <input placeholder="Criterion (e.g. Code correctness)" class="rubric-criterion" value="${criterion}" />
-    <input placeholder="Max pts" type="number" class="rubric-points" value="${maxPoints}" />
-    <button type="button" class="secondary" data-remove-row>x</button>`;
-  row.querySelector("[data-remove-row]").addEventListener("click", () => row.remove());
-  el("rubric-rows").appendChild(row);
-}
-el("add-rubric-row").addEventListener("click", () => addRubricRow());
-
 async function loadAssignments() {
   const q = query(collection(db, "assignments"), where("sectionId", "==", state.sectionId));
   const snap = await getDocs(q);
@@ -224,7 +221,7 @@ async function loadAssignments() {
       <strong>${a.title}</strong> <span class="muted">due ${a.dueDate || "no date"}</span>
       ${a.instructions ? `<p class="muted">${a.instructions}</p>` : ""}
       ${a.instructionsLink ? `<div class="muted"><a href="${a.instructionsLink}" target="_blank" rel="noopener">Instructions file</a></div>` : ""}
-      <div class="muted">Allowed: ${a.allowedFileTypes} — ${a.rubric.length} rubric criteria</div>
+      <div class="muted">Allowed: ${a.allowedFileTypes} — ${a.totalPoints} points</div>
       <div style="margin-top:0.5rem;">
         <button data-open="${d.id}">Open submissions</button>
         <button class="danger" data-delete-assignment="${d.id}">Delete</button>
@@ -246,10 +243,6 @@ async function loadAssignments() {
 
 el("add-assignment-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const rubric = [...document.querySelectorAll(".rubric-row")].map((row) => ({
-    criterion: row.querySelector(".rubric-criterion").value.trim(),
-    maxPoints: Number(row.querySelector(".rubric-points").value) || 0,
-  })).filter((r) => r.criterion);
 
   await addDoc(collection(db, "assignments"), {
     subjectId: state.subjectId,
@@ -260,13 +253,11 @@ el("add-assignment-form").addEventListener("submit", async (e) => {
     component: el("assignment-component").value,
     dueDate: el("assignment-due").value,
     allowedFileTypes: el("assignment-filetype").value,
-    rubric,
+    totalPoints: Number(el("assignment-total-points").value) || 0,
     rubricReferenceLink: el("assignment-rubric-link").value.trim(),
     createdAt: Date.now(),
   });
   e.target.reset();
-  el("rubric-rows").innerHTML = "";
-  addRubricRow();
   loadAssignments();
 });
 
@@ -303,13 +294,15 @@ async function loadSubmissions() {
       ${linkBlock}
       <div id="detail-${d.id}"></div>
       <div style="margin-top:0.5rem;">
-        <button data-ai="${d.id}">Run AI Check</button>
+        ${AI_CHECK_ENABLED ? `<button data-ai="${d.id}">Run AI Check</button>` : ""}
         <button class="secondary" data-review="${d.id}">Review / Grade</button>
       </div>`;
     list.appendChild(row);
   });
-  list.querySelectorAll("[data-ai]").forEach((b) =>
-    b.addEventListener("click", () => runAiCheck(b.dataset.ai)));
+  if (AI_CHECK_ENABLED) {
+    list.querySelectorAll("[data-ai]").forEach((b) =>
+      b.addEventListener("click", () => runAiCheck(b.dataset.ai)));
+  }
   list.querySelectorAll("[data-review]").forEach((b) =>
     b.addEventListener("click", () => openReview(b.dataset.review)));
 }
@@ -350,28 +343,29 @@ async function openReview(submissionId) {
   const a = (await getDoc(doc(db, "assignments", s.assignmentId))).data();
   const container = el(`detail-${submissionId}`);
 
-  const draft = s.finalGrade || s.aiDraft || { scorePerCriterion: {}, feedback: "" };
-  const rows = a.rubric.map((r) => `
-    <label>${r.criterion} (max ${r.maxPoints})</label>
-    <input type="number" data-crit="${r.criterion}" value="${draft.scorePerCriterion?.[r.criterion] ?? ""}" />
-  `).join("");
+  const draft = s.finalGrade || { score: "", feedback: "" };
+  const rubricEmbedUrl = a.rubricReferenceLink ? toEmbedUrl(a.rubricReferenceLink) : null;
+  const rubricBlock = a.rubricReferenceLink
+    ? `<label>Your rubric (reference)</label>
+       ${rubricEmbedUrl
+         ? `<iframe src="${rubricEmbedUrl}" class="submission-preview"></iframe>`
+         : `<div class="muted"><a href="${a.rubricReferenceLink}" target="_blank" rel="noopener">${a.rubricReferenceLink}</a></div>`}`
+    : "";
 
   container.innerHTML = `
     <div class="card">
-      ${rows}
+      ${rubricBlock}
+      <label>Score (out of ${a.totalPoints})</label>
+      <input type="number" id="score-${submissionId}" min="0" max="${a.totalPoints}" value="${draft.score ?? ""}" />
       <label>Feedback</label>
       <textarea id="feedback-${submissionId}" rows="3">${draft.feedback || ""}</textarea>
       <button data-publish="${submissionId}">Publish to student</button>
     </div>`;
 
   container.querySelector(`[data-publish]`).addEventListener("click", async () => {
-    const scorePerCriterion = {};
-    container.querySelectorAll("[data-crit]").forEach((inp) => {
-      scorePerCriterion[inp.dataset.crit] = Number(inp.value) || 0;
-    });
     await updateDoc(ref, {
       finalGrade: {
-        scorePerCriterion,
+        score: Number(el(`score-${submissionId}`).value) || 0,
         feedback: el(`feedback-${submissionId}`).value,
       },
       status: "published",
@@ -519,7 +513,7 @@ async function loadRecords() {
       const sub = submissionsByAssignment[a.id].get(enrollment.studentUID);
       if (!sub) return `<td class="muted">No submission</td>`;
       if (sub.status === "published") {
-        return `<td>${totalScore(sub.finalGrade?.scorePerCriterion)}</td>`;
+        return `<td>${sub.finalGrade?.score ?? 0}/${a.totalPoints}</td>`;
       }
       return `<td class="status-${sub.status}">${sub.status}</td>`;
     }).join("");
@@ -561,8 +555,13 @@ el("settings-form").addEventListener("submit", (e) => {
 guardPage("teacher").then((user) => {
   if (!user) return;
   el("teacher-email").textContent = user.email;
-  el("gemini-key").value = getGeminiKey();
-  addRubricRow();
+  if (AI_CHECK_ENABLED) {
+    el("gemini-key").value = getGeminiKey();
+  } else {
+    el("toggle-settings").classList.add("hidden");
+    const aiOption = el("submission-filter").querySelector('option[value="ai-drafted"]');
+    if (aiOption) aiOption.hidden = true;
+  }
   loadSubjects();
   show("view-subjects");
 });

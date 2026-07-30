@@ -1,6 +1,6 @@
 ---
 name: student-lms
-description: Modify the Class Submissions app — student link submission, join-code enrollment, teacher rubric builder, browser-side AI (Gemini) rubric-check drafting, submission review/publish. Use for any change to teacher.html/student.html/js/*.js/firestore.rules in this repo.
+description: Modify the Class Submissions app — student link submission, join-code enrollment, single-score grading, submission review/publish, browser-side AI (Gemini) rubric-check drafting (currently hidden). Use for any change to teacher.html/student.html/js/*.js/firestore.rules in this repo.
 ---
 
 # Student LMS routing
@@ -12,7 +12,9 @@ file, jump straight to the named file(s).
 Quick pointers:
 - Teacher-side change → `js/teacher.js` (+ `teacher.html` if UI markup)
 - Student-side change → `js/student.js` (+ `student.html` if UI markup)
-- AI rubric-check behavior (prompt, Gemini model, key storage) → `js/gemini.js`
+- AI rubric-check on/off → `js/teacher.js`'s `AI_CHECK_ENABLED` flag (top of file, `false` by default — hides the Run AI Check button/Settings gear/"AI drafted" filter option, code untouched underneath); prompt/model/key logic itself → `js/gemini.js`
+- Grading (single score out of an assignment's total points) → `js/teacher.js`'s `openReview()`, `assignments.totalPoints`, `submissions.finalGrade{score,feedback}`
+- School Year / Term on a Subject → `js/teacher.js`'s `add-subject-form` handler / `loadSubjects()` / `openSubject()`, `teacher.html`'s `#subject-year`/`#subject-term` — one Subject per term
 - Inline submission preview → `js/embed.js`
 - Roster editing (manual typed/pasted names, default) / Records gradebook grid → `js/teacher.js`'s `addRosterNames()`/`renderRosterPreview()` (xlsx upload via `loadWorkbook()` still there as a fallback), `teacher.html`'s `#view-records`
 - Home button → `teacher.html`'s `#go-home`, `js/teacher.js`'s listener
@@ -26,7 +28,7 @@ Quick pointers:
 - Student's Assignments list grouped by subject → `js/student.js`'s `loadEverything()`
 - Delete a subject/section/assignment → `js/teacher.js`'s `loadSubjects()`/`loadSections()`/`loadAssignments()` (doc-only delete, no cascade — see `CLAUDE.md`)
 - Records grid Written Work / Performance Task grouping → `js/teacher.js`'s `loadRecords()` (plain `component` field, NOT weighted-grade math - see `CLAUDE.md`, don't build that without being asked)
-- Rubric reference PDF (AI-check context only, doesn't change what's scored) → `js/gemini.js`'s `runRubricCheck()`
+- Rubric reference file (Drive/Docs link, shown embedded on the Review screen for the teacher's own eyes only — not parsed, doesn't feed any scoring) → `assignments.rubricReferenceLink`, rendered in `js/teacher.js`'s `openReview()`
 - Access control → `firestore.rules`
 - Deploy/setup steps → `README.md`
 
@@ -58,5 +60,8 @@ Reminders specific to this repo:
   effect.
 - **No Class Record `.xlsx` export** — removed by request, teacher
   finalizes/encodes all grades themselves. `js/class-record.js` only has
-  `loadWorkbook()` (roster seeding) and `totalScore()` (Records grid) left.
-  Don't re-add without being asked.
+  `loadWorkbook()` (roster seeding) left. Don't re-add without being asked.
+- **Grading is a single raw score, not rubric criteria** — switched from a
+  per-criterion rubric builder to one `totalPoints` per assignment, one
+  `finalGrade.score` per submission. Don't re-add rubric-row grading
+  without being asked.

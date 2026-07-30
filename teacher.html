@@ -40,6 +40,14 @@
           <input id="subject-name" required placeholder="e.g. Grade 12 Philosophy" />
           <label>Grade level</label>
           <input id="subject-grade" required placeholder="e.g. Grade 12" />
+          <label>School Year</label>
+          <input id="subject-year" required placeholder="e.g. 2026-2027" />
+          <label>Term</label>
+          <select id="subject-term">
+            <option value="1">Term 1</option>
+            <option value="2">Term 2</option>
+            <option value="3">Term 3</option>
+          </select>
           <button type="submit">Add subject</button>
         </form>
       </div>
@@ -133,10 +141,9 @@
             <option value="image">Image / slides (Drive or Slides link, "anyone with link")</option>
             <option value="video">Video (YouTube, unlisted)</option>
           </select>
-          <label>Rubric</label>
-          <div id="rubric-rows"></div>
-          <button type="button" class="secondary" id="add-rubric-row">+ Add criterion</button>
-          <label style="margin-top:0.75rem;">Rubric reference file (optional - link to a PDF/doc with the full rubric description, given to the AI as extra context. Doesn't change the rubric rows above.)</label>
+          <label>Total points</label>
+          <input id="assignment-total-points" type="number" required placeholder="e.g. 100" />
+          <label style="margin-top:0.75rem;">Rubric reference file (optional - a Drive/Docs link to your rubric PDF/Word doc, shown to you while grading as your basis for scoring)</label>
           <input id="assignment-rubric-link" type="url" placeholder="https://drive.google.com/file/d/..." />
           <div style="margin-top:0.75rem;">
             <button type="submit">Add assignment</button>
