@@ -220,9 +220,38 @@ async function openEnrolled(onlySectionId) {
 
   list.innerHTML = rows.length
     ? `<table class="records-grid"><thead><tr><th>Name</th><th>Gmail</th><th>Section</th><th></th></tr></thead><tbody>
-        ${rows.map((r) => `<tr><td>${r.studentName}</td><td>${r.studentEmail || ""}</td><td>${sectionMap.get(r.sectionId) || ""}</td><td><button class="danger" data-remove-enrollment="${r.id}">Remove</button></td></tr>`).join("")}
+        ${rows.map((r) => `<tr><td id="enroll-name-${r.id}">${r.studentName}</td><td>${r.studentEmail || ""}</td><td>${sectionMap.get(r.sectionId) || ""}</td><td>
+          <button class="secondary" data-edit-enrollment="${r.id}">Edit name</button>
+          <button class="danger" data-remove-enrollment="${r.id}">Remove</button>
+        </td></tr>`).join("")}
       </tbody></table>`
     : '<p class="muted">No students enrolled yet.</p>';
+
+  // Fixes a garbled/raw Google display name (common when a section had no
+  // roster to pick from at join time) without needing the student to
+  // rejoin - edits the enrollment's studentName in place.
+  list.querySelectorAll("[data-edit-enrollment]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const enrollmentId = b.dataset.editEnrollment;
+      const cell = el(`enroll-name-${enrollmentId}`);
+      const current = cell.textContent;
+      cell.innerHTML = `<input id="edit-enroll-${enrollmentId}" value="${current}" style="margin-bottom:0;" />`;
+      const input = el(`edit-enroll-${enrollmentId}`);
+      input.focus();
+      input.select();
+      let saved = false;
+      const save = async () => {
+        if (saved) return;
+        saved = true;
+        const name = input.value.trim();
+        if (name && name !== current) {
+          await updateDoc(doc(db, "enrollments", enrollmentId), { studentName: name });
+        }
+        openEnrolled(onlySectionId);
+      };
+      input.addEventListener("keydown", (e) => { if (e.key === "Enter") save(); });
+      input.addEventListener("blur", save);
+    }));
 
   list.querySelectorAll("[data-remove-enrollment]").forEach((b) =>
     b.addEventListener("click", async () => {
