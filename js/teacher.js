@@ -427,15 +427,12 @@ el("roster-config-form").addEventListener("submit", async (e) => {
 function renderRosterPreview() {
   const container = el("roster-preview");
   const rows = rosterPreviewNames.map((name, i) => `
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.3rem;">
-      <span>${name}</span>
-      <button type="button" class="secondary" data-remove-name="${i}">Remove</button>
-    </div>`).join("");
+    <tr><td>${i + 1}</td><td>${name}</td><td><button type="button" class="secondary" data-remove-name="${i}">Remove</button></td></tr>`).join("");
 
   container.innerHTML = `
     <p class="muted">${rosterPreviewNames.length} name(s) in the list. Remove any that aren't actual students, then save.</p>
-    ${rows}
-    <button id="roster-save">Save Roster (${rosterPreviewNames.length})</button>`;
+    <table class="records-grid"><thead><tr><th>#</th><th>Name</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+    <button id="roster-save" style="margin-top:0.75rem;">Save Roster (${rosterPreviewNames.length})</button>`;
 
   container.querySelectorAll("[data-remove-name]").forEach((b) => {
     b.addEventListener("click", () => {
