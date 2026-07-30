@@ -417,10 +417,30 @@ async function openAssignment(assignmentId) {
   loadSubmissions();
 }
 
+function renderScoresSummary(submissions, totalPoints) {
+  const container = el("scores-summary");
+  const graded = submissions
+    .filter((s) => s.status === "published")
+    .sort((a, b) => a.studentName.localeCompare(b.studentName));
+  if (graded.length === 0) {
+    container.innerHTML = "";
+    return;
+  }
+  container.innerHTML = `
+    <details class="card">
+      <summary><strong>Scores summary (${graded.length} graded)</strong></summary>
+      <table class="records-grid" style="margin-top:0.75rem;">
+        <thead><tr><th>Name</th><th>Score</th></tr></thead>
+        <tbody>${graded.map((s) => `<tr><td>${s.studentName}</td><td>${s.finalGrade?.score ?? "—"}/${totalPoints ?? "—"}</td></tr>`).join("")}</tbody>
+      </table>
+    </details>`;
+}
+
 async function loadSubmissions() {
   const filter = el("submission-filter").value;
   const q = query(collection(db, "submissions"), where("assignmentId", "==", state.assignmentId));
-  const snap = await getDocs(q);
+  const [snap, aDoc] = await Promise.all([getDocs(q), getDoc(doc(db, "assignments", state.assignmentId))]);
+  renderScoresSummary(snap.docs.map((d) => d.data()), aDoc.data()?.totalPoints);
   const list = el("submissions-list");
   list.innerHTML = "";
   snap.forEach((d) => {
