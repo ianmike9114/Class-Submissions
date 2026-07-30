@@ -24,6 +24,7 @@ Quick pointers:
 - Inline submission preview → `js/embed.js`
 - Roster editing (manual typed/pasted names + gender, default) / Records gradebook grid grouped by gender → `js/teacher.js`'s `addRosterNames()` (parses `MALE`/`FEMALE` header lines as gender markers)/`renderRosterPreview()`/`loadRecords()` (xlsx upload via `loadWorkbook()` still there as a fallback, no gender data from it), `teacher.html`'s `#view-records` — `sections.roster` is `{name,gender}[]`, normalize legacy plain-string rosters on read (see `CLAUDE.md`)
 - Editing an existing Subject's Year/Term / Section's name → `js/teacher.js`'s `editSubjectYearTerm()` / `editSectionName()`
+- "Who's submitting" pending-count badge → `js/teacher.js`'s `getPendingCounts()`/`pendingBadge()`, wired into `loadSubjects()`/`loadSections()`/`loadAssignments()` — in-app only, real push needs a server piece (out of scope, see `CLAUDE.md`)
 - Home button → `teacher.html`'s `#go-home`, `js/teacher.js`'s listener
 - In-app-browser sign-in warning (Messenger/Instagram/etc. block Google OAuth) → `index.html`'s `isInAppBrowser()` + `#in-app-browser-warning`
 - Sign-in failure notification / duplicate-enrollment prevention → `index.html`'s `showError()`, `js/student.js`'s `join-form` handler

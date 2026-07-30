@@ -78,6 +78,18 @@ always sits directly above its field with no wrapper needed.
 Colored (amber/blue/green) + bold, no background. Pattern used inline as
 `` `<span class="status-${s.status}"> — ${s.status}</span>` ``.
 
+## Pending-count badge
+
+```html
+<span class="status-pending"> — 3 pending</span>
+```
+Just the existing `status-pending` style, reused as a small inline count
+next to a subject/section/assignment title — the "who's submitting"
+signal on the dashboard. Built by `js/teacher.js`'s `pendingBadge(count)`
++ `getPendingCounts()` (one shared aggregation, rolled up to all three
+levels at once — see `CLAUDE.md`). Renders nothing (`""`) when the count
+is zero, so it never shows "0 pending" clutter.
+
 ## Muted / secondary text
 
 ```html

@@ -53,10 +53,42 @@ async function cascadeDeleteSubject(subjectId) {
   await deleteDoc(doc(db, "subjects", subjectId));
 }
 
+// ---------- pending-submission counts (the "who's submitting" badge) ----------
+// One pass over every section/assignment (cheap at solo-teacher scale) plus
+// one query for pending submissions, rolled up to all three levels at once
+// so subject/section/assignment cards can each show their own count without
+// separate nested queries per card.
+async function getPendingCounts() {
+  const [sectionsSnap, assignSnap, subSnap] = await Promise.all([
+    getDocs(collection(db, "sections")),
+    getDocs(collection(db, "assignments")),
+    getDocs(query(collection(db, "submissions"), where("status", "==", "pending"))),
+  ]);
+  const sectionToSubject = new Map(sectionsSnap.docs.map((d) => [d.id, d.data().subjectId]));
+  const assignmentToSection = new Map(assignSnap.docs.map((d) => [d.id, d.data().sectionId]));
+
+  const byAssignment = new Map();
+  const bySection = new Map();
+  const bySubject = new Map();
+  subSnap.forEach((d) => {
+    const assignmentId = d.data().assignmentId;
+    const sectionId = assignmentToSection.get(assignmentId);
+    const subjectId = sectionToSubject.get(sectionId);
+    byAssignment.set(assignmentId, (byAssignment.get(assignmentId) || 0) + 1);
+    if (sectionId) bySection.set(sectionId, (bySection.get(sectionId) || 0) + 1);
+    if (subjectId) bySubject.set(subjectId, (bySubject.get(subjectId) || 0) + 1);
+  });
+  return { byAssignment, bySection, bySubject };
+}
+
+function pendingBadge(count) {
+  return count ? `<span class="status-pending"> — ${count} pending</span>` : "";
+}
+
 // ---------- subjects ----------
 async function loadSubjects() {
   const showArchived = el("toggle-archived").checked;
-  const snap = await getDocs(collection(db, "subjects"));
+  const [snap, counts] = await Promise.all([getDocs(collection(db, "subjects")), getPendingCounts()]);
   const list = el("subjects-list");
   list.innerHTML = "";
   snap.forEach((d) => {
@@ -67,6 +99,7 @@ async function loadSubjects() {
     row.innerHTML = `
       <strong>${s.name}</strong>
       <span class="muted" id="year-term-${d.id}">(${s.gradeLevel} — SY ${s.schoolYear || "—"} · Term ${s.term || "—"})</span>
+      ${pendingBadge(counts.bySubject.get(d.id))}
       ${s.archived ? '<span class="muted"> — archived</span>' : ""}
       <div id="year-term-edit-${d.id}"></div>
       <div style="margin-top:0.5rem;">
@@ -150,7 +183,7 @@ async function openSubject(subjectId) {
 
 async function loadSections() {
   const q = query(collection(db, "sections"), where("subjectId", "==", state.subjectId));
-  const snap = await getDocs(q);
+  const [snap, counts] = await Promise.all([getDocs(q), getPendingCounts()]);
   const list = el("sections-list");
   list.innerHTML = "";
   snap.forEach((d) => {
@@ -160,6 +193,7 @@ async function loadSections() {
     row.innerHTML = `
       <strong id="section-name-${d.id}">${s.sectionName}</strong>
       <span class="muted"> — join code: <code>${s.joinCode}</code></span>
+      ${pendingBadge(counts.bySection.get(d.id))}
       <div id="section-edit-${d.id}"></div>
       <div style="margin-top:0.5rem;">
         <button data-open="${d.id}">Open</button>
@@ -321,7 +355,7 @@ async function openSection(sectionId) {
 
 async function loadAssignments() {
   const q = query(collection(db, "assignments"), where("sectionId", "==", state.sectionId));
-  const snap = await getDocs(q);
+  const [snap, counts] = await Promise.all([getDocs(q), getPendingCounts()]);
   const list = el("assignments-list");
   list.innerHTML = "";
   snap.forEach((d) => {
@@ -330,6 +364,7 @@ async function loadAssignments() {
     row.className = "card";
     row.innerHTML = `
       <strong>${a.title}</strong> <span class="muted">due ${a.dueDate || "no date"}</span>
+      ${pendingBadge(counts.byAssignment.get(d.id))}
       ${a.instructions ? `<p class="muted">${a.instructions}</p>` : ""}
       ${a.instructionsLink ? `<div class="muted"><a href="${a.instructionsLink}" target="_blank" rel="noopener">Instructions file</a></div>` : ""}
       <div class="muted">Allowed: ${a.allowedFileTypes} — ${a.totalPoints} points</div>
