@@ -47,7 +47,15 @@ service cloud.firestore {
                   && (resource.data.studentUID == request.auth.uid || isTeacher());
       allow create: if isSignedIn()
                     && request.resource.data.studentUID == request.auth.uid;
-      allow update, delete: if isTeacher();
+      // Students may self-correct a garbled Google display name, but may
+      // only ever touch the studentName field on their own enrollment -
+      // everything else (which subject/section, studentEmail) stays
+      // teacher-controlled.
+      allow update: if isTeacher()
+                    || (isSignedIn()
+                        && resource.data.studentUID == request.auth.uid
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['studentName']));
+      allow delete: if isTeacher();
     }
   }
 }

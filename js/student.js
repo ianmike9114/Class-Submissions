@@ -1,7 +1,7 @@
 import { db } from "./firebase-config.js";
 import { guardPage, signOutUser } from "./auth.js";
 import {
-  collection, addDoc, doc, getDoc, getDocs, query, where,
+  collection, addDoc, doc, getDoc, getDocs, updateDoc, query, where,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { toEmbedUrl } from "./embed.js";
 
@@ -140,12 +140,43 @@ async function loadEverything() {
   const enrollSnap = await getDocs(
     query(collection(db, "enrollments"), where("studentUID", "==", currentUser.uid))
   );
-  const enrollments = enrollSnap.docs.map((d) => d.data());
+  const enrollments = enrollSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
   const classesList = el("classes-list");
   classesList.innerHTML = enrollments.length
-    ? enrollments.map((en) => `<span class="card" style="display:inline-block; margin-right:0.5rem;">${en.subjectName} — ${en.sectionName}</span>`).join("")
+    ? enrollments.map((en) => `
+        <span class="card" style="display:inline-block; margin-right:0.5rem;">
+          ${en.subjectName} — ${en.sectionName} (<span id="my-name-${en.id}">${en.studentName}</span>)
+          <button type="button" class="secondary" data-edit-my-name="${en.id}" style="margin-left:0.4rem;">Edit name</button>
+        </span>`).join("")
     : '<p class="muted">Not joined to any class yet.</p>';
+
+  classesList.querySelectorAll("[data-edit-my-name]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const enrollmentId = b.dataset.editMyName;
+      const nameEl = el(`my-name-${enrollmentId}`);
+      const current = nameEl.textContent;
+      nameEl.innerHTML = `<input id="edit-my-name-input-${enrollmentId}" value="${current}" style="width:auto; display:inline-block; margin-bottom:0;" />`;
+      const input = el(`edit-my-name-input-${enrollmentId}`);
+      input.focus();
+      input.select();
+      let saved = false;
+      const save = async () => {
+        if (saved) return;
+        saved = true;
+        const name = input.value.trim();
+        try {
+          if (name && name !== current) {
+            await updateDoc(doc(db, "enrollments", enrollmentId), { studentName: name });
+          }
+        } catch (err) {
+          alert("Couldn't save name: " + err.message);
+        }
+        loadEverything();
+      };
+      input.addEventListener("keydown", (e) => { if (e.key === "Enter") save(); });
+      input.addEventListener("blur", save);
+    }));
 
   const sectionIds = enrollments.map((en) => en.sectionId);
   const list = el("assignments-list");
@@ -212,8 +243,14 @@ async function loadEverything() {
   attachSubmitHandlers();
 }
 
+// Submissions graded before this session's switch to single-score grading
+// have the old finalGrade.scorePerCriterion shape (no .score), and their
+// assignment predates totalPoints entirely - show a plain "Graded" instead
+// of "undefined / undefined" for those.
 function renderResult(s, a) {
-  return `<div class="card"><p><strong>${s.finalGrade.score} / ${a.totalPoints}</strong></p><p>${s.finalGrade.feedback || ""}</p></div>`;
+  const hasScore = s.finalGrade?.score !== undefined && a?.totalPoints !== undefined;
+  const scoreLine = hasScore ? `${s.finalGrade.score} / ${a.totalPoints}` : "Graded";
+  return `<div class="card"><p><strong>${scoreLine}</strong></p><p>${s.finalGrade?.feedback || ""}</p></div>`;
 }
 
 const LINK_HINTS = {

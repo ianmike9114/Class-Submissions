@@ -33,7 +33,8 @@ Quick pointers:
 - Enrolled students list (subject-wide, or one section via its own button) + Remove a wrong enrollment, or Edit a garbled/raw Google display name in place → `js/teacher.js`'s `openEnrolled(onlySectionId)`, `teacher.html`'s `#view-enrolled`
 - Join flow pick-your-name-from-roster → `js/student.js`'s `renderNamePicker()`/`claimedNames()`/`enroll()`, `student.html`'s `#join-name-picker` (only when the section has a roster; else falls back to the Google account name)
 - Student's Assignments list grouped by subject → `js/student.js`'s `loadEverything()`
-- Delete a subject/section/assignment → `js/teacher.js`'s `loadSubjects()`/`loadSections()`/`loadAssignments()` (doc-only delete, no cascade — see `CLAUDE.md`)
+- Delete a subject/section/assignment (cascades to everything under it) → `js/teacher.js`'s `cascadeDeleteSubject()`/`cascadeDeleteSection()`/`cascadeDeleteAssignment()` + shared `deleteWhere()` helper — see `CLAUDE.md`
+- Student fixing their own garbled name → `js/student.js`'s inline edit on "My classes" cards (`loadEverything()`) + `firestore.rules`'s `enrollments` update rule (studentName-only)
 - Records grid Written Work / Performance Task grouping → `js/teacher.js`'s `loadRecords()` (plain `component` field, NOT weighted-grade math - see `CLAUDE.md`, don't build that without being asked)
 - Rubric reference file (Drive/Docs link, shown embedded on the Review screen for the teacher's own eyes only — not parsed, doesn't feed any scoring) → `assignments.rubricReferenceLink`, rendered in `js/teacher.js`'s `openReview()`
 - Access control → `firestore.rules`

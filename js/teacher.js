@@ -23,6 +23,36 @@ function genJoinCode() {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
 }
 
+// ---------- cascade deletes ----------
+// Firestore has no server-side cascade - deleting a subject/section/
+// assignment doc used to leave everything under it orphaned but still
+// fully queryable (a deliberate simplification that stopped being
+// tolerable once a deleted subject kept showing up on a student's
+// dashboard). These walk the same parent->child chain the rest of the
+// app already queries by (subjectId -> sectionId -> assignmentId).
+async function deleteWhere(collectionName, field, value) {
+  const snap = await getDocs(query(collection(db, collectionName), where(field, "==", value)));
+  await Promise.all(snap.docs.map((d) => deleteDoc(d.ref)));
+}
+
+async function cascadeDeleteAssignment(assignmentId) {
+  await deleteWhere("submissions", "assignmentId", assignmentId);
+  await deleteDoc(doc(db, "assignments", assignmentId));
+}
+
+async function cascadeDeleteSection(sectionId) {
+  const assignSnap = await getDocs(query(collection(db, "assignments"), where("sectionId", "==", sectionId)));
+  await Promise.all(assignSnap.docs.map((d) => cascadeDeleteAssignment(d.id)));
+  await deleteWhere("enrollments", "sectionId", sectionId);
+  await deleteDoc(doc(db, "sections", sectionId));
+}
+
+async function cascadeDeleteSubject(subjectId) {
+  const sectionSnap = await getDocs(query(collection(db, "sections"), where("subjectId", "==", subjectId)));
+  await Promise.all(sectionSnap.docs.map((d) => cascadeDeleteSection(d.id)));
+  await deleteDoc(doc(db, "subjects", subjectId));
+}
+
 // ---------- subjects ----------
 async function loadSubjects() {
   const showArchived = el("toggle-archived").checked;
@@ -61,10 +91,11 @@ async function loadSubjects() {
   list.querySelectorAll("[data-delete-subject]").forEach((b) =>
     b.addEventListener("click", async () => {
       const ok = confirm(
-        "Delete this subject? This only removes the subject itself - any sections/assignments/submissions/enrollments already under it are NOT deleted and will become unreachable in this app. If you just want it out of the way but might need it later, use Archive instead. This can't be undone."
+        "Delete this subject? This also deletes every section, assignment, submission, and enrollment under it. If you just want it out of the way but might need it later, use Archive instead. This can't be undone."
       );
       if (!ok) return;
-      await deleteDoc(doc(db, "subjects", b.dataset.deleteSubject));
+      b.disabled = true;
+      await cascadeDeleteSubject(b.dataset.deleteSubject);
       loadSubjects();
     }));
 }
@@ -144,10 +175,11 @@ async function loadSections() {
   list.querySelectorAll("[data-delete-section]").forEach((b) =>
     b.addEventListener("click", async () => {
       const ok = confirm(
-        "Delete this section? This only removes the section itself - any assignments/submissions/enrollments already under it are NOT deleted and will become unreachable in this app. This can't be undone."
+        "Delete this section? This also deletes every assignment, submission, and enrollment under it. This can't be undone."
       );
       if (!ok) return;
-      await deleteDoc(doc(db, "sections", b.dataset.deleteSection));
+      b.disabled = true;
+      await cascadeDeleteSection(b.dataset.deleteSection);
       loadSections();
     }));
 }
@@ -312,10 +344,11 @@ async function loadAssignments() {
   list.querySelectorAll("[data-delete-assignment]").forEach((b) =>
     b.addEventListener("click", async () => {
       const ok = confirm(
-        "Delete this assignment? This only removes the assignment itself - any submissions already made for it are NOT deleted and will become unreachable in this app. This can't be undone."
+        "Delete this assignment? This also deletes every submission already made for it. This can't be undone."
       );
       if (!ok) return;
-      await deleteDoc(doc(db, "assignments", b.dataset.deleteAssignment));
+      b.disabled = true;
+      await cascadeDeleteAssignment(b.dataset.deleteAssignment);
       loadAssignments();
     }));
 }

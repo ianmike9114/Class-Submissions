@@ -80,7 +80,8 @@ tried first and silently failed cross-browser.
 | Who can read/write what in Firestore | `firestore.rules` |
 | AI rubric-check logic (prompt, Gemini model/params, key storage, image-vision fetch) | `js/gemini.js` (`runRubricCheck()`; `tryFetchImagePart()` for "image" assignments — best-effort, see limitations; `photoData` param sends an in-app camera capture directly as inline image data, no link needed) |
 | In-app camera photo capture, multi-page (student, "image" and "document" assignments) | `js/student.js` (`compressImage()` per photo, `pendingPhotos` Map + `renderPhotoThumbs()` — up to `MAX_PHOTOS` (3) pages per submission, each capped at `PER_PHOTO_MAX_LEN` chars so all of them together still fit Firestore's 1MiB doc cap; saved as `submissions.photoPages` string[] of base64 data URLs, no Storage involved; `renderSubmitForm()`'s type check gates which assignment types show the camera input) + `js/teacher.js` (`loadSubmissions()` renders a `.photo-thumbs` row when `photoPages` is set, falls back to the legacy single `photoData` field for submissions made before multi-page support) |
-| Delete a subject, section, or assignment | `js/teacher.js` (`loadSubjects()`/`loadSections()`/`loadAssignments()`'s delete buttons) — only removes that doc itself, does NOT cascade-delete what's under it (see limitations); subjects also have Archive as a non-destructive alternative |
+| Delete a subject, section, or assignment (cascades) | `js/teacher.js` (`cascadeDeleteSubject()`/`cascadeDeleteSection()`/`cascadeDeleteAssignment()`, shared `deleteWhere()` helper) — deletes everything under the thing you deleted (see Data model); subjects also have Archive as a non-destructive alternative |
+| Student fixing their own garbled display name | `js/student.js`'s inline edit control on each "My classes" card (`loadEverything()`) + `firestore.rules`'s `enrollments` update rule (students may only touch `studentName` on their own enrollment) — same interaction pattern as the teacher's Enrolled Students "Edit name" |
 | Inline submission preview (which links embed vs. fall back to a plain link) | `js/embed.js` (`toEmbedUrl()`) |
 | Roster seeding (per section) / Records gradebook grid (grouped by component - Written Work / Performance Task) | `js/teacher.js` (`renderRosterPreview()`, `addRosterNames()` for manual typed/pasted entry, `loadRecords()`) + `teacher.html` (`#view-records`) — the Class Record `.xlsx` upload (`loadWorkbook()`, `js/class-record.js`) is still there as a "Or upload instead" fallback, but manual entry is the default path; `openSection()` preloads the section's already-saved roster into the same editable list so it's not a one-shot upload-only flow |
 | Home button (jump to `view-subjects` from any depth) | `teacher.html`'s header `#go-home` + `js/teacher.js`'s listener (same body as `back-to-subjects`) |
@@ -146,13 +147,18 @@ tried first and silently failed cross-browser.
   have now that grading is a single `totalPoints` score — re-enabling the
   flag would need a small adapter (e.g. treat the whole assignment as one
   criterion) before `runAiCheck()` would work again, not a pure flip.
-- Deleting a subject, section, or assignment (`js/teacher.js`) only
-  removes that document itself — it does not cascade-delete what
-  references it (sections/assignments/submissions/enrollments). Those
-  become unreachable through the UI (nothing queries a deleted
-  `subjectId`/`sectionId`/`assignmentId`) but still exist in Firestore.
-  Deliberate simplification, not a bug — flag to the user if this ever
-  needs to become a real cascade delete.
+- **Deleting a subject, section, or assignment cascades** —
+  `js/teacher.js`'s `cascadeDeleteSubject()`/`cascadeDeleteSection()`/
+  `cascadeDeleteAssignment()` (built on a shared `deleteWhere(collection,
+  field, value)` helper) walk down the same parent-child chain the rest
+  of the app queries by and delete everything under the thing you
+  deleted: subject → its sections → their assignments → their
+  submissions, plus enrollments per section. This used to be
+  non-cascading by design (documented as deliberate) until a deleted
+  subject kept showing up on a student's dashboard — real confusion, not
+  a hypothetical, so it was changed to a true cascade. No `firestore.rules`
+  change was needed (delete on all four collections was already
+  `isTeacher()`-only).
 - Records grid's Written Work / Performance Task grouping is a plain
   `component` field on the assignment, not any weighted-grade computation
   — deliberately does not replicate DepEd's WW/PT/QA percentage +
@@ -189,14 +195,15 @@ tried first and silently failed cross-browser.
   UA-sniff list is best-effort, not exhaustive — add more app signatures to
   it if a teacher reports the same blank-screen symptom from a different
   app's share link.
-- Removing an enrollment (the "Remove" button in Enrolled Students,
-  `js/teacher.js`) only deletes that `enrollments` doc — same
-  non-cascading simplification as the subject/section/assignment deletes.
-  Any submissions that student already made under that enrollment are
-  untouched and still exist, just no longer tied to a live enrollment; if
-  they rejoin (even picking a different roster name), those old
-  submissions won't reappear under the new enrollment. Deliberate, not a
-  bug — flag if this ever needs real cleanup.
+- Removing a single enrollment (the "Remove" button in Enrolled Students,
+  `js/teacher.js`) still only deletes that one `enrollments` doc — this is
+  a narrower, still-deliberate case, not the same as the subject/section/
+  assignment cascade above (removing one enrollment shouldn't touch a
+  student's actual submitted work). Any submissions that student already
+  made under that enrollment are untouched and still exist, just no
+  longer tied to a live enrollment; if they rejoin (even picking a
+  different roster name), those old submissions won't reappear under the
+  new enrollment. Flag if this ever needs to change.
 - In-app camera capture (`photoPages`) only exists for "image" and
   "document" assignments, as an alternative to pasting a link — not a
   general file-upload feature. Capped at `MAX_PHOTOS` (3) pages per
