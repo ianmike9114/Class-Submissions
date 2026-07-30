@@ -384,8 +384,18 @@ async function openReview(submissionId) {
 // ---------- roster (per-section, seeds the Records grid's rows) ----------
 let rosterPreviewNames = [];
 
+// DepEd names are "Surname, First Name M.I." - the comma is part of the
+// name, not a separator, so this only splits on newlines (pasting a Class
+// Record's name column gives one line per cell anyway). Also strips a
+// pasted MALE/FEMALE section label and a leading row number ("1 " / "1."),
+// both of which come along for free when copy-pasting straight out of a
+// real Class Record sheet.
+const ROSTER_JUNK_LINES = new Set(["male", "female", "name", "names"]);
 function addRosterNames(text) {
-  const candidates = text.split(/[\n,]+/).map((n) => n.trim()).filter(Boolean);
+  const candidates = text.split(/\n/)
+    .map((line) => line.replace(/^\s*\d+[.)]?\s+/, "").trim())
+    .filter(Boolean)
+    .filter((line) => !ROSTER_JUNK_LINES.has(line.toLowerCase()));
   const seen = new Set(rosterPreviewNames.map((n) => n.toLowerCase()));
   for (const name of candidates) {
     const key = name.toLowerCase();
