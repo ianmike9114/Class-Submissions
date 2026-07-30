@@ -137,7 +137,7 @@ function renderSubmitForm(assignmentId, type) {
       <label>Or take/upload a photo</label>
       <input type="file" accept="image/*" capture="environment" class="submission-photo" />
       <img class="photo-preview hidden" />
-      <p class="muted">Photo is compressed and saved directly - skip the link above if you use this.</p>` : "";
+      <p class="muted">Photo is compressed and saved directly - skip the link above if you use this. For full-quality photos, check if your teacher gave a shared folder link in the Instructions above - upload there instead and paste that file's link.</p>` : "";
   return `
     <form class="submit-form" data-assignment="${assignmentId}">
       <label>Submission link</label>
