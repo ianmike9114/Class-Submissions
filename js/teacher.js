@@ -35,10 +35,13 @@ async function loadSubjects() {
     const row = document.createElement("div");
     row.className = "card";
     row.innerHTML = `
-      <strong>${s.name}</strong> <span class="muted">(${s.gradeLevel} — SY ${s.schoolYear || "—"} · Term ${s.term || "—"})</span>
+      <strong>${s.name}</strong>
+      <span class="muted" id="year-term-${d.id}">(${s.gradeLevel} — SY ${s.schoolYear || "—"} · Term ${s.term || "—"})</span>
       ${s.archived ? '<span class="muted"> — archived</span>' : ""}
+      <div id="year-term-edit-${d.id}"></div>
       <div style="margin-top:0.5rem;">
         <button data-open="${d.id}">Open</button>
+        <button class="secondary" data-edit-year="${d.id}">Edit Year/Term</button>
         <button class="secondary" data-archive="${d.id}" data-value="${!s.archived}">
           ${s.archived ? "Unarchive" : "Archive"}
         </button>
@@ -48,6 +51,8 @@ async function loadSubjects() {
   });
   list.querySelectorAll("[data-open]").forEach((b) =>
     b.addEventListener("click", () => openSubject(b.dataset.open)));
+  list.querySelectorAll("[data-edit-year]").forEach((b) =>
+    b.addEventListener("click", () => editSubjectYearTerm(b.dataset.editYear)));
   list.querySelectorAll("[data-archive]").forEach((b) =>
     b.addEventListener("click", async () => {
       await updateDoc(doc(db, "subjects", b.dataset.archive), { archived: b.dataset.value === "true" });
@@ -62,6 +67,29 @@ async function loadSubjects() {
       await deleteDoc(doc(db, "subjects", b.dataset.deleteSubject));
       loadSubjects();
     }));
+}
+
+async function editSubjectYearTerm(subjectId) {
+  const s = (await getDoc(doc(db, "subjects", subjectId))).data();
+  const container = el(`year-term-edit-${subjectId}`);
+  container.innerHTML = `
+    <label>School Year</label>
+    <input id="edit-year-${subjectId}" value="${s.schoolYear || ""}" placeholder="e.g. 2026-2027" />
+    <label>Term</label>
+    <select id="edit-term-${subjectId}">
+      <option value="1" ${s.term === "1" ? "selected" : ""}>Term 1</option>
+      <option value="2" ${s.term === "2" ? "selected" : ""}>Term 2</option>
+      <option value="3" ${s.term === "3" ? "selected" : ""}>Term 3</option>
+    </select>
+    <button data-save-year="${subjectId}">Save</button>`;
+
+  container.querySelector("[data-save-year]").addEventListener("click", async () => {
+    await updateDoc(doc(db, "subjects", subjectId), {
+      schoolYear: el(`edit-year-${subjectId}`).value.trim(),
+      term: el(`edit-term-${subjectId}`).value,
+    });
+    loadSubjects();
+  });
 }
 
 el("add-subject-form").addEventListener("submit", async (e) => {
