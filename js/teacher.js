@@ -121,9 +121,25 @@ el("add-section-form").addEventListener("submit", async (e) => {
 });
 
 // ---------- enrolled students (subject-wide, all its sections) ----------
-async function openEnrolled() {
-  const sectionsSnap = await getDocs(query(collection(db, "sections"), where("subjectId", "==", state.subjectId)));
-  const sectionMap = new Map(sectionsSnap.docs.map((d) => [d.id, d.data().sectionName]));
+// onlySectionId scopes the list to one section (called from view-section);
+// omitted, it's subject-wide across all that subject's sections (called
+// from view-subject) - same table either way, just a different source query
+// and back-button target.
+let enrolledBackView = "view-subject";
+async function openEnrolled(onlySectionId) {
+  let sectionMap, titleText;
+  if (onlySectionId) {
+    const sectionData = (await getDoc(doc(db, "sections", onlySectionId))).data();
+    sectionMap = new Map([[onlySectionId, sectionData.sectionName]]);
+    titleText = sectionData.sectionName;
+    enrolledBackView = "view-section";
+  } else {
+    const sectionsSnap = await getDocs(query(collection(db, "sections"), where("subjectId", "==", state.subjectId)));
+    sectionMap = new Map(sectionsSnap.docs.map((d) => [d.id, d.data().sectionName]));
+    titleText = el("subject-view-name").textContent;
+    enrolledBackView = "view-subject";
+  }
+  el("enrolled-view-name").textContent = titleText;
   const sectionIds = [...sectionMap.keys()];
 
   const list = el("enrolled-list");
@@ -154,13 +170,14 @@ async function openEnrolled() {
       const ok = confirm("Remove this student's enrollment? This frees their roster name for someone else to claim, and they'd need to join again with the code.");
       if (!ok) return;
       await deleteDoc(doc(db, "enrollments", b.dataset.removeEnrollment));
-      openEnrolled();
+      openEnrolled(onlySectionId);
     }));
 
   show("view-enrolled");
 }
-el("open-enrolled").addEventListener("click", openEnrolled);
-el("back-to-subject-from-enrolled").addEventListener("click", () => show("view-subject"));
+el("open-enrolled").addEventListener("click", () => openEnrolled());
+el("open-enrolled-section").addEventListener("click", () => openEnrolled(state.sectionId));
+el("back-to-subject-from-enrolled").addEventListener("click", () => show(enrolledBackView));
 
 // ---------- assignments ----------
 async function openSection(sectionId) {

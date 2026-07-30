@@ -21,7 +21,7 @@ Quick pointers:
 - CodePen/embed patterns → `js/embed.js`
 - Image AI-check vision fetch (best-effort, has a fallback) → `js/gemini.js`'s `tryFetchImagePart()`
 - In-app camera photo capture (student, "image" and "document" assignments) → `js/student.js`'s `compressImage()` (saves `submissions.photoData`, compressed to fit Firestore's 1MiB doc cap - no Storage)
-- Enrolled students list (subject-wide) + Remove a wrong enrollment → `js/teacher.js`'s `openEnrolled()`, `teacher.html`'s `#view-enrolled`
+- Enrolled students list (subject-wide, or one section via its own button) + Remove a wrong enrollment → `js/teacher.js`'s `openEnrolled(onlySectionId)`, `teacher.html`'s `#view-enrolled`
 - Join flow pick-your-name-from-roster → `js/student.js`'s `renderNamePicker()`/`claimedNames()`/`enroll()`, `student.html`'s `#join-name-picker` (only when the section has a roster; else falls back to the Google account name)
 - Student's Assignments list grouped by subject → `js/student.js`'s `loadEverything()`
 - Delete a subject/section/assignment → `js/teacher.js`'s `loadSubjects()`/`loadSections()`/`loadAssignments()` (doc-only delete, no cascade — see `CLAUDE.md`)
