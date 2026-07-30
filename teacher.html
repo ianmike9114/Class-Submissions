@@ -33,9 +33,9 @@
 
     <!-- SUBJECTS -->
     <section id="view-subjects">
-      <div class="card">
-        <h2>Add subject</h2>
-        <form id="add-subject-form">
+      <details class="card">
+        <summary><strong>Add subject</strong></summary>
+        <form id="add-subject-form" style="margin-top:0.75rem;">
           <label>Subject name</label>
           <input id="subject-name" required placeholder="e.g. Grade 12 Philosophy" />
           <label>Grade level</label>
@@ -54,7 +54,7 @@
           </select>
           <button type="submit">Add subject</button>
         </form>
-      </div>
+      </details>
       <label style="display:flex; align-items:center; gap:0.4rem; font-weight:normal;">
         <input type="checkbox" id="toggle-archived" style="width:auto;" /> Show archived
       </label>
