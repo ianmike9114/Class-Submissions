@@ -99,9 +99,9 @@
 
       <button id="view-records-btn">View Records</button>
 
-      <div class="card">
-        <h3>Add assignment</h3>
-        <form id="add-assignment-form">
+      <details class="card">
+        <summary><strong>Add assignment</strong></summary>
+        <form id="add-assignment-form" style="margin-top:0.75rem;">
           <label>Title</label>
           <input id="assignment-title" required placeholder="e.g. Performance Task 1" />
           <label>Instructions (shown to students - paste the objective, output format/options, anything they need to know)</label>
@@ -131,7 +131,7 @@
             <button type="submit">Add assignment</button>
           </div>
         </form>
-      </div>
+      </details>
       <div id="assignments-list"></div>
     </section>
 
