@@ -72,6 +72,8 @@ tried first and silently failed cross-browser.
 | Grading (single score out of an assignment's total points, optional rubric-reference link/embed on Review) | `js/teacher.js` (`openReview()`, `totalPoints` on `assignments`, `finalGrade{score,feedback}` on `submissions`) — replaced the old per-criterion rubric builder; see limitations |
 | AI rubric-check on/off | `js/teacher.js`'s `AI_CHECK_ENABLED` flag (top of file) — hidden by default, code (`js/gemini.js`) untouched |
 | School Year / Term on a Subject | `js/teacher.js` (`add-subject-form` handler, `loadSubjects()`, `openSubject()`) + `teacher.html`'s `#subject-year`/`#subject-term` — one Subject per term, teacher creates a new one each term |
+| Editing an existing Subject's Year/Term, or a Section's name | `js/teacher.js`'s `editSubjectYearTerm()` / `editSectionName()` — inline edit forms on the subject/section card, same pattern (click Edit → form appears in place → Save → `updateDoc` → reload list) |
+| Roster gender (Male/Female), Records grid gender grouping | `js/teacher.js`'s `addRosterNames()` (parses `MALE`/`FEMALE` header lines in the pasted text as gender markers, tags every name after until the next marker) + `loadRecords()` (groups body rows into Male/Female/Other blocks when the roster has gender data, flat otherwise) — `sections.roster` is now `{name, gender}[]`, both `js/teacher.js` and `js/student.js` normalize legacy plain-string rosters on read |
 | Student dashboard UI/behavior (join class/submit a link/view results) | `js/student.js` + `student.html` |
 | Google Sign-In / role routing (teacher vs student) | `js/auth.js` (uses Google Identity Services directly + `signInWithCredential`, not Firebase's own popup/redirect — see note below) |
 | Firebase project keys / teacher email constant (frontend) | `js/firebase-config.js` |
@@ -106,16 +108,27 @@ tried first and silently failed cross-browser.
   Enrolled Students list; enrollments created before this field was added
   just show blank there), subjectId, subjectName, sectionId, sectionName
   (created when a student enters a join code)
-- `sections.roster` — string[] of official student names, set via the Set
-  Roster upload in `view-section` (`.xlsx`-reading, same `loadWorkbook()`
-  as before). Drives two things: (1) at join time, `js/student.js`'s
-  `renderNamePicker()` makes the student pick their name from this list
-  instead of trusting their Google display name, so `studentName` matches
-  the roster exactly by construction going forward - already-claimed names
-  are excluded from the picker (`claimedNames()`, queried live against
-  `enrollments`); (2) the Records grid's rows — matched against
-  `enrollments.studentName` (case-insensitive) to find each roster
-  student's actual submissions. A roster name with no matching enrollment
+- `sections.roster` — `{name, gender}[]` of official students, set via the
+  Set Roster manual paste or `.xlsx` upload in `view-section` (gender is
+  `"Male"`/`"Female"`/`""`; xlsx-loaded rosters always get `""` since the
+  sheet reader only reads one name column). Manual paste auto-detects
+  `MALE`/`FEMALE` header lines the same way a real Class Record lays them
+  out - `js/teacher.js`'s `addRosterNames()` tags every following name
+  with that gender until the next header. **Sections saved before gender
+  tracking existed have a plain `string[]` roster instead** - every reader
+  (`openSection()`, `loadRecords()` in `js/teacher.js`,
+  `renderNamePicker()` in `js/student.js`) normalizes `typeof r ===
+  "string" ? {name: r, gender: ""} : r` before use, so old sections keep
+  working, just without gender grouping until re-saved. Drives three
+  things: (1) at join time, `js/student.js`'s `renderNamePicker()` makes
+  the student pick their name from this list instead of trusting their
+  Google display name, so `studentName` matches the roster exactly by
+  construction going forward - already-claimed names are excluded from the
+  picker (`claimedNames()`, queried live against `enrollments`); (2) the
+  Records grid's rows — matched against `enrollments.studentName`
+  (case-insensitive) to find each roster student's actual submissions, and
+  grouped into Male/Female/Other blocks (`.gender-group` header rows) when
+  the roster has gender data. A roster name with no matching enrollment
   shows as "Not joined" rather than being silently omitted — that's the
   whole point of seeding from the real roster instead of just listing
   whoever self-enrolled.

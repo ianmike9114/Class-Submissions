@@ -36,7 +36,10 @@ async function claimedNames(sectionId) {
 async function renderNamePicker() {
   const { sectionDoc, section } = pendingJoin;
   const claimed = await claimedNames(sectionDoc.id);
-  const available = section.roster.filter((name) => !claimed.has(name.toLowerCase()));
+  // Older sections saved a plain string[] roster before gender tracking
+  // existed - normalize both shapes to plain names here.
+  const rosterNames = section.roster.map((r) => (typeof r === "string" ? r : r.name));
+  const available = rosterNames.filter((name) => !claimed.has(name.toLowerCase()));
   const container = el("join-name-picker");
 
   if (available.length === 0) {

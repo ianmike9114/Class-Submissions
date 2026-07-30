@@ -101,6 +101,14 @@ its Written Work / Performance Task group headers (`thead tr:first-child
 th`) — only add a second header row if you actually need grouped columns
 like that, it's a special case, not the default table header look.
 
+The Records grid also groups its **body rows** by gender (MALE/FEMALE
+blocks, matching a real Class Record) when the roster has gender data:
+```html
+<tr class="gender-group"><td colspan="6">Male</td></tr>
+```
+Gray bg, bold, centered, spans every column — one of these rows precedes
+each gender's student rows. See `js/teacher.js`'s `loadRecords()`.
+
 ## Embedded previews (submission links, instructions files, rubric files)
 
 ```html

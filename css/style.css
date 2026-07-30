@@ -140,6 +140,11 @@ label { font-weight: 600; font-size: 0.85rem; display: block; margin-bottom: 0.2
   top: -1px;
 }
 .records-grid td.muted { font-style: italic; }
+.records-grid tbody tr.gender-group td {
+  background: var(--gray-bg);
+  font-weight: 600;
+  text-align: center;
+}
 
 details.card summary { cursor: pointer; }
 details.card summary::marker { color: var(--blue); }

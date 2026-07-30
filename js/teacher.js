@@ -246,8 +246,10 @@ async function openSection(sectionId) {
   el("section-view-name").textContent = section.sectionName;
 
   // Preload the already-saved roster (if any) so it's editable right away,
-  // instead of only being visible right after a fresh upload.
-  rosterPreviewNames = [...(section.roster || [])];
+  // instead of only being visible right after a fresh upload. Older
+  // sections saved a plain string[] before gender tracking existed -
+  // normalize those to {name, gender: ""} on load.
+  rosterPreviewNames = (section.roster || []).map((r) => (typeof r === "string" ? { name: r, gender: "" } : r));
   el("roster-message").textContent = "";
   el("roster-preview").innerHTML = "";
   if (rosterPreviewNames.length > 0) renderRosterPreview();
@@ -430,22 +432,32 @@ let rosterPreviewNames = [];
 
 // DepEd names are "Surname, First Name M.I." - the comma is part of the
 // name, not a separator, so this only splits on newlines (pasting a Class
-// Record's name column gives one line per cell anyway). Also strips a
-// pasted MALE/FEMALE section label and a leading row number ("1 " / "1."),
-// both of which come along for free when copy-pasting straight out of a
-// real Class Record sheet.
-const ROSTER_JUNK_LINES = new Set(["male", "female", "name", "names"]);
+// Record's name column gives one line per cell anyway). A pasted MALE/
+// FEMALE section label tags every name after it with that gender, until
+// the next label - matches a real Class Record's layout exactly, so no
+// separate gender input is needed. Also strips a leading row number
+// ("1 " / "1.") that comes along for free when copy-pasting from a sheet.
+const ROSTER_JUNK_LINES = new Set(["name", "names"]);
 function addRosterNames(text) {
-  const candidates = text.split(/\n/)
-    .map((line) => line.replace(/^\s*\d+[.)]?\s+/, "").trim())
-    .filter(Boolean)
-    .filter((line) => !ROSTER_JUNK_LINES.has(line.toLowerCase()));
-  const seen = new Set(rosterPreviewNames.map((n) => n.toLowerCase()));
-  for (const name of candidates) {
-    const key = name.toLowerCase();
+  let currentGender = "";
+  const candidates = [];
+  for (const rawLine of text.split(/\n/)) {
+    const line = rawLine.replace(/^\s*\d+[.)]?\s+/, "").trim();
+    if (!line) continue;
+    const lower = line.toLowerCase();
+    if (lower === "male" || lower === "female") {
+      currentGender = lower === "male" ? "Male" : "Female";
+      continue;
+    }
+    if (ROSTER_JUNK_LINES.has(lower)) continue;
+    candidates.push({ name: line, gender: currentGender });
+  }
+  const seen = new Set(rosterPreviewNames.map((r) => r.name.toLowerCase()));
+  for (const c of candidates) {
+    const key = c.name.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    rosterPreviewNames.push(name);
+    rosterPreviewNames.push(c);
   }
   renderRosterPreview();
 }
@@ -471,7 +483,7 @@ el("roster-config-form").addEventListener("submit", async (e) => {
     if (rows.length === 0) {
       throw new Error("No names found there - check the sheet name, column letter, and start row.");
     }
-    rosterPreviewNames = rows.map((r) => r.name);
+    rosterPreviewNames = rows.map((r) => ({ name: r.name, gender: "" }));
     renderRosterPreview();
   } catch (err) {
     msg.textContent = err.message;
@@ -480,12 +492,12 @@ el("roster-config-form").addEventListener("submit", async (e) => {
 
 function renderRosterPreview() {
   const container = el("roster-preview");
-  const rows = rosterPreviewNames.map((name, i) => `
-    <tr><td>${i + 1}</td><td>${name}</td><td><button type="button" class="secondary" data-remove-name="${i}">Remove</button></td></tr>`).join("");
+  const rows = rosterPreviewNames.map((r, i) => `
+    <tr><td>${i + 1}</td><td>${r.name}</td><td>${r.gender || "—"}</td><td><button type="button" class="secondary" data-remove-name="${i}">Remove</button></td></tr>`).join("");
 
   container.innerHTML = `
     <p class="muted">${rosterPreviewNames.length} name(s) in the list. Remove any that aren't actual students, then save.</p>
-    <table class="records-grid"><thead><tr><th>#</th><th>Name</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+    <table class="records-grid"><thead><tr><th>#</th><th>Name</th><th>Gender</th><th></th></tr></thead><tbody>${rows}</tbody></table>
     <button id="roster-save" style="margin-top:0.75rem;">Save Roster (${rosterPreviewNames.length})</button>`;
 
   container.querySelectorAll("[data-remove-name]").forEach((b) => {
@@ -515,7 +527,7 @@ async function loadRecords() {
 
   const section = (await getDoc(doc(db, "sections", state.sectionId))).data();
   el("records-view-title").textContent = section.sectionName;
-  const roster = section.roster || [];
+  const roster = (section.roster || []).map((r) => (typeof r === "string" ? { name: r, gender: "" } : r));
 
   if (roster.length === 0) {
     container.innerHTML = `<p class="muted">No roster set for this section yet - go back and use "Set Roster" first.</p>`;
@@ -556,7 +568,8 @@ async function loadRecords() {
   const groupHeaderCells = groups.map((g) => `<th colspan="${g.assignments.length}">${g.label}</th>`).join("");
   const titleHeaderCells = orderedAssignments.map((a) => `<th>${a.title}</th>`).join("");
 
-  const bodyRows = roster.map((name) => {
+  function renderStudentRow(r) {
+    const name = r.name;
     const enrollment = enrollments.find((en) => en.studentName.toLowerCase() === name.toLowerCase());
     const cells = orderedAssignments.map((a) => {
       if (!enrollment) return `<td class="muted">Not joined</td>`;
@@ -568,7 +581,23 @@ async function loadRecords() {
       return `<td class="status-${sub.status}">${sub.status}</td>`;
     }).join("");
     return `<tr><td>${name}</td>${cells}</tr>`;
-  }).join("");
+  }
+
+  // Group rows by gender (matches the real Class Record's MALE/FEMALE
+  // blocks) only when the roster actually has gender data - a roster
+  // saved before gender tracking existed just renders flat, same as before.
+  const genderGroups = ["Male", "Female"]
+    .map((label) => ({ label, students: roster.filter((r) => r.gender === label) }))
+    .filter((g) => g.students.length > 0);
+  const ungendered = roster.filter((r) => r.gender !== "Male" && r.gender !== "Female");
+  if (ungendered.length > 0) genderGroups.push({ label: "Other", students: ungendered });
+
+  const bodyRows = genderGroups.length > 1
+    ? genderGroups.map((g) => {
+        const header = `<tr class="gender-group"><td colspan="${orderedAssignments.length + 1}">${g.label}</td></tr>`;
+        return header + g.students.map(renderStudentRow).join("");
+      }).join("")
+    : roster.map(renderStudentRow).join("");
 
   container.innerHTML = `
     <table class="records-grid">
