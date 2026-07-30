@@ -10,6 +10,7 @@
   <header>
     <div style="display:flex; align-items:center; gap:0.75rem;">
       <button class="secondary" id="go-home">&#8962; Home</button>
+      <button class="secondary" id="toggle-settings">&#9881; Settings</button>
       <h1>Teacher Dashboard</h1>
     </div>
     <div>
@@ -19,7 +20,7 @@
   </header>
 
   <main>
-    <div class="card">
+    <div class="card hidden" id="settings-panel">
       <h2>General Settings</h2>
       <form id="settings-form">
         <label>Gemini API key (for AI rubric-check)</label>

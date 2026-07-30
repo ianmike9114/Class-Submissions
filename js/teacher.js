@@ -494,6 +494,7 @@ function show(viewId) {
   });
 }
 el("go-home").addEventListener("click", () => { show("view-subjects"); loadSubjects(); });
+el("toggle-settings").addEventListener("click", () => el("settings-panel").classList.toggle("hidden"));
 el("back-to-subjects").addEventListener("click", () => { show("view-subjects"); loadSubjects(); });
 el("back-to-subject").addEventListener("click", () => show("view-subject"));
 el("back-to-section").addEventListener("click", () => show("view-section"));
