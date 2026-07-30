@@ -14,7 +14,7 @@ Quick pointers:
 - Student-side change → `js/student.js` (+ `student.html` if UI markup)
 - AI rubric-check behavior (prompt, Gemini model, key storage) → `js/gemini.js`
 - Inline submission preview → `js/embed.js`
-- Roster upload / Records gradebook grid → `js/teacher.js` (reuses `js/class-record.js`'s `loadWorkbook()`), `teacher.html`'s `#view-records`
+- Roster editing (manual typed/pasted names, default) / Records gradebook grid → `js/teacher.js`'s `addRosterNames()`/`renderRosterPreview()` (xlsx upload via `loadWorkbook()` still there as a fallback), `teacher.html`'s `#view-records`
 - Home button → `teacher.html`'s `#go-home`, `js/teacher.js`'s listener
 - In-app-browser sign-in warning (Messenger/Instagram/etc. block Google OAuth) → `index.html`'s `isInAppBrowser()` + `#in-app-browser-warning`
 - Sign-in failure notification / duplicate-enrollment prevention → `index.html`'s `showError()`, `js/student.js`'s `join-form` handler

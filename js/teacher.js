@@ -166,8 +166,16 @@ el("back-to-subject-from-enrolled").addEventListener("click", () => show("view-s
 async function openSection(sectionId) {
   state.sectionId = sectionId;
   state.assignmentId = null;
-  const section = await getDoc(doc(db, "sections", sectionId));
-  el("section-view-name").textContent = section.data().sectionName;
+  const section = (await getDoc(doc(db, "sections", sectionId))).data();
+  el("section-view-name").textContent = section.sectionName;
+
+  // Preload the already-saved roster (if any) so it's editable right away,
+  // instead of only being visible right after a fresh upload.
+  rosterPreviewNames = [...(section.roster || [])];
+  el("roster-message").textContent = "";
+  el("roster-preview").innerHTML = "";
+  if (rosterPreviewNames.length > 0) renderRosterPreview();
+
   show("view-section");
   loadAssignments();
 }
@@ -359,6 +367,23 @@ async function openReview(submissionId) {
 // ---------- roster (per-section, seeds the Records grid's rows) ----------
 let rosterPreviewNames = [];
 
+function addRosterNames(text) {
+  const candidates = text.split(/[\n,]+/).map((n) => n.trim()).filter(Boolean);
+  const seen = new Set(rosterPreviewNames.map((n) => n.toLowerCase()));
+  for (const name of candidates) {
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rosterPreviewNames.push(name);
+  }
+  renderRosterPreview();
+}
+el("roster-add-manual").addEventListener("click", () => {
+  const textarea = el("roster-manual-names");
+  addRosterNames(textarea.value);
+  textarea.value = "";
+});
+
 el("roster-config-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const msg = el("roster-message");
@@ -391,7 +416,7 @@ function renderRosterPreview() {
     </div>`).join("");
 
   container.innerHTML = `
-    <p class="muted">${rosterPreviewNames.length} name(s) found. Remove any that aren't actual students (e.g. a "MALE"/"FEMALE" header row), then save.</p>
+    <p class="muted">${rosterPreviewNames.length} name(s) in the list. Remove any that aren't actual students, then save.</p>
     ${rows}
     <button id="roster-save">Save Roster (${rosterPreviewNames.length})</button>`;
 

@@ -82,17 +82,26 @@
         <div style="margin-top:0.75rem;">
           <h3>Set Roster</h3>
           <p class="muted">Seeds the Records grid with your official student list, so students who haven't joined/submitted still show up (instead of being invisible). Nothing is uploaded anywhere.</p>
-          <form id="roster-config-form">
-            <label>Your Class Record file</label>
-            <input id="roster-file" type="file" accept=".xlsx" required />
-            <label>Sheet name (leave blank for the first sheet)</label>
-            <input id="roster-sheet" placeholder="e.g. TERM1" />
-            <label>Column letter with student names</label>
-            <input id="roster-name-col" required placeholder="e.g. B" />
-            <label>Row number where the first student's name is</label>
-            <input id="roster-start-row" type="number" required placeholder="e.g. 12" />
-            <button type="submit">Load Names</button>
-          </form>
+
+          <label>Add names (one per line, or paste a whole list)</label>
+          <textarea id="roster-manual-names" rows="4" placeholder="Juan Dela Cruz&#10;Maria Santos"></textarea>
+          <button type="button" class="secondary" id="roster-add-manual">+ Add to list</button>
+
+          <details style="margin-top:0.75rem;">
+            <summary class="muted" style="cursor:pointer;">Or upload your Class Record file instead</summary>
+            <form id="roster-config-form" style="margin-top:0.5rem;">
+              <label>Your Class Record file</label>
+              <input id="roster-file" type="file" accept=".xlsx" required />
+              <label>Sheet name (leave blank for the first sheet)</label>
+              <input id="roster-sheet" placeholder="e.g. TERM1" />
+              <label>Column letter with student names</label>
+              <input id="roster-name-col" required placeholder="e.g. B" />
+              <label>Row number where the first student's name is</label>
+              <input id="roster-start-row" type="number" required placeholder="e.g. 12" />
+              <button type="submit">Load Names</button>
+            </form>
+          </details>
+
           <p id="roster-message" class="muted"></p>
           <div id="roster-preview"></div>
         </div>
