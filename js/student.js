@@ -9,11 +9,78 @@ let currentUser = null;
 function el(id) { return document.getElementById(id); }
 
 // ---------- join a class ----------
+// If the section already has a roster (Set Roster, teacher side), the
+// student picks their real name from it instead of trusting whatever
+// Google display name shows - keeps studentName exactly matching the
+// roster spelling everywhere it's later compared (Records grid, Enrolled
+// Students list). No roster yet -> falls back to the old Google-name flow.
+let pendingJoin = null; // { sectionDoc, section, subject } while a name picker is open
+
+async function enroll(sectionId, section, subject, studentName) {
+  await addDoc(collection(db, "enrollments"), {
+    studentUID: currentUser.uid,
+    studentName,
+    studentEmail: currentUser.email,
+    subjectId: section.subjectId,
+    subjectName: subject.name,
+    sectionId,
+    sectionName: section.sectionName,
+  });
+}
+
+async function claimedNames(sectionId) {
+  const snap = await getDocs(query(collection(db, "enrollments"), where("sectionId", "==", sectionId)));
+  return new Set(snap.docs.map((d) => (d.data().studentName || "").toLowerCase()));
+}
+
+async function renderNamePicker() {
+  const { sectionDoc, section } = pendingJoin;
+  const claimed = await claimedNames(sectionDoc.id);
+  const available = section.roster.filter((name) => !claimed.has(name.toLowerCase()));
+  const container = el("join-name-picker");
+
+  if (available.length === 0) {
+    container.innerHTML = '<p class="muted">All roster names for this class are already claimed. Ask your teacher to check the Enrolled Students list.</p>';
+    return;
+  }
+
+  container.innerHTML = `
+    <label>Which name is yours?</label>
+    <select id="join-name-select">
+      ${available.map((name) => `<option value="${name}">${name}</option>`).join("")}
+    </select>
+    <button type="button" id="join-name-confirm">This is me</button>
+    <p id="join-name-message" class="muted"></p>`;
+
+  el("join-name-confirm").addEventListener("click", async () => {
+    const chosen = el("join-name-select").value;
+    const btn = el("join-name-confirm");
+    btn.disabled = true;
+    try {
+      const stillClaimed = await claimedNames(pendingJoin.sectionDoc.id);
+      if (stillClaimed.has(chosen.toLowerCase())) {
+        el("join-name-message").textContent = "That name was just taken - pick another.";
+        renderNamePicker();
+        return;
+      }
+      await enroll(pendingJoin.sectionDoc.id, pendingJoin.section, pendingJoin.subject, chosen);
+      pendingJoin = null;
+      el("join-form").reset();
+      container.innerHTML = "";
+      loadEverything();
+    } catch (err) {
+      el("join-name-message").textContent = "Join failed: " + err.message;
+      btn.disabled = false;
+    }
+  });
+}
+
 el("join-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const code = el("join-code").value.trim().toUpperCase();
   const msg = el("join-message");
   msg.textContent = "";
+  el("join-name-picker").innerHTML = "";
 
   const q = query(collection(db, "sections"), where("joinCode", "==", code));
   const snap = await getDocs(q);
@@ -25,17 +92,15 @@ el("join-form").addEventListener("submit", async (e) => {
   const section = sectionDoc.data();
   const subject = (await getDoc(doc(db, "subjects", section.subjectId))).data();
 
-  await addDoc(collection(db, "enrollments"), {
-    studentUID: currentUser.uid,
-    studentName: currentUser.displayName || currentUser.email,
-    studentEmail: currentUser.email,
-    subjectId: section.subjectId,
-    subjectName: subject.name,
-    sectionId: sectionDoc.id,
-    sectionName: section.sectionName,
-  });
-  e.target.reset();
-  loadEverything();
+  if (!section.roster || section.roster.length === 0) {
+    await enroll(sectionDoc.id, section, subject, currentUser.displayName || currentUser.email);
+    e.target.reset();
+    loadEverything();
+    return;
+  }
+
+  pendingJoin = { sectionDoc, section, subject };
+  renderNamePicker();
 });
 
 // ---------- load classes + assignments + submissions ----------

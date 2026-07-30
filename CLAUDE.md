@@ -70,7 +70,8 @@ tried first and silently failed cross-browser.
 | Inline submission preview (which links embed vs. fall back to a plain link) | `js/embed.js` (`toEmbedUrl()`) |
 | Roster seeding (per section) / Records gradebook grid (grouped by component - Written Work / Performance Task) | `js/teacher.js` (`renderRosterPreview()`, `loadRecords()`) + `teacher.html` (`#view-records`) — reuses `js/class-record.js`'s `loadWorkbook()`/`totalScore()`, no new file |
 | Home button (jump to `view-subjects` from any depth) | `teacher.html`'s header `#go-home` + `js/teacher.js`'s listener (same body as `back-to-subjects`) |
-| Enrolled students list (subject-wide, all its sections combined - Name/Gmail/Section) | `js/teacher.js` (`openEnrolled()`) + `teacher.html` (`#view-enrolled`, "View Enrolled Students" button in `#view-subject`) — distinct from the roster-matched Records grid, this is just "who has joined", no roster upload involved |
+| Enrolled students list (subject-wide, all its sections combined - Name/Gmail/Section) + removing a wrong/duplicate enrollment | `js/teacher.js` (`openEnrolled()`, `deleteDoc` on the Remove button) + `teacher.html` (`#view-enrolled`, "View Enrolled Students" button in `#view-subject`) |
+| Join flow / pick-your-name-from-roster | `js/student.js` (`join-form` handler, `renderNamePicker()`, `claimedNames()`, `enroll()`) + `student.html`'s `#join-name-picker` — only kicks in when the section already has a roster (`sections.roster`), otherwise falls back to using the Google account name |
 | Student's Assignments list grouping by subject | `js/student.js` (`loadEverything()` — groups by `subjectName` via a `sectionId → subjectName` map built from the student's own enrollments) |
 | Styling | `css/style.css` |
 | Firestore deploy config | `firebase.json`, `.firebaserc` |
@@ -82,10 +83,21 @@ tried first and silently failed cross-browser.
 - `sections` — subjectId, sectionName, joinCode
 - `assignments` — subjectId, sectionId, title, instructions (free text shown to students - objective/output format/anything they need, not used by the AI check, just display), instructionsLink (optional Drive/Docs link to an instructions file, embedded via `js/embed.js`'s `toEmbedUrl()` same as submission previews), component ("written" | "performance" - drives the Records grid's grouped header, older assignments without this land in a fallback "Other" group), dueDate, allowedFileTypes (a link-type hint, not an upload constraint), rubric[{criterion, maxPoints}], rubricReferenceLink (optional - extra context given to the AI check, does NOT change what's actually scored, see `js/gemini.js`)
 - `submissions` — assignmentId, studentUID, studentName, link (may be empty if `photoData` is used instead), photoData (optional - base64 `data:image/jpeg;base64,...` from in-app camera capture on "image" assignments, compressed client-side to fit the 1MiB Firestore doc cap; no Storage), status(pending/ai-drafted/published), aiDraft{scorePerCriterion, feedback}, finalGrade{scorePerCriterion, feedback}
-- `enrollments` — studentUID, studentName, studentEmail (student's Gmail - added for the Enrolled Students list; enrollments created before this field was added just show blank there), subjectId, subjectName, sectionId, sectionName (created when a student enters a join code)
+- `enrollments` — studentUID, studentName (if the section had a roster at
+  join time, this is the exact roster spelling the student picked via
+  `js/student.js`'s name picker, not their Google account name - see
+  `sections.roster` below), studentEmail (student's Gmail - added for the
+  Enrolled Students list; enrollments created before this field was added
+  just show blank there), subjectId, subjectName, sectionId, sectionName
+  (created when a student enters a join code)
 - `sections.roster` — string[] of official student names, set via the Set
-  Roster upload in `view-section` (same `.xlsx`-reading approach as Class
-  Record export). Drives the Records grid's rows — matched against
+  Roster upload in `view-section` (`.xlsx`-reading, same `loadWorkbook()`
+  as before). Drives two things: (1) at join time, `js/student.js`'s
+  `renderNamePicker()` makes the student pick their name from this list
+  instead of trusting their Google display name, so `studentName` matches
+  the roster exactly by construction going forward - already-claimed names
+  are excluded from the picker (`claimedNames()`, queried live against
+  `enrollments`); (2) the Records grid's rows — matched against
   `enrollments.studentName` (case-insensitive) to find each roster
   student's actual submissions. A roster name with no matching enrollment
   shows as "Not joined" rather than being silently omitted — that's the
@@ -136,6 +148,14 @@ tried first and silently failed cross-browser.
   would sweep those up as fake students. Don't loosen this check.
 - No real-time listeners (`onSnapshot`) — lists refresh on load/action, not
   live. Fine at single-class scale; add if it ever matters.
+- Removing an enrollment (the "Remove" button in Enrolled Students,
+  `js/teacher.js`) only deletes that `enrollments` doc — same
+  non-cascading simplification as the subject/section/assignment deletes.
+  Any submissions that student already made under that enrollment are
+  untouched and still exist, just no longer tied to a live enrollment; if
+  they rejoin (even picking a different roster name), those old
+  submissions won't reappear under the new enrollment. Deliberate, not a
+  bug — flag if this ever needs real cleanup.
 - In-app camera capture (`photoData`) only exists for "image" and
   "document" assignments, as an alternative to pasting a link — not a
   general file-upload feature.

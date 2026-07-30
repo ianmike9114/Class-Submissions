@@ -138,16 +138,24 @@ async function openEnrolled() {
     query(collection(db, "enrollments"), where("sectionId", "in", sectionIds.slice(0, 30)))
   );
   const rows = enrollSnap.docs
-    .map((d) => d.data())
+    .map((d) => ({ id: d.id, ...d.data() }))
     .sort((a, b) =>
       (sectionMap.get(a.sectionId) || "").localeCompare(sectionMap.get(b.sectionId) || "")
       || a.studentName.localeCompare(b.studentName));
 
   list.innerHTML = rows.length
-    ? `<table class="records-grid"><thead><tr><th>Name</th><th>Gmail</th><th>Section</th></tr></thead><tbody>
-        ${rows.map((r) => `<tr><td>${r.studentName}</td><td>${r.studentEmail || ""}</td><td>${sectionMap.get(r.sectionId) || ""}</td></tr>`).join("")}
+    ? `<table class="records-grid"><thead><tr><th>Name</th><th>Gmail</th><th>Section</th><th></th></tr></thead><tbody>
+        ${rows.map((r) => `<tr><td>${r.studentName}</td><td>${r.studentEmail || ""}</td><td>${sectionMap.get(r.sectionId) || ""}</td><td><button class="danger" data-remove-enrollment="${r.id}">Remove</button></td></tr>`).join("")}
       </tbody></table>`
     : '<p class="muted">No students enrolled yet.</p>';
+
+  list.querySelectorAll("[data-remove-enrollment]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const ok = confirm("Remove this student's enrollment? This frees their roster name for someone else to claim, and they'd need to join again with the code.");
+      if (!ok) return;
+      await deleteDoc(doc(db, "enrollments", b.dataset.removeEnrollment));
+      openEnrolled();
+    }));
 
   show("view-enrolled");
 }
