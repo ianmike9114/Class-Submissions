@@ -1,7 +1,7 @@
 import { db } from "./firebase-config.js";
 import { guardPage, signOutUser } from "./auth.js";
 import {
-  collection, addDoc, doc, getDoc, getDocs, updateDoc, query, where,
+  collection, addDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { toEmbedUrl } from "./embed.js";
 
@@ -162,6 +162,8 @@ async function loadEverything() {
         <span class="card" style="display:inline-block; margin-right:0.5rem;">
           ${en.subjectName} — ${en.sectionName} (<span id="my-name-${en.id}">${en.studentName}</span>)
           <button type="button" class="secondary" data-edit-my-name="${en.id}" style="margin-left:0.4rem;">Edit name</button>
+          <button type="button" class="secondary" data-toggle-leave="${en.id}" data-current="${!!en.leaveRequested}" style="margin-left:0.4rem;">${en.leaveRequested ? "Cancel leave request" : "Request to leave"}</button>
+          ${en.leaveRequested ? '<span class="status-pending"> — leave requested</span>' : ""}
         </span>`).join("")
     : '<p class="muted">Not joined to any class yet.</p>';
 
@@ -190,6 +192,27 @@ async function loadEverything() {
       };
       input.addEventListener("keydown", (e) => { if (e.key === "Enter") save(); });
       input.addEventListener("blur", save);
+    }));
+
+  // Flag-only - a student can never delete their own enrollment (firestore.rules
+  // keeps delete teacher-only), just request/cancel. Confirm only on the
+  // outbound request (it notifies the teacher); cancelling is instant, since
+  // undoing a flag shouldn't be harder than setting it.
+  classesList.querySelectorAll("[data-toggle-leave]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const enrollmentId = b.dataset.toggleLeave;
+      const next = b.dataset.current !== "true";
+      if (next) {
+        const ok = confirm("Send a request to leave this class? Your teacher will see it and can remove you.");
+        if (!ok) return;
+      }
+      b.disabled = true;
+      try {
+        await updateDoc(doc(db, "enrollments", enrollmentId), { leaveRequested: next });
+      } catch (err) {
+        alert("Couldn't update leave request: " + err.message);
+      }
+      loadEverything();
     }));
 
   const sectionIds = enrollments.map((en) => en.sectionId);
@@ -249,9 +272,30 @@ async function loadEverything() {
         row.innerHTML = `
           <strong>${a.title}</strong>
           <span class="status-${s.status}"> — ${s.status === "published" ? "Graded" : "Submitted, pending review"}</span>
-          ${s.status === "published" ? renderResult(s, a) : ""}`;
+          ${s.status === "published" ? renderResult(s, a) : `<div style="margin-top:0.5rem;"><button type="button" class="danger" data-remove-submission="${subDoc.id}">Remove submission</button></div>`}`;
       }
       list.appendChild(row);
+
+      // Only while pending - once graded (published), the submission is
+      // immutable from the student's side (firestore.rules enforces this too,
+      // not just hidden here).
+      if (subDoc && subDoc.data().status !== "published") {
+        const removeBtn = row.querySelector("[data-remove-submission]");
+        if (removeBtn) {
+          removeBtn.addEventListener("click", async () => {
+            const ok = confirm("Remove this submission? You'll be able to resubmit afterward. This can't be undone.");
+            if (!ok) return;
+            removeBtn.disabled = true;
+            try {
+              await deleteDoc(doc(db, "submissions", subDoc.id));
+              loadEverything();
+            } catch (err) {
+              alert("Couldn't remove submission: " + err.message);
+              removeBtn.disabled = false;
+            }
+          });
+        }
+      }
     }
   }
   attachSubmitHandlers();

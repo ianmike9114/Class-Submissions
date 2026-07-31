@@ -94,7 +94,11 @@ tried first and silently failed cross-browser.
 | Sign-in failure notification (GIS script didn't load, credential exchange failed, or a slow-load timeout) | `index.html`'s `showError()`/`FRIENDLY_ERRORS` + the `#error` box (hidden until something actually fails) |
 | Preventing duplicate enrollment in the same section, join success feedback | `js/student.js`'s `join-form` handler (checks for an existing `enrollments` doc for that `studentUID`+`sectionId` before enrolling either way) |
 | Settings panel toggle (Gemini key, hidden by default) | `teacher.html`'s header `#toggle-settings` button + `#settings-panel` (starts with `hidden` class, independent of the `show()` view stack so it stays open/closed across navigation) |
-| Enrolled students list (subject-wide from `#view-subject`, or one section only from `#view-section`'s own "View Enrolled Students" button) + removing a wrong/duplicate enrollment | `js/teacher.js` (`openEnrolled(onlySectionId)` - omit the arg for subject-wide, pass `state.sectionId` for one section; `deleteDoc` on the Remove button) + `teacher.html` (`#view-enrolled`, shared by both entry points) |
+| Enrolled students list (subject-wide from `#view-subject`, or one section only from `#view-section`'s own "View Enrolled Students" button) + removing a wrong/duplicate enrollment | `js/teacher.js` (`openEnrolled(onlySectionId)` - omit the arg for subject-wide, pass `state.sectionId` for one section; `deleteDoc` on the Remove button, row numbers via `${i+1}`) + `teacher.html` (`#view-enrolled`, shared by both entry points) |
+| Student requesting to leave a class (flagged, teacher approves - not instant self-removal) | `js/student.js` (My classes card's `data-toggle-leave` button, `updateDoc(..., {leaveRequested})`) + `js/teacher.js` (`getLeaveRequestCounts()`/`leaveBadge()` mirroring the pending-submission badge, `openEnrolled()`'s request-aware Remove confirm message) + `firestore.rules`'s `enrollments` update rule (added `leaveRequested` to the student-self-update field allowlist; delete stays teacher-only) |
+| Row numbers on the Enrolled Students table | `js/teacher.js`'s `openEnrolled()` row rendering (`#` column, same pattern as `renderRosterPreview()`'s existing `${i+1}`) - deliberately not added to the Records grid (`loadRecords()`, gender-grouped) |
+| Student retracting their own submission (only while `status == "pending"`, never after grading) | `js/student.js`'s `loadEverything()` submission branch ("Remove submission" button, `deleteDoc`) + `firestore.rules`'s `submissions` delete rule (student may delete only their own pending submission; teacher-only once published) |
+| Small icon-style delete buttons (Enrolled Students Remove, subject/section/assignment Delete) | `css/style.css`'s `button.danger.icon` (compact circular variant of `.danger`) + the 4 button sites in `js/teacher.js` - `confirm()`/`disabled` logic unchanged at each, markup-only change |
 | Join flow / pick-your-name-from-roster | `js/student.js` (`join-form` handler, `renderNamePicker()`, `claimedNames()`, `enroll()`) + `student.html`'s `#join-name-picker` — only kicks in when the section already has a roster (`sections.roster`), otherwise falls back to using the Google account name |
 | Student's Assignments list grouping by subject | `js/student.js` (`loadEverything()` — groups by `subjectName` via a `sectionId → subjectName` map built from the student's own enrollments) |
 | Styling / UI patterns (cards, buttons, tables, collapsibles, status colors) | `DESIGN_SYSTEM.md` first — has every pattern with copy-pasteable HTML, avoids re-reading `css/style.css` from scratch. Only open `css/style.css` itself for a genuinely new pattern not covered there. |
@@ -106,14 +110,18 @@ tried first and silently failed cross-browser.
 - `subjects` — name, gradeLevel, schoolYear (free text, e.g. "2026-2027"), term ("1"|"2"|"3"), archived. Old subjects from before Term/Year existed just show "—" for both — not backfilled.
 - `sections` — subjectId, sectionName, joinCode
 - `assignments` — subjectId, sectionId, title, instructions (free text shown to students - objective/output format/anything they need), instructionsLink (optional Drive/Docs link to an instructions file, embedded via `js/embed.js`'s `toEmbedUrl()` same as submission previews), component ("written" | "performance" - drives the Records grid's grouped header, older assignments without this land in a fallback "Other" group), dueDate, allowedFileTypes (a link-type hint, not an upload constraint), totalPoints (number - the score cap, teacher grades one raw number against this), rubricReferenceLink (optional Drive/Docs link to the teacher's own rubric PDF/Word, shown embedded on the Review screen for the teacher's reference only - not parsed, not used to compute anything)
-- `submissions` — assignmentId, studentUID, studentName, link (may be empty if `photoPages` is used instead), photoPages (optional - string[] of base64 `data:image/jpeg;base64,...` pages from in-app camera capture on "image"/"document" assignments, up to `MAX_PHOTOS` (3), each compressed client-side to `PER_PHOTO_MAX_LEN` so the whole array still fits the 1MiB Firestore doc cap; no Storage; older submissions may instead have a single `photoData` string field - both are handled on display), status(pending/published — "ai-drafted" only appears on submissions graded before AI check was hidden), finalGrade{score, feedback} (score is a single number out of the assignment's `totalPoints`)
+- `submissions` — assignmentId, studentUID, studentName, link (may be empty if `photoPages` is used instead), photoPages (optional - string[] of base64 `data:image/jpeg;base64,...` pages from in-app camera capture on "image"/"document" assignments, up to `MAX_PHOTOS` (3), each compressed client-side to `PER_PHOTO_MAX_LEN` so the whole array still fits the 1MiB Firestore doc cap; no Storage; older submissions may instead have a single `photoData` string field - both are handled on display), status(pending/published — "ai-drafted" only appears on submissions graded before AI check was hidden), finalGrade{score, feedback} (score is a single number out of the assignment's `totalPoints`). A student may `deleteDoc` their own submission while `status == "pending"` (rule-enforced in `firestore.rules`, not just hidden in the UI) - once `published`, it's immutable from their side.
 - `enrollments` — studentUID, studentName (if the section had a roster at
   join time, this is the exact roster spelling the student picked via
   `js/student.js`'s name picker, not their Google account name - see
   `sections.roster` below), studentEmail (student's Gmail - added for the
   Enrolled Students list; enrollments created before this field was added
   just show blank there), subjectId, subjectName, sectionId, sectionName
-  (created when a student enters a join code)
+  (created when a student enters a join code), leaveRequested (optional bool
+  - student self-flags via My Classes' "Request to leave"/"Cancel leave
+  request" toggle; teacher sees it flagged in Enrolled Students and acts via
+  the existing Remove flow, which still doesn't cascade to that student's
+  submissions, same as any other removal)
 - `sections.roster` — `{name, gender}[]` of official students, set via the
   Set Roster manual paste or `.xlsx` upload in `view-section` (gender is
   `"Male"`/`"Female"`/`""`; xlsx-loaded rosters always get `""` since the
@@ -221,6 +229,10 @@ tried first and silently failed cross-browser.
   photos (e.g. dense handwriting) can lose some sharpness to this
   compression — if that's ever a problem, the student can still fall back
   to the Drive-link path instead.
+- **No separate "decline a leave request without removing the student"
+  action.** A teacher's only response to a flagged `leaveRequested` is
+  Remove (fulfills it) or leaving it alone (the student can Cancel it
+  themselves from their My Classes card). Flag if this ever needs to change.
 
 ## Conventions
 

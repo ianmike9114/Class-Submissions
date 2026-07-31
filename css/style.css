@@ -55,6 +55,17 @@ button.secondary { background: #6b7280; }
 button.danger { background: #b91c1c; }
 button:disabled { background: #9ca3af; cursor: not-allowed; }
 
+/* Compact size variant of .danger, for delete controls sitting inline in a
+   dense row/card where a full-size text button is an easy accidental tap
+   (sized off the .photo-thumb button "x" precedent below, without its
+   absolute-positioning overlay - these sit inline, not layered on a photo). */
+button.danger.icon {
+  padding: 0.25rem 0.55rem;
+  border-radius: 50%;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
 input, select, textarea {
   width: 100%;
   padding: 0.5rem;

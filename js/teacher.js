@@ -85,6 +85,29 @@ function pendingBadge(count) {
   return count ? `<span class="status-pending"> — ${count} pending</span>` : "";
 }
 
+// ---------- leave-request counts (mirrors getPendingCounts()/pendingBadge() above) ----------
+async function getLeaveRequestCounts() {
+  const [sectionsSnap, enrollSnap] = await Promise.all([
+    getDocs(collection(db, "sections")),
+    getDocs(query(collection(db, "enrollments"), where("leaveRequested", "==", true))),
+  ]);
+  const sectionToSubject = new Map(sectionsSnap.docs.map((d) => [d.id, d.data().subjectId]));
+
+  const bySection = new Map();
+  const bySubject = new Map();
+  enrollSnap.forEach((d) => {
+    const sectionId = d.data().sectionId;
+    const subjectId = sectionToSubject.get(sectionId);
+    bySection.set(sectionId, (bySection.get(sectionId) || 0) + 1);
+    if (subjectId) bySubject.set(subjectId, (bySubject.get(subjectId) || 0) + 1);
+  });
+  return { bySection, bySubject };
+}
+
+function leaveBadge(count) {
+  return count ? `<span class="status-pending"> — ${count} leave request${count > 1 ? "s" : ""}</span>` : "";
+}
+
 // A student's display name is cached on every submission at submit time
 // (not looked up live from their enrollment), so fixing a garbled Google
 // name has to touch both: every enrollment AND every submission for that
@@ -104,7 +127,7 @@ async function renameStudentEverywhere(studentUID, newName) {
 // ---------- subjects ----------
 async function loadSubjects() {
   const showArchived = el("toggle-archived").checked;
-  const [snap, counts] = await Promise.all([getDocs(collection(db, "subjects")), getPendingCounts()]);
+  const [snap, counts, leaveCounts] = await Promise.all([getDocs(collection(db, "subjects")), getPendingCounts(), getLeaveRequestCounts()]);
   const list = el("subjects-list");
   list.innerHTML = "";
   snap.forEach((d) => {
@@ -116,6 +139,7 @@ async function loadSubjects() {
       <strong>${s.name}</strong>
       <span class="muted" id="year-term-${d.id}">(${s.gradeLevel} — SY ${s.schoolYear || "—"} · Term ${s.term || "—"})</span>
       ${pendingBadge(counts.bySubject.get(d.id))}
+      ${leaveBadge(leaveCounts.bySubject.get(d.id))}
       ${s.archived ? '<span class="muted"> — archived</span>' : ""}
       <div id="year-term-edit-${d.id}"></div>
       <div style="margin-top:0.5rem;">
@@ -124,7 +148,7 @@ async function loadSubjects() {
         <button class="secondary" data-archive="${d.id}" data-value="${!s.archived}">
           ${s.archived ? "Unarchive" : "Archive"}
         </button>
-        <button class="danger" data-delete-subject="${d.id}">Delete</button>
+        <button class="danger icon" data-delete-subject="${d.id}" title="Delete subject" aria-label="Delete subject">×</button>
       </div>`;
     list.appendChild(row);
   });
@@ -199,7 +223,7 @@ async function openSubject(subjectId) {
 
 async function loadSections() {
   const q = query(collection(db, "sections"), where("subjectId", "==", state.subjectId));
-  const [snap, counts] = await Promise.all([getDocs(q), getPendingCounts()]);
+  const [snap, counts, leaveCounts] = await Promise.all([getDocs(q), getPendingCounts(), getLeaveRequestCounts()]);
   const list = el("sections-list");
   list.innerHTML = "";
   snap.forEach((d) => {
@@ -210,11 +234,12 @@ async function loadSections() {
       <strong id="section-name-${d.id}">${s.sectionName}</strong>
       <span class="muted"> — join code: <code>${s.joinCode}</code></span>
       ${pendingBadge(counts.bySection.get(d.id))}
+      ${leaveBadge(leaveCounts.bySection.get(d.id))}
       <div id="section-edit-${d.id}"></div>
       <div style="margin-top:0.5rem;">
         <button data-open="${d.id}">Open</button>
         <button class="secondary" data-edit-section="${d.id}">Edit name</button>
-        <button class="danger" data-delete-section="${d.id}">Delete</button>
+        <button class="danger icon" data-delete-section="${d.id}" title="Delete section" aria-label="Delete section">×</button>
       </div>`;
     list.appendChild(row);
   });
@@ -301,10 +326,10 @@ async function openEnrolled(onlySectionId) {
       || a.studentName.localeCompare(b.studentName));
 
   list.innerHTML = rows.length
-    ? `<table class="records-grid"><thead><tr><th>Name</th><th>Gmail</th><th>Section</th><th></th></tr></thead><tbody>
-        ${rows.map((r) => `<tr><td id="enroll-name-${r.id}">${r.studentName}</td><td>${r.studentEmail || ""}</td><td>${sectionMap.get(r.sectionId) || ""}</td><td>
+    ? `<table class="records-grid"><thead><tr><th>#</th><th>Name</th><th>Gmail</th><th>Section</th><th></th></tr></thead><tbody>
+        ${rows.map((r, i) => `<tr><td>${i + 1}</td><td id="enroll-name-${r.id}">${r.studentName}${r.leaveRequested ? ' <span class="status-pending">(leave requested)</span>' : ""}</td><td>${r.studentEmail || ""}</td><td>${sectionMap.get(r.sectionId) || ""}</td><td>
           <button class="secondary" data-edit-enrollment="${r.id}" data-uid="${r.studentUID}">Edit name</button>
-          <button class="danger" data-remove-enrollment="${r.id}">Remove</button>
+          <button class="danger icon" data-remove-enrollment="${r.id}" data-leave-requested="${!!r.leaveRequested}" title="Remove" aria-label="Remove enrollment">×</button>
         </td></tr>`).join("")}
       </tbody></table>`
     : '<p class="muted">No students enrolled yet.</p>';
@@ -339,7 +364,11 @@ async function openEnrolled(onlySectionId) {
 
   list.querySelectorAll("[data-remove-enrollment]").forEach((b) =>
     b.addEventListener("click", async () => {
-      const ok = confirm("Remove this student's enrollment? This frees their roster name for someone else to claim, and they'd need to join again with the code.");
+      const wasRequested = b.dataset.leaveRequested === "true";
+      const msg = wasRequested
+        ? "Remove this student's enrollment? They requested to leave this class. This frees their roster name for someone else to claim, and they'd need to join again with the code."
+        : "Remove this student's enrollment? This frees their roster name for someone else to claim, and they'd need to join again with the code.";
+      const ok = confirm(msg);
       if (!ok) return;
       await deleteDoc(doc(db, "enrollments", b.dataset.removeEnrollment));
       openEnrolled(onlySectionId);
@@ -420,7 +449,7 @@ async function loadAssignments() {
       <div class="muted">Allowed: ${a.allowedFileTypes} — ${a.totalPoints} points</div>
       <div style="margin-top:0.5rem;">
         <button data-open="${d.id}">Open submissions</button>
-        <button class="danger" data-delete-assignment="${d.id}">Delete</button>
+        <button class="danger icon" data-delete-assignment="${d.id}" title="Delete assignment" aria-label="Delete assignment">×</button>
       </div>`;
     list.appendChild(row);
   });

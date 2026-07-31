@@ -38,7 +38,14 @@ service cloud.firestore {
                     && request.resource.data.studentUID == request.auth.uid;
       allow read: if isSignedIn()
                   && (resource.data.studentUID == request.auth.uid || isTeacher());
-      allow update, delete: if isTeacher();
+      allow update: if isTeacher();
+      // A student may retract their own submission, but only while it's
+      // still pending - once published (graded), it's teacher-only, same
+      // as any other change to a graded submission.
+      allow delete: if isTeacher()
+                    || (isSignedIn()
+                        && resource.data.studentUID == request.auth.uid
+                        && resource.data.status == "pending");
     }
 
     // enrollments: one doc per student linking them to a subject+section via join code
@@ -47,14 +54,16 @@ service cloud.firestore {
                   && (resource.data.studentUID == request.auth.uid || isTeacher());
       allow create: if isSignedIn()
                     && request.resource.data.studentUID == request.auth.uid;
-      // Students may self-correct a garbled Google display name, but may
-      // only ever touch the studentName field on their own enrollment -
-      // everything else (which subject/section, studentEmail) stays
-      // teacher-controlled.
+      // Students may self-correct a garbled Google display name, and may
+      // flag a request to leave the class (leaveRequested) - but may only
+      // ever touch those two fields on their own enrollment. Everything
+      // else (which subject/section, studentEmail) stays teacher-controlled,
+      // and delete stays teacher-only below - a request is just a flag, the
+      // teacher still has to act on it.
       allow update: if isTeacher()
                     || (isSignedIn()
                         && resource.data.studentUID == request.auth.uid
-                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['studentName']));
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['studentName', 'leaveRequested']));
       allow delete: if isTeacher();
     }
   }
