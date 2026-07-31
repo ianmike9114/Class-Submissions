@@ -242,3 +242,11 @@ tried first and silently failed cross-browser.
   for the static site.
 - Do not reintroduce Firebase Storage or Cloud Functions — see the
   "deliberately" note above.
+- **`css/style.css`/`js/student.js`/`js/teacher.js` are loaded with a manual
+  `?v=N` cache-buster** (`index.html`, `student.html`, `teacher.html`).
+  GitHub Pages sets `Cache-Control: max-age=600` with no build step to
+  content-hash filenames, so without this a deployed fix can sit invisible
+  in a student's/teacher's browser for up to 10 minutes (longer with mobile
+  disk caching) — bump the `?v=` on every file that changed, in every HTML
+  file that references it, as part of shipping the change, not after
+  someone reports "I don't see the fix."
