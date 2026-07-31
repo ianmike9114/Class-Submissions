@@ -28,6 +28,13 @@ export function initGoogleSignIn(buttonElementId, onSignInError) {
         onSignInError?.(e);
       }
     },
+    // Chrome is enforcing FedCM for Identity Services on a staged rollout -
+    // without this, the classic flow breaks with a Google-hosted "Service
+    // Not Allowed" error for whichever users have already been migrated,
+    // while others are unaffected until their own rollout hits. Opting in
+    // explicitly avoids depending on the rollout timing.
+    use_fedcm_for_prompt: true,
+    use_fedcm_for_button: true,
   });
   window.google.accounts.id.renderButton(document.getElementById(buttonElementId), {
     theme: "outline",
