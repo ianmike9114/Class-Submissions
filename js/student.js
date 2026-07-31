@@ -16,6 +16,18 @@ function el(id) { return document.getElementById(id); }
 // Students list). No roster yet -> falls back to the old Google-name flow.
 let pendingJoin = null; // { sectionDoc, section, subject } while a name picker is open
 
+// Firestore calls that stall on a bad connection never resolve or reject on
+// their own, so `await` just hangs forever with no error - the button sits
+// on "Joining..." with zero feedback. Races against a timeout so a stalled
+// request surfaces a message instead.
+function withTimeout(promise, ms = 12000) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Taking too long - check your connection and try again.")), ms)),
+  ]);
+}
+
 async function enroll(sectionId, section, subject, studentName) {
   await addDoc(collection(db, "enrollments"), {
     studentUID: currentUser.uid,
@@ -96,37 +108,39 @@ el("join-form").addEventListener("submit", async (e) => {
   btn.disabled = true;
   btn.textContent = "Joining...";
   try {
-    const q = query(collection(db, "sections"), where("joinCode", "==", code));
-    const snap = await getDocs(q);
-    if (snap.empty) {
-      msg.textContent = "No class found with that code.";
-      return;
-    }
-    const sectionDoc = snap.docs[0];
-    const section = sectionDoc.data();
+    await withTimeout((async () => {
+      const q = query(collection(db, "sections"), where("joinCode", "==", code));
+      const snap = await getDocs(q);
+      if (snap.empty) {
+        msg.textContent = "No class found with that code.";
+        return;
+      }
+      const sectionDoc = snap.docs[0];
+      const section = sectionDoc.data();
 
-    const already = await getDocs(query(
-      collection(db, "enrollments"),
-      where("sectionId", "==", sectionDoc.id),
-      where("studentUID", "==", currentUser.uid)
-    ));
-    if (!already.empty) {
-      msg.textContent = "You're already enrolled in this class.";
-      return;
-    }
+      const already = await getDocs(query(
+        collection(db, "enrollments"),
+        where("sectionId", "==", sectionDoc.id),
+        where("studentUID", "==", currentUser.uid)
+      ));
+      if (!already.empty) {
+        msg.textContent = "You're already enrolled in this class.";
+        return;
+      }
 
-    const subject = (await getDoc(doc(db, "subjects", section.subjectId))).data();
+      const subject = (await getDoc(doc(db, "subjects", section.subjectId))).data();
 
-    if (!section.roster || section.roster.length === 0) {
-      await enroll(sectionDoc.id, section, subject, currentUser.displayName || currentUser.email);
-      e.target.reset();
-      msg.textContent = `Joined ${section.sectionName}!`;
-      loadEverything();
-      return;
-    }
+      if (!section.roster || section.roster.length === 0) {
+        await enroll(sectionDoc.id, section, subject, currentUser.displayName || currentUser.email);
+        e.target.reset();
+        msg.textContent = `Joined ${section.sectionName}!`;
+        loadEverything();
+        return;
+      }
 
-    pendingJoin = { sectionDoc, section, subject };
-    renderNamePicker();
+      pendingJoin = { sectionDoc, section, subject };
+      renderNamePicker();
+    })());
   } catch (err) {
     msg.textContent = "Join failed: " + err.message;
   } finally {
