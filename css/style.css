@@ -112,6 +112,53 @@ label { font-weight: 600; font-size: 0.85rem; display: block; margin-bottom: 0.2
   margin: 0.5rem 0;
 }
 
+.notif-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: #b91c1c;
+  color: white;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.05rem 0.35rem;
+  line-height: 1.3;
+}
+
+.notif-dropdown {
+  position: absolute;
+  top: 110%;
+  right: 0;
+  background: white;
+  border: 1px solid var(--gray-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-hover);
+  min-width: 280px;
+  max-height: 320px;
+  overflow-y: auto;
+  z-index: 10;
+  padding: 0.5rem 0;
+}
+.notif-dropdown .notif-group-label {
+  padding: 0.4rem 0.75rem 0.2rem;
+  font-weight: 700;
+  font-size: 0.75rem;
+  color: #6b7280;
+  text-transform: uppercase;
+}
+.notif-dropdown button.notif-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  color: var(--text);
+  border: none;
+  border-radius: 0;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+}
+.notif-dropdown button.notif-item:hover { background: var(--gray-bg); }
+
 .hidden { display: none !important; }
 .muted { color: #6b7280; font-size: 0.85rem; }
 
