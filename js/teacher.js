@@ -130,6 +130,80 @@ function leaveBadge(count) {
   return count ? `<span class="status-pending"> — ${count} leave request${count > 1 ? "s" : ""}</span>` : "";
 }
 
+let lastNotifications = { submissions: [], leaves: [], totalCount: 0, error: false };
+
+// One combined fetch that resolves ids to display names (unlike
+// getPendingCounts()/getLeaveRequestCounts() above, which only need ids
+// because they're rendered inside a view that already has that context)
+// - this powers the header-wide notification dropdown, which has no
+// surrounding context of its own.
+async function getNotifications() {
+  const [subjectsSnap, sectionsSnap, assignSnap, pendingSnap, leaveSnap] = await Promise.all([
+    getDocs(collection(db, "subjects")),
+    getDocs(collection(db, "sections")),
+    getDocs(collection(db, "assignments")),
+    getDocs(query(collection(db, "submissions"), where("status", "==", "pending"))),
+    getDocs(query(collection(db, "enrollments"), where("leaveRequested", "==", true))),
+  ]);
+
+  const subjectNames = new Map(subjectsSnap.docs.map((d) => [d.id, d.data().name]));
+  const sections = new Map(sectionsSnap.docs.map((d) => [d.id, d.data()]));
+  const assignments = new Map(assignSnap.docs.map((d) => [d.id, d.data()]));
+
+  const submissionCounts = new Map();
+  pendingSnap.forEach((d) => {
+    const assignmentId = d.data().assignmentId;
+    submissionCounts.set(assignmentId, (submissionCounts.get(assignmentId) || 0) + 1);
+  });
+  const submissions = [...submissionCounts.entries()].map(([assignmentId, count]) => {
+    const a = assignments.get(assignmentId) || {};
+    const section = sections.get(a.sectionId) || {};
+    return {
+      assignmentId,
+      sectionId: a.sectionId,
+      subjectId: section.subjectId,
+      title: a.title || "(deleted assignment)",
+      sectionName: section.sectionName || "(deleted section)",
+      subjectName: subjectNames.get(section.subjectId) || "(deleted subject)",
+      count,
+    };
+  });
+
+  const leaveCounts = new Map();
+  leaveSnap.forEach((d) => {
+    const sectionId = d.data().sectionId;
+    leaveCounts.set(sectionId, (leaveCounts.get(sectionId) || 0) + 1);
+  });
+  const leaves = [...leaveCounts.entries()].map(([sectionId, count]) => {
+    const section = sections.get(sectionId) || {};
+    return {
+      sectionId,
+      subjectId: section.subjectId,
+      sectionName: section.sectionName || "(deleted section)",
+      subjectName: subjectNames.get(section.subjectId) || "(deleted subject)",
+      count,
+    };
+  });
+
+  const totalCount =
+    submissions.reduce((sum, s) => sum + s.count, 0) +
+    leaves.reduce((sum, l) => sum + l.count, 0);
+
+  return { submissions, leaves, totalCount };
+}
+
+async function refreshNotifications() {
+  try {
+    const data = await getNotifications();
+    lastNotifications = { ...data, error: false };
+  } catch (err) {
+    lastNotifications = { ...lastNotifications, error: true };
+  }
+  const countEl = el("notif-count");
+  countEl.textContent = lastNotifications.totalCount;
+  countEl.classList.toggle("hidden", lastNotifications.totalCount === 0);
+}
+
 // A student's display name is cached on every submission at submit time
 // (not looked up live from their enrollment), so fixing a garbled Google
 // name has to touch both: every enrollment AND every submission for that
