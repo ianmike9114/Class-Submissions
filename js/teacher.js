@@ -204,6 +204,64 @@ async function refreshNotifications() {
   countEl.classList.toggle("hidden", lastNotifications.totalCount === 0);
 }
 
+function closeNotifDropdown() {
+  el("notif-dropdown").classList.add("hidden");
+}
+
+function renderNotifDropdown() {
+  const { submissions, leaves, error } = lastNotifications;
+  const dropdown = el("notif-dropdown");
+
+  if (error) {
+    dropdown.innerHTML = '<p class="muted" style="padding:0.5rem 0.75rem;">Couldn\'t load notifications.</p>';
+    return;
+  }
+  if (submissions.length === 0 && leaves.length === 0) {
+    dropdown.innerHTML = '<p class="muted" style="padding:0.5rem 0.75rem;">You\'re all caught up.</p>';
+    return;
+  }
+
+  const submissionRows = submissions.map((s) => `
+    <button class="notif-item" data-goto-assignment="${s.subjectId}|${s.sectionId}|${s.assignmentId}">
+      ${s.title} <span class="muted">(${s.subjectName} &rsaquo; ${s.sectionName})</span> — ${s.count} pending
+    </button>`).join("");
+  const leaveRows = leaves.map((l) => `
+    <button class="notif-item" data-goto-leave="${l.subjectId}|${l.sectionId}">
+      ${l.subjectName} &rsaquo; ${l.sectionName} — ${l.count} leave request${l.count > 1 ? "s" : ""}
+    </button>`).join("");
+
+  dropdown.innerHTML =
+    (submissions.length ? `<div class="notif-group-label">Pending submissions</div>${submissionRows}` : "") +
+    (leaves.length ? `<div class="notif-group-label">Leave requests</div>${leaveRows}` : "");
+
+  dropdown.querySelectorAll("[data-goto-assignment]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const [subjectId, sectionId, assignmentId] = b.dataset.gotoAssignment.split("|");
+      goToAssignment(subjectId, sectionId, assignmentId);
+    }));
+  dropdown.querySelectorAll("[data-goto-leave]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const [subjectId, sectionId] = b.dataset.gotoLeave.split("|");
+      goToLeaveRequests(subjectId, sectionId);
+    }));
+}
+
+el("notif-bell").addEventListener("click", async (e) => {
+  e.stopPropagation();
+  const dropdown = el("notif-dropdown");
+  if (!dropdown.classList.contains("hidden")) {
+    closeNotifDropdown();
+    return;
+  }
+  await refreshNotifications();
+  renderNotifDropdown();
+  dropdown.classList.remove("hidden");
+});
+
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("#notif-bell, #notif-dropdown")) closeNotifDropdown();
+});
+
 // A student's display name is cached on every submission at submit time
 // (not looked up live from their enrollment), so fixing a garbled Google
 // name has to touch both: every enrollment AND every submission for that
@@ -995,5 +1053,6 @@ guardPage("teacher").then((user) => {
     if (aiOption) aiOption.hidden = true;
   }
   loadSubjects();
+  refreshNotifications();
   show("view-subjects");
 });
