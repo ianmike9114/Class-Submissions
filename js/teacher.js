@@ -262,6 +262,20 @@ document.addEventListener("click", (e) => {
   if (!e.target.closest("#notif-bell, #notif-dropdown")) closeNotifDropdown();
 });
 
+async function goToAssignment(subjectId, sectionId, assignmentId) {
+  closeNotifDropdown();
+  await openSubject(subjectId);
+  await openSection(sectionId);
+  await openAssignment(assignmentId);
+}
+
+async function goToLeaveRequests(subjectId, sectionId) {
+  closeNotifDropdown();
+  await openSubject(subjectId);
+  await openSection(sectionId);
+  await openEnrolled(sectionId);
+}
+
 // A student's display name is cached on every submission at submit time
 // (not looked up live from their enrollment), so fixing a garbled Google
 // name has to touch both: every enrollment AND every submission for that
