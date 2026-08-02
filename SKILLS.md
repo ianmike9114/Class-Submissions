@@ -33,6 +33,14 @@ split, subtle card hover shadow, full-round status pills. No framework,
 no markup rebuild. Exact token values: `DESIGN_SYSTEM.md`'s Tokens
 section. Google Fonts loaded via `<link>` in each HTML file's `<head>`.
 
+## Notification bell (added 2026-08)
+
+Header bell + dropdown, teacher-only. Click a row to jump straight to a
+pending assignment's submissions or a section's leave-flagged enrollment:
+- `js/teacher.js`: `getNotifications()`/`refreshNotifications()` (data), `renderNotifDropdown()` (UI), `goToAssignment()`/`goToLeaveRequests()` (navigation)
+- `teacher.html`: `#notif-bell`/`#notif-count`/`#notif-dropdown`
+- No real-time updates (app convention) — refreshes on load, on bell click, and right after grading/leave-resolution actions
+
 ## Conventions this app never breaks
 
 - No Firebase Storage, no Cloud Functions (Spark free plan only)

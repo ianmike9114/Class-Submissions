@@ -68,6 +68,22 @@ Class Record file instead" nested inside Section Settings. `.qr-code` is
 just a white bordered padded box around the generated `<canvas>`/`<img>`
 (rendered by the `qrcodejs` CDN library, see `CLAUDE.md`'s task map).
 
+## Notification bell (header)
+
+```html
+<div style="position:relative; display:inline-block;">
+  <button class="secondary" id="notif-bell">&#128276;<span id="notif-count" class="notif-badge hidden">0</span></button>
+  <div id="notif-dropdown" class="notif-dropdown hidden"></div>
+</div>
+```
+Red circular `.notif-badge` overlaps the button's top-right corner (only
+shown when count > 0). `.notif-dropdown` is an absolute-positioned panel
+below-right of the button — the first dropdown-style component in the
+app, closes on an outside click or a second click on the bell. Rows are
+plain `button.notif-item` elements grouped under `.notif-group-label`
+headers; a group is omitted entirely when empty. See `CLAUDE.md`'s task
+map for the data/navigation functions behind it.
+
 ## Collapsible card (forms that don't need to always be open)
 
 ```html

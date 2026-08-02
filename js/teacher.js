@@ -549,6 +549,7 @@ async function openEnrolled(onlySectionId) {
       if (!ok) return;
       await deleteDoc(doc(db, "enrollments", b.dataset.removeEnrollment));
       openEnrolled(onlySectionId);
+      refreshNotifications();
     }));
 
   show("view-enrolled");
@@ -849,6 +850,7 @@ async function openReview(submissionId) {
       publishedAt: Date.now(),
     });
     loadSubmissions();
+    refreshNotifications();
   });
 }
 
