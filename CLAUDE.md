@@ -99,9 +99,10 @@ tried first and silently failed cross-browser.
 | Row numbers on the Enrolled Students table | `js/teacher.js`'s `openEnrolled()` row rendering (`#` column, same pattern as `renderRosterPreview()`'s existing `${i+1}`) - deliberately not added to the Records grid (`loadRecords()`, gender-grouped) |
 | Student retracting their own submission (only while `status == "pending"`, never after grading) | `js/student.js`'s `loadEverything()` submission branch ("Remove submission" button, `deleteDoc`) + `firestore.rules`'s `submissions` delete rule (student may delete only their own pending submission; teacher-only once published) |
 | Small icon-style delete buttons (Enrolled Students Remove, subject/section/assignment Delete) | `css/style.css`'s `button.danger.icon` (compact circular variant of `.danger`) + the 4 button sites in `js/teacher.js` - `confirm()`/`disabled` logic unchanged at each, markup-only change |
-| Join flow / pick-your-name-from-roster | `js/student.js` (`join-form` handler, `renderNamePicker()`, `claimedNames()`, `enroll()`) + `student.html`'s `#join-name-picker` — only kicks in when the section already has a roster (`sections.roster`), otherwise falls back to using the Google account name |
+| Join flow / pick-your-name-from-roster | `js/student.js` (`join-form` handler, `renderNamePicker()`, `claimedNames()`, `enroll()`) + `student.html`'s `#join-name-picker` — only kicks in when the section already has a roster (`sections.roster`), otherwise falls back to using the Google account name; QR/deep-link join → next row |
+| QR-code join (per-section "Show QR", scan-to-join deep link) | `js/teacher.js`'s `joinLinkFor()`/`renderSectionQR()` (called from `loadSections()`, renders into `#qr-${sectionId}`) + `teacher.html`'s `qrcodejs` CDN `<script>` tag (client-side generation only — the join link never leaves the device, no external QR image API) + `js/student.js`'s `?code=` deep-link handling (`applyPendingJoinCode()`, stashes into `sessionStorage` before `guardPage()` can redirect a signed-out student through `index.html` for sign-in, so the code survives that hop) — no `firestore.rules` change needed, `sections` read was already `isSignedIn()`-only |
 | Student's Assignments list grouping by subject | `js/student.js` (`loadEverything()` — groups by `subjectName` via a `sectionId → subjectName` map built from the student's own enrollments) |
-| Styling / UI patterns (cards, buttons, tables, collapsibles, status colors) | `DESIGN_SYSTEM.md` first — has every pattern with copy-pasteable HTML, avoids re-reading `css/style.css` from scratch. Only open `css/style.css` itself for a genuinely new pattern not covered there. |
+| Styling / UI patterns (cards, buttons, tables, collapsibles, status colors) | `DESIGN_SYSTEM.md` first — has every pattern with copy-pasteable HTML, avoids re-reading `css/style.css` from scratch. Only open `css/style.css` itself for a genuinely new pattern not covered there. Color/font/radius tokens are the "Academic Clarity" palette (deep navy `--blue`, Source Serif 4 headlines, Atkinson Hyperlegible Next body, loaded via Google Fonts `<link>` in each HTML `<head>`) — see `DESIGN_SYSTEM.md`'s Tokens section for exact values. |
 | Firestore deploy config | `firebase.json`, `.firebaserc` |
 | Setup/deploy instructions | `README.md` |
 
@@ -199,6 +200,11 @@ tried first and silently failed cross-browser.
   would sweep those up as fake students. Don't loosen this check.
 - No real-time listeners (`onSnapshot`) — lists refresh on load/action, not
   live. Fine at single-class scale; add if it ever matters.
+- **QR join is a same-origin deep link, generated entirely client-side.**
+  `js/teacher.js`'s `renderSectionQR()` uses the `qrcodejs` CDN library to
+  draw the QR in-browser — the join link (`student.html?code=...`) never
+  goes to a third-party QR image API, matching the zero-cost/no-Storage
+  constraint and avoiding leaking join codes to an external server.
 - Sign-in genuinely cannot work inside Facebook/Messenger/Instagram/Line/
   TikTok's embedded in-app browsers — Google's OAuth rejects the request
   itself (`disallowed_useragent`), this app has zero ability to bypass it.

@@ -8,6 +8,26 @@ import { toEmbedUrl } from "./embed.js";
 let currentUser = null;
 function el(id) { return document.getElementById(id); }
 
+// Stash immediately at module load: guardPage() below may redirect a signed-
+// out student to index.html for Google Sign-In before this page gets a
+// second chance to read the query string - sessionStorage survives that
+// same-tab navigation, a plain URL param wouldn't.
+const _urlJoinCode = new URLSearchParams(location.search).get("code");
+if (_urlJoinCode) sessionStorage.setItem("pendingJoinCode", _urlJoinCode.trim().toUpperCase());
+
+// Runs once guardPage() resolves with a signed-in user - either already
+// signed in when they scanned, or just back from index.html's sign-in.
+// One-tap join: fills #join-code and submits the existing join-form
+// handler, which already handles "already enrolled"/the name-picker.
+function applyPendingJoinCode() {
+  const code = sessionStorage.getItem("pendingJoinCode");
+  if (!code) return;
+  sessionStorage.removeItem("pendingJoinCode");
+  history.replaceState(null, "", location.pathname);
+  el("join-code").value = code;
+  el("join-form").requestSubmit();
+}
+
 // ---------- join a class ----------
 // If the section already has a roster (Set Roster, teacher side), the
 // student picks their real name from it instead of trusting whatever
@@ -473,4 +493,5 @@ guardPage("student").then((user) => {
   currentUser = user;
   el("student-email").textContent = user.email;
   loadEverything();
+  applyPendingJoinCode();
 });

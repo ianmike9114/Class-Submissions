@@ -23,6 +23,28 @@ function genJoinCode() {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
 }
 
+function joinLinkFor(joinCode) {
+  return new URL(`student.html?code=${joinCode}`, location.href).href;
+}
+
+// Renders a QR entirely client-side (qrcodejs CDN global) - the join link
+// never leaves the device, no external QR image API involved.
+function renderSectionQR(sectionId, joinCode) {
+  const container = el(`qr-${sectionId}`);
+  if (!container) return;
+  container.innerHTML = "";
+  if (typeof QRCode === "undefined") {
+    container.innerHTML = '<p class="muted">QR code library failed to load.</p>';
+    return;
+  }
+  new QRCode(container, {
+    text: joinLinkFor(joinCode),
+    width: 160,
+    height: 160,
+    correctLevel: QRCode.CorrectLevel.M,
+  });
+}
+
 // ---------- cascade deletes ----------
 // Firestore has no server-side cascade - deleting a subject/section/
 // assignment doc used to leave everything under it orphaned but still
@@ -240,8 +262,17 @@ async function loadSections() {
         <button data-open="${d.id}">Open</button>
         <button class="secondary" data-edit-section="${d.id}">Edit name</button>
         <button class="danger icon" data-delete-section="${d.id}" title="Delete section" aria-label="Delete section">×</button>
-      </div>`;
+      </div>
+      <details style="margin-top:0.5rem;">
+        <summary class="muted" style="cursor:pointer;">Show QR</summary>
+        <div style="margin-top:0.5rem;">
+          <div id="qr-${d.id}" class="qr-code"></div>
+          <p class="muted">Scan to join, or share this link:<br>
+            <a href="${joinLinkFor(s.joinCode)}" target="_blank" rel="noopener">${joinLinkFor(s.joinCode)}</a></p>
+        </div>
+      </details>`;
     list.appendChild(row);
+    renderSectionQR(d.id, s.joinCode);
   });
   list.querySelectorAll("[data-open]").forEach((b) =>
     b.addEventListener("click", () => openSection(b.dataset.open)));

@@ -6,13 +6,24 @@ it's short enough to just paste patterns from below.
 
 ## Tokens (`:root` in `css/style.css`)
 
+"Academic Clarity" palette — deep navy primary, Source Serif 4 headlines,
+Atkinson Hyperlegible Next body (loaded via Google Fonts `<link>` in each
+HTML file's `<head>`, before the stylesheet link).
+
 ```
---blue:        #1a56db   (header bg, primary button, links/headers)
---green:       #0f9d58   (status-published)
---amber:       #b45309   (status-pending)
---gray-bg:     #f5f6f8   (page bg, table header cells)
---gray-border: #d9dde3   (all borders)
---text:        #1f2430
+--blue:        #002045   (header bg, primary button, links/headers)
+--green:       #146c2e   (status-published)
+--amber:       #92400e   (status-pending)
+--gray-bg:     #f7fafc   (page bg, table header cells)
+--gray-border: #e2e8f0   (all borders)
+--text:        #111c2c
+
+--font-headline: 'Source Serif 4', Georgia, serif       (h1-h4, strong, summary)
+--font-body:      'Atkinson Hyperlegible Next', system-ui, ...  (body text)
+
+--radius-sm: 4px   (buttons, inputs, small elements)
+--radius-lg: 8px   (cards/containers)
+--shadow-hover: 0 4px 12px rgba(17,28,44,0.05)   (.card:hover only)
 ```
 
 ## Layout shell
@@ -31,9 +42,31 @@ it's short enough to just paste patterns from below.
 ```html
 <div class="card">...</div>
 ```
-White bg, `1px solid var(--gray-border)`, `8px` radius, `1rem 1.25rem`
-padding, `1rem` bottom margin. The default container for every list row
-and form block in this app.
+White bg, `1px solid var(--gray-border)`, `var(--radius-lg)` (8px) radius,
+`1rem 1.25rem` padding, `1rem` bottom margin. The default container for
+every list row and form block in this app. Buttons/inputs/small elements
+use the tighter `var(--radius-sm)` (4px) instead — containers get the
+bigger radius, interactive controls get the smaller one. Cards get a
+subtle `box-shadow` on `:hover` (`--shadow-hover`) to signal interactivity
+without heavy drop shadows.
+
+## QR code (per-section join)
+
+```html
+<details style="margin-top:0.5rem;">
+  <summary class="muted" style="cursor:pointer;">Show QR</summary>
+  <div style="margin-top:0.5rem;">
+    <div id="qr-${sectionId}" class="qr-code"></div>
+    <p class="muted">Scan to join, or share this link:<br>
+      <a href="${joinLink}" target="_blank" rel="noopener">${joinLink}</a></p>
+  </div>
+</details>
+```
+Unclassed nested `<details>` inside an already-`.card` row (avoids a
+double-bordered card-in-a-card look) — same pattern as "Or upload your
+Class Record file instead" nested inside Section Settings. `.qr-code` is
+just a white bordered padded box around the generated `<canvas>`/`<img>`
+(rendered by the `qrcodejs` CDN library, see `CLAUDE.md`'s task map).
 
 ## Collapsible card (forms that don't need to always be open)
 
@@ -75,7 +108,9 @@ always sits directly above its field with no wrapper needed.
 <span class="status-ai-drafted">ai-drafted</span>   <!-- legacy, AI check hidden -->
 <span class="status-published">published</span>
 ```
-Colored (amber/blue/green) + bold, no background. Pattern used inline as
+Colored (amber/blue/green) text + bold, full-round pill with a matching
+light background tint (`display:inline-block`, `border-radius:9999px`).
+Pattern used inline as
 `` `<span class="status-${s.status}"> — ${s.status}</span>` ``.
 
 ## Pending-count badge
@@ -169,7 +204,3 @@ toggle it with `classList.add/remove/toggle("hidden")`, never inline
 - Don't invent a new button color/class — reuse primary/secondary/danger.
 - Don't give form fields individual width/padding/border styles — they're
   already global.
-- `.rubric-row` class exists in `css/style.css` but is currently unused
-  dead CSS (rubric-criteria grading was replaced by single-score grading —
-  see `CLAUDE.md`). Don't build against it; safe to delete next time
-  `css/style.css` is touched for something else.
