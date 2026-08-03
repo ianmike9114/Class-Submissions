@@ -708,8 +708,10 @@ async function openSection(sectionId) {
   // sections saved a plain string[] before gender tracking existed -
   // normalize those to {name, gender: ""} on load.
   rosterPreviewNames = (section.roster || []).map((r) => (typeof r === "string" ? { name: r, gender: "" } : r));
+  pendingDuplicateReview = [];
   el("roster-message").textContent = "";
   el("roster-preview").innerHTML = "";
+  el("roster-duplicate-review").innerHTML = "";
   if (rosterPreviewNames.length > 0) renderRosterPreview();
 
   show("view-section");
@@ -1148,6 +1150,49 @@ let rosterPreviewNames = [];
 // separate gender input is needed. Also strips a leading row number
 // ("1 " / "1.") that comes along for free when copy-pasting from a sheet.
 const ROSTER_JUNK_LINES = new Set(["name", "names"]);
+
+// Best-effort match for two spellings of the same student ("Tranks Amir
+// B." vs "TRANKZ AMIR BUIZA") - strips accents/case/punctuation, then
+// requires an exact surname match (the part before the comma) plus a
+// close first-given-name match, so same-surname classmates (two
+// different "Costales" students, common in a Filipino class list) don't
+// false-positive on surname alone.
+function normalizeRosterName(raw) {
+  const noAccents = raw.normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const [surnamePart, ...rest] = noAccents.split(",");
+  const clean = (s) => s.toLowerCase().replace(/[^a-z\s]/g, "").trim().replace(/\s+/g, " ");
+  return { surname: clean(surnamePart || ""), given: clean(rest.join(",")) };
+}
+
+function levenshtein(a, b) {
+  const dp = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
+  for (let i = 0; i <= a.length; i++) dp[i][0] = i;
+  for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j - 1], dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+  return dp[a.length][b.length];
+}
+
+function findLikelyDuplicate(candidateName, existingNames) {
+  const cand = normalizeRosterName(candidateName);
+  const candFirst = cand.given.split(" ")[0] || "";
+  if (!cand.surname || !candFirst) return null;
+  for (const existing of existingNames) {
+    const ex = normalizeRosterName(existing);
+    const exFirst = ex.given.split(" ")[0] || "";
+    if (ex.surname !== cand.surname || !exFirst) continue;
+    if (exFirst === candFirst || levenshtein(exFirst, candFirst) <= 2) return existing;
+  }
+  return null;
+}
+
+let pendingDuplicateReview = []; // { name, gender, matchedExisting }
+
 function addRosterNames(text) {
   let currentGender = "";
   const candidates = [];
@@ -1160,16 +1205,30 @@ function addRosterNames(text) {
       continue;
     }
     if (ROSTER_JUNK_LINES.has(lower)) continue;
-    candidates.push({ name: line, gender: currentGender });
+    // Normalize casing on the way in - the teacher's two source lists
+    // (Class Record excerpt vs. a full-caps list) disagreed on case,
+    // which is exactly the kind of surface difference that made 15 real
+    // students look like 30 in this session's report. Uppercasing here
+    // keeps every roster name (and, downstream, the Records grid and
+    // join-name picker) visually consistent regardless of paste source.
+    candidates.push({ name: line.toUpperCase(), gender: currentGender });
   }
   const seen = new Set(rosterPreviewNames.map((r) => r.name.toLowerCase()));
+  const existingNames = rosterPreviewNames.map((r) => r.name);
   for (const c of candidates) {
     const key = c.name.toLowerCase();
     if (seen.has(key)) continue;
+    const match = findLikelyDuplicate(c.name, [...existingNames, ...pendingDuplicateReview.map((p) => p.name)]);
+    if (match) {
+      pendingDuplicateReview.push({ ...c, matchedExisting: match });
+      continue;
+    }
     seen.add(key);
+    existingNames.push(c.name);
     rosterPreviewNames.push(c);
   }
   renderRosterPreview();
+  renderDuplicateReview();
 }
 el("roster-add-manual").addEventListener("click", () => {
   const textarea = el("roster-manual-names");
@@ -1193,7 +1252,7 @@ el("roster-config-form").addEventListener("submit", async (e) => {
     if (rows.length === 0) {
       throw new Error("No names found there - check the sheet name, column letter, and start row.");
     }
-    rosterPreviewNames = rows.map((r) => ({ name: r.name, gender: "" }));
+    rosterPreviewNames = rows.map((r) => ({ name: r.name.toUpperCase(), gender: "" }));
     renderRosterPreview();
   } catch (err) {
     msg.textContent = err.message;
@@ -1203,12 +1262,24 @@ el("roster-config-form").addEventListener("submit", async (e) => {
 function renderRosterPreview() {
   const container = el("roster-preview");
   const rows = rosterPreviewNames.map((r, i) => `
-    <tr><td>${i + 1}</td><td>${r.name}</td><td>${r.gender || "—"}</td><td><button type="button" class="secondary" data-remove-name="${i}">Remove</button></td></tr>`).join("");
+    <tr><td>${i + 1}</td><td>${r.name}</td><td>
+      <select data-gender-index="${i}">
+        <option value="" ${r.gender ? "" : "selected"}>—</option>
+        <option value="Male" ${r.gender === "Male" ? "selected" : ""}>Male</option>
+        <option value="Female" ${r.gender === "Female" ? "selected" : ""}>Female</option>
+      </select>
+    </td><td><button type="button" class="secondary" data-remove-name="${i}">Remove</button></td></tr>`).join("");
 
   container.innerHTML = `
     <p class="muted">${rosterPreviewNames.length} name(s) in the list. Remove any that aren't actual students, then save.</p>
     <table class="records-grid"><thead><tr><th>#</th><th>Name</th><th>Gender</th><th></th></tr></thead><tbody>${rows}</tbody></table>
     <button id="roster-save" style="margin-top:0.75rem;">Save Roster (${rosterPreviewNames.length})</button>`;
+
+  container.querySelectorAll("[data-gender-index]").forEach((sel) => {
+    sel.addEventListener("change", () => {
+      rosterPreviewNames[Number(sel.dataset.genderIndex)].gender = sel.value;
+    });
+  });
 
   container.querySelectorAll("[data-remove-name]").forEach((b) => {
     b.addEventListener("click", () => {
@@ -1221,7 +1292,41 @@ function renderRosterPreview() {
     await updateDoc(doc(db, "sections", state.sectionId), { roster: rosterPreviewNames });
     el("roster-message").textContent = `Saved ${rosterPreviewNames.length} name(s) to this section's roster.`;
     el("roster-preview").innerHTML = "";
+    pendingDuplicateReview = [];
+    el("roster-duplicate-review").innerHTML = "";
   });
+}
+
+function renderDuplicateReview() {
+  const container = el("roster-duplicate-review");
+  if (pendingDuplicateReview.length === 0) {
+    container.innerHTML = "";
+    return;
+  }
+  container.innerHTML = `
+    <p class="muted">These look like they might already be on the list under a different spelling - review before adding:</p>
+    ${pendingDuplicateReview.map((p, i) => `
+      <div class="card">
+        <p>New: <strong>${p.name}</strong></p>
+        <p class="muted">Looks like: <strong>${p.matchedExisting}</strong> (already in the list)</p>
+        <button type="button" class="secondary" data-dup-add="${i}">Add anyway (different person)</button>
+        <button type="button" data-dup-skip="${i}">Skip (same person)</button>
+      </div>`).join("")}`;
+
+  container.querySelectorAll("[data-dup-add]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const i = Number(b.dataset.dupAdd);
+      const { matchedExisting, ...entry } = pendingDuplicateReview[i];
+      rosterPreviewNames.push(entry);
+      pendingDuplicateReview.splice(i, 1);
+      renderRosterPreview();
+      renderDuplicateReview();
+    }));
+  container.querySelectorAll("[data-dup-skip]").forEach((b) =>
+    b.addEventListener("click", () => {
+      pendingDuplicateReview.splice(Number(b.dataset.dupSkip), 1);
+      renderDuplicateReview();
+    }));
 }
 
 // ---------- records (gradebook grid, one section at a time) ----------
