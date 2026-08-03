@@ -61,13 +61,19 @@ export function guardPage(expectedRole) {
   return new Promise((resolve) => {
     onAuthStateChanged(auth, async (user) => {
       if (!user) {
-        if (expectedRole) window.location.href = "index.html";
+        // Preserve any query string (e.g. a join ?code=) across the sign-in
+        // hop - a bare redirect used to drop it, which was harmless while
+        // sessionStorage (js/student.js) covered the same-browser case, but
+        // silently lost the code for good once a student escapes an in-app
+        // browser (Messenger etc.) into a genuinely different browser with
+        // its own separate sessionStorage.
+        if (expectedRole) window.location.href = "index.html" + location.search;
         resolve(null);
         return;
       }
       const role = (await isTeacherEmail(user.email)) ? "teacher" : "student";
       if (expectedRole && role !== expectedRole) {
-        window.location.href = role === "teacher" ? "teacher.html" : "student.html";
+        window.location.href = (role === "teacher" ? "teacher.html" : "student.html") + location.search;
         return;
       }
       resolve(user);
