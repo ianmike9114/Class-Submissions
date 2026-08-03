@@ -185,6 +185,43 @@ short since it's loaded into every session automatically.
   action.** A teacher's only response to a flagged `leaveRequested` is
   Remove (fulfills it) or leaving it alone (the student can Cancel it
   themselves from their My Classes card). Flag if this ever needs to change.
+- **Deleting a subject/section/assignment requires typing its exact name.**
+  `js/teacher.js`'s `confirmByTyping()` replaced the plain `confirm()` on
+  those three cascade deletes only (not the lower-stakes "remove one
+  enrollment" or "remove a teacher's access", which stay a single
+  `confirm()` — those don't wipe a whole tree of records). Teacher asked
+  for stronger protection against misclicks; a mistaken click can't
+  accidentally retype the name, unlike clearing an OK/Cancel dialog.
+- **Notification bell has a third bucket, "new joins".** `js/student.js`'s
+  `enroll()` stamps every new enrollment with `seen: false`; `js/teacher.js`'s
+  `getNotifications()` queries `seen == false` (owner-scoped) and groups by
+  section, listing the actual student name(s) so the teacher knows *who*
+  without drilling in. Unlike pending submissions/leave requests (which
+  clear when the underlying thing is resolved), a join is an event, not a
+  standing state — clicking the row is treated as the read receipt:
+  `goToNewJoins()` marks those enrollment docs `seen: true` on the way to
+  Enrolled Students. Old enrollments (no `seen` field) never match
+  `seen == false`, so they're implicitly already-seen with no backfill.
+- **A second header button, "Photo ZIPs" (`#photos-bell`), lists every
+  photo submission across every assignment, not just the current one.**
+  The per-assignment "Download all as ZIP" button (`renderImagesGallery()`)
+  lives inside a collapsed `<details>` on the submissions view — easy to
+  miss if a teacher never opens that assignment. `js/teacher.js`'s
+  `getPhotoAssignments()` fetches every owned submission once and groups
+  by assignment; both this panel and the per-assignment gallery now share
+  one `downloadPhotosZip()` helper so the ZIP-building logic isn't
+  duplicated.
+- **Android-only "Open in Chrome" button next to non-embeddable file
+  links** (`js/embed.js`'s `openInChromeButton()`/`wireOpenInChromeButtons()`,
+  used on the student assignment instructions link and the teacher's
+  instructions/rubric-reference links). Some Android phones hand a tapped
+  link to whatever app claims that file type — reported in the field as a
+  "Document Viewer" app throwing "File parsing error" — instead of Chrome,
+  with no way for this page to know or catch it. `intent://` with an
+  explicit `package=com.android.chrome` forces Chrome specifically, same
+  technique as `index.html`'s in-app-browser escape hatch. Renders nothing
+  on iOS — Apple gives pages no way to pick the handler app, so there's no
+  equivalent fix there (same conclusion as the iOS Code Scanner QR issue).
 
 ## Conventions
 

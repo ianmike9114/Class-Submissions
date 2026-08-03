@@ -4,7 +4,7 @@ import {
   collection, addDoc, doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, query, where,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getGeminiKey, setGeminiKey, runRubricCheck } from "./gemini.js";
-import { toEmbedUrl } from "./embed.js";
+import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons } from "./embed.js";
 import { loadWorkbook } from "./class-record.js";
 
 // AI rubric-check is hidden (not deleted) - per-call Gemini cost isn't
@@ -38,6 +38,21 @@ function ownerScopedQuery(collectionName, ...wheres) {
 }
 
 function el(id) { return document.getElementById(id); }
+
+// Cascade deletes (subject/section/assignment - each wipes everything
+// nested under it, no undo) get a type-to-confirm instead of a plain OK/
+// Cancel dialog, since an accidental double-tap can clear a confirm() but
+// can't accidentally retype the exact name. Case-sensitive, exact match.
+function confirmByTyping(message, name) {
+  const typed = prompt(`${message}\n\nType the name exactly to confirm: "${name}"`);
+  if (typed === null) return false; // cancelled
+  if (typed.trim() !== name) {
+    alert("That didn't match - nothing was deleted.");
+    return false;
+  }
+  return true;
+}
+
 function genJoinCode() {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
 }
@@ -192,12 +207,13 @@ let lastNotifications = { submissions: [], leaves: [], totalCount: 0, error: fal
 // - this powers the header-wide notification dropdown, which has no
 // surrounding context of its own.
 async function getNotifications() {
-  const [subjectsSnap, sectionsSnap, assignSnap, pendingSnap, leaveSnap] = await Promise.all([
+  const [subjectsSnap, sectionsSnap, assignSnap, pendingSnap, leaveSnap, joinSnap] = await Promise.all([
     getDocs(ownerScopedQuery("subjects")),
     getDocs(ownerScopedQuery("sections")),
     getDocs(ownerScopedQuery("assignments")),
     getDocs(ownerScopedQuery("submissions", where("status", "==", "pending"))),
     getDocs(ownerScopedQuery("enrollments", where("leaveRequested", "==", true))),
+    getDocs(ownerScopedQuery("enrollments", where("seen", "==", false))),
   ]);
 
   const subjectNames = new Map(subjectsSnap.docs.map((d) => [d.id, d.data().name]));
@@ -241,11 +257,36 @@ async function getNotifications() {
     };
   });
 
+  // "Who joined" - grouped by section like leaves, but with names inline
+  // (not just a count) since the whole point is knowing who, not just how
+  // many. Marked seen (js/teacher.js renderNotifDropdown's click handler)
+  // once the teacher's actually looked at the dropdown, not on every silent
+  // background refresh - see the seen:false comment in js/student.js's
+  // enroll() for why unseen is query-able with no backfill.
+  const joinsBySection = new Map();
+  joinSnap.forEach((d) => {
+    if (!ownedByViewAs(d.data())) return; // admin's unfiltered enrollments query includes every teacher's - narrow to mine/legacy
+    const data = d.data();
+    if (!joinsBySection.has(data.sectionId)) joinsBySection.set(data.sectionId, []);
+    joinsBySection.get(data.sectionId).push({ enrollmentId: d.id, studentName: data.studentName });
+  });
+  const joins = [...joinsBySection.entries()].map(([sectionId, students]) => {
+    const section = sections.get(sectionId) || {};
+    return {
+      sectionId,
+      subjectId: section.subjectId,
+      sectionName: section.sectionName || "(deleted section)",
+      subjectName: subjectNames.get(section.subjectId) || "(deleted subject)",
+      students,
+    };
+  });
+
   const totalCount =
     submissions.reduce((sum, s) => sum + s.count, 0) +
-    leaves.reduce((sum, l) => sum + l.count, 0);
+    leaves.reduce((sum, l) => sum + l.count, 0) +
+    joins.reduce((sum, j) => sum + j.students.length, 0);
 
-  return { submissions, leaves, totalCount };
+  return { submissions, leaves, joins, totalCount };
 }
 
 async function refreshNotifications() {
@@ -265,14 +306,14 @@ function closeNotifDropdown() {
 }
 
 function renderNotifDropdown() {
-  const { submissions, leaves, error } = lastNotifications;
+  const { submissions, leaves, joins, error } = lastNotifications;
   const dropdown = el("notif-dropdown");
 
   if (error) {
     dropdown.innerHTML = '<p class="muted" style="padding:0.5rem 0.75rem;">Couldn\'t load notifications.</p>';
     return;
   }
-  if (submissions.length === 0 && leaves.length === 0) {
+  if (submissions.length === 0 && leaves.length === 0 && joins.length === 0) {
     dropdown.innerHTML = '<p class="muted" style="padding:0.5rem 0.75rem;">You\'re all caught up.</p>';
     return;
   }
@@ -285,8 +326,13 @@ function renderNotifDropdown() {
     <button class="notif-item" data-goto-leave="${l.subjectId}|${l.sectionId}">
       ${l.subjectName} &rsaquo; ${l.sectionName} — ${l.count} leave request${l.count > 1 ? "s" : ""}
     </button>`).join("");
+  const joinRows = joins.map((j) => `
+    <button class="notif-item" data-goto-join="${j.subjectId}|${j.sectionId}">
+      ${j.students.map((s) => s.studentName).join(", ")} joined <span class="muted">(${j.subjectName} &rsaquo; ${j.sectionName})</span>
+    </button>`).join("");
 
   dropdown.innerHTML =
+    (joins.length ? `<div class="notif-group-label">New joins</div>${joinRows}` : "") +
     (submissions.length ? `<div class="notif-group-label">Pending submissions</div>${submissionRows}` : "") +
     (leaves.length ? `<div class="notif-group-label">Leave requests</div>${leaveRows}` : "");
 
@@ -299,6 +345,12 @@ function renderNotifDropdown() {
     b.addEventListener("click", () => {
       const [subjectId, sectionId] = b.dataset.gotoLeave.split("|");
       goToLeaveRequests(subjectId, sectionId);
+    }));
+  dropdown.querySelectorAll("[data-goto-join]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const [subjectId, sectionId] = b.dataset.gotoJoin.split("|");
+      const j = joins.find((x) => x.sectionId === sectionId);
+      goToNewJoins(subjectId, sectionId, j?.students.map((s) => s.enrollmentId) || []);
     }));
 }
 
@@ -332,6 +384,19 @@ async function goToLeaveRequests(subjectId, sectionId) {
   await openEnrolled(sectionId);
 }
 
+// Names are already visible right on the dropdown row (unlike pending
+// submissions/leave requests, nothing further is "resolved" by looking),
+// so clicking a joins row is itself the read receipt - stamp seen:true on
+// the way to Enrolled Students rather than requiring a separate dismiss.
+async function goToNewJoins(subjectId, sectionId, enrollmentIds) {
+  closeNotifDropdown();
+  await openSubject(subjectId);
+  await openSection(sectionId);
+  await openEnrolled(sectionId);
+  await Promise.all(enrollmentIds.map((id) => updateDoc(doc(db, "enrollments", id), { seen: true })));
+  refreshNotifications();
+}
+
 // A student's display name is cached on every submission at submit time
 // (not looked up live from their enrollment), so fixing a garbled Google
 // name has to touch both: every enrollment AND every submission for that
@@ -357,9 +422,11 @@ async function loadSubjects() {
   const [snap, counts, leaveCounts] = await Promise.all([getDocs(ownerScopedQuery("subjects")), getPendingCounts(), getLeaveRequestCounts()]);
   const list = el("subjects-list");
   list.innerHTML = "";
+  const subjectNames = new Map(); // id -> name, for the delete-confirm prompt below
   snap.forEach((d) => {
     const s = d.data();
     if (!ownedByViewAs(s)) return; // admin's unfiltered subjects query includes every teacher's - narrow to mine/legacy
+    subjectNames.set(d.id, s.name);
     if (s.archived && !showArchived) return;
     const row = document.createElement("div");
     row.className = "card";
@@ -391,8 +458,9 @@ async function loadSubjects() {
     }));
   list.querySelectorAll("[data-delete-subject]").forEach((b) =>
     b.addEventListener("click", async () => {
-      const ok = confirm(
-        "Delete this subject? This also deletes every section, assignment, submission, and enrollment under it. If you just want it out of the way but might need it later, use Archive instead. This can't be undone."
+      const ok = confirmByTyping(
+        "Delete this subject? This also deletes every section, assignment, submission, and enrollment under it. If you just want it out of the way but might need it later, use Archive instead.",
+        subjectNames.get(b.dataset.deleteSubject) || ""
       );
       if (!ok) return;
       b.disabled = true;
@@ -457,8 +525,10 @@ async function loadSections() {
   const [snap, counts, leaveCounts] = await Promise.all([getDocs(q), getPendingCounts(), getLeaveRequestCounts()]);
   const list = el("sections-list");
   list.innerHTML = "";
+  const sectionNames = new Map(); // id -> name, for the delete-confirm prompt below
   snap.forEach((d) => {
     const s = d.data();
+    sectionNames.set(d.id, s.sectionName);
     const row = document.createElement("div");
     row.className = "card";
     row.innerHTML = `
@@ -491,8 +561,9 @@ async function loadSections() {
     b.addEventListener("click", () => editSectionName(b.dataset.editSection)));
   list.querySelectorAll("[data-delete-section]").forEach((b) =>
     b.addEventListener("click", async () => {
-      const ok = confirm(
-        "Delete this section? This also deletes every assignment, submission, and enrollment under it. This can't be undone."
+      const ok = confirmByTyping(
+        "Delete this section? This also deletes every assignment, submission, and enrollment under it.",
+        sectionNames.get(b.dataset.deleteSection) || ""
       );
       if (!ok) return;
       b.disabled = true;
@@ -682,8 +753,10 @@ async function loadAssignments() {
   renderActivitiesSummary(snap.docs.map((d) => d.data()));
   const list = el("assignments-list");
   list.innerHTML = "";
+  const assignmentTitles = new Map(); // id -> title, for the delete-confirm prompt below
   snap.forEach((d) => {
     const a = d.data();
+    assignmentTitles.set(d.id, a.title);
     const row = document.createElement("div");
     row.className = "card";
     row.innerHTML = `
@@ -702,8 +775,9 @@ async function loadAssignments() {
     b.addEventListener("click", () => openAssignment(b.dataset.open)));
   list.querySelectorAll("[data-delete-assignment]").forEach((b) =>
     b.addEventListener("click", async () => {
-      const ok = confirm(
-        "Delete this assignment? This also deletes every submission already made for it. This can't be undone."
+      const ok = confirmByTyping(
+        "Delete this assignment? This also deletes every submission already made for it.",
+        assignmentTitles.get(b.dataset.deleteAssignment) || ""
       );
       if (!ok) return;
       b.disabled = true;
@@ -748,13 +822,13 @@ function renderAssignmentContext(a) {
         ${a.instructionsLink
           ? (instructionsEmbed
             ? `<iframe src="${instructionsEmbed}" class="submission-preview"></iframe>`
-            : `<div class="muted"><a href="${a.instructionsLink}" target="_blank" rel="noopener">Instructions file</a></div>`)
+            : `<div class="muted"><a href="${a.instructionsLink}" target="_blank" rel="noopener">Instructions file</a>${openInChromeButton(a.instructionsLink)}</div>`)
           : ""}
         ${a.rubricReferenceLink ? `
           <label style="margin-top:0.75rem;">Rubric reference</label>
           ${rubricEmbed
             ? `<iframe src="${rubricEmbed}" class="submission-preview"></iframe>`
-            : `<div class="muted"><a href="${a.rubricReferenceLink}" target="_blank" rel="noopener">${a.rubricReferenceLink}</a></div>`}` : ""}
+            : `<div class="muted"><a href="${a.rubricReferenceLink}" target="_blank" rel="noopener">${a.rubricReferenceLink}</a>${openInChromeButton(a.rubricReferenceLink)}</div>`}` : ""}
       </div>
     </details>`;
 }
@@ -787,10 +861,42 @@ function renderScoresSummary(submissions, totalPoints) {
     </details>`;
 }
 
+// Shared by the per-assignment gallery below and the header-wide "Photo
+// ZIPs" panel (getPhotoAssignments()/renderPhotosDropdown()) - all
+// client-side (JSZip CDN), no Storage involved, since the images already
+// live inline on the submission docs.
+async function downloadPhotosZip(withPhotos, filename, buttonEl) {
+  buttonEl.disabled = true;
+  const original = buttonEl.textContent;
+  buttonEl.textContent = "Zipping...";
+  try {
+    const zip = new JSZip();
+    withPhotos.forEach((s) => {
+      const safeName = s.name.replace(/[/\\:*?"<>|]/g, "-");
+      s.photos.forEach((p, i) => {
+        const base64 = p.split(",")[1];
+        zip.file(`${safeName}-page${i + 1}.jpg`, base64, { base64: true });
+      });
+    });
+    const blob = await zip.generateAsync({ type: "blob" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (err) {
+    alert("Couldn't build the ZIP: " + err.message);
+  }
+  buttonEl.disabled = false;
+  buttonEl.textContent = original;
+}
+
 // A per-assignment gallery of every submitted photo (photoPages, or the
 // legacy single photoData), with a one-click "download everything as one
-// ZIP" button - all client-side (JSZip CDN), no Storage involved, since
-// the images already live inline on the submission docs.
+// ZIP" button. Easy to miss if this assignment has no other open card
+// nearby (it's a collapsed <details>) - the header "Photo ZIPs" panel
+// (getPhotoAssignments() below) surfaces the same download across every
+// assignment at once, so it doesn't require drilling in here first.
 function renderImagesGallery(submissions, assignmentTitle) {
   const container = el("images-gallery");
   const withPhotos = submissions
@@ -813,31 +919,86 @@ function renderImagesGallery(submissions, assignmentTitle) {
         </div>
       </div>
     </details>`;
-  el("download-all-photos").addEventListener("click", async (e) => {
-    e.target.disabled = true;
-    e.target.textContent = "Zipping...";
-    try {
-      const zip = new JSZip();
-      withPhotos.forEach((s) => {
-        const safeName = s.name.replace(/[/\\:*?"<>|]/g, "-");
-        s.photos.forEach((p, i) => {
-          const base64 = p.split(",")[1];
-          zip.file(`${safeName}-page${i + 1}.jpg`, base64, { base64: true });
-        });
-      });
-      const blob = await zip.generateAsync({ type: "blob" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = `${assignmentTitle.replace(/[/\\:*?"<>|]/g, "-")}-photos.zip`;
-      a.click();
-      URL.revokeObjectURL(a.href);
-    } catch (err) {
-      alert("Couldn't build the ZIP: " + err.message);
-    }
-    e.target.disabled = false;
-    e.target.textContent = "Download all as ZIP";
-  });
+  el("download-all-photos").addEventListener("click", (e) =>
+    downloadPhotosZip(withPhotos, `${assignmentTitle.replace(/[/\\:*?"<>|]/g, "-")}-photos.zip`, e.target));
 }
+
+// Header-wide list of every assignment (across every subject/section this
+// teacher owns) that has at least one photo submission, each with its own
+// ZIP button - so downloading photos doesn't require opening each
+// assignment's own (collapsed-by-default) Photo submissions card first.
+async function getPhotoAssignments() {
+  const [subjectsSnap, sectionsSnap, assignSnap, subSnap] = await Promise.all([
+    getDocs(ownerScopedQuery("subjects")),
+    getDocs(ownerScopedQuery("sections")),
+    getDocs(ownerScopedQuery("assignments")),
+    getDocs(ownerScopedQuery("submissions")),
+  ]);
+  const subjectNames = new Map(subjectsSnap.docs.map((d) => [d.id, d.data().name]));
+  const sections = new Map(sectionsSnap.docs.map((d) => [d.id, d.data()]));
+  const assignments = new Map(assignSnap.docs.map((d) => [d.id, d.data()]));
+
+  const byAssignment = new Map();
+  subSnap.forEach((d) => {
+    if (!ownedByViewAs(d.data())) return; // admin's unfiltered submissions query includes every teacher's - narrow to mine/legacy
+    const s = d.data();
+    const photos = s.photoPages?.length ? s.photoPages : s.photoData ? [s.photoData] : [];
+    if (photos.length === 0) return;
+    if (!byAssignment.has(s.assignmentId)) byAssignment.set(s.assignmentId, []);
+    byAssignment.get(s.assignmentId).push({ name: s.studentName, photos });
+  });
+
+  return [...byAssignment.entries()].map(([assignmentId, withPhotos]) => {
+    const a = assignments.get(assignmentId) || {};
+    const section = sections.get(a.sectionId) || {};
+    const total = withPhotos.reduce((sum, s) => sum + s.photos.length, 0);
+    return {
+      assignmentId,
+      title: a.title || "(deleted assignment)",
+      sectionName: section.sectionName || "(deleted section)",
+      subjectName: subjectNames.get(section.subjectId) || "(deleted subject)",
+      withPhotos,
+      total,
+    };
+  }).sort((x, y) => y.total - x.total);
+}
+
+function renderPhotosDropdown(list) {
+  const dropdown = el("photos-dropdown");
+  if (list.length === 0) {
+    dropdown.innerHTML = '<p class="muted" style="padding:0.5rem 0.75rem;">No photo submissions yet.</p>';
+    return;
+  }
+  dropdown.innerHTML = list.map((p, i) => `
+    <div class="notif-item" style="display:flex; align-items:center; justify-content:space-between; gap:0.5rem;">
+      <span>${p.title} <span class="muted">(${p.subjectName} &rsaquo; ${p.sectionName}) — ${p.total} photo${p.total > 1 ? "s" : ""}</span></span>
+      <button type="button" class="secondary" data-zip-index="${i}" style="flex-shrink:0;">ZIP</button>
+    </div>`).join("");
+  dropdown.querySelectorAll("[data-zip-index]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const p = list[Number(b.dataset.zipIndex)];
+      downloadPhotosZip(p.withPhotos, `${p.title.replace(/[/\\:*?"<>|]/g, "-")}-photos.zip`, b);
+    }));
+}
+
+el("photos-bell").addEventListener("click", async (e) => {
+  e.stopPropagation();
+  const dropdown = el("photos-dropdown");
+  if (!dropdown.classList.contains("hidden")) {
+    dropdown.classList.add("hidden");
+    return;
+  }
+  dropdown.innerHTML = '<p class="muted" style="padding:0.5rem 0.75rem;">Loading...</p>';
+  dropdown.classList.remove("hidden");
+  try {
+    renderPhotosDropdown(await getPhotoAssignments());
+  } catch (err) {
+    dropdown.innerHTML = '<p class="muted" style="padding:0.5rem 0.75rem;">Couldn\'t load photo submissions.</p>';
+  }
+});
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("#photos-bell, #photos-dropdown")) el("photos-dropdown").classList.add("hidden");
+});
 
 async function loadSubmissions() {
   const filter = el("submission-filter").value;
@@ -1171,6 +1332,7 @@ el("back-to-subject").addEventListener("click", () => show("view-subject"));
 el("back-to-section").addEventListener("click", () => show("view-section"));
 el("back-to-section-from-records").addEventListener("click", () => show("view-section"));
 el("sign-out").addEventListener("click", signOutUser);
+wireOpenInChromeButtons(el("assignment-context"));
 
 // ---------- settings (Gemini key, kept in localStorage only) ----------
 el("settings-form").addEventListener("submit", (e) => {

@@ -1,9 +1,9 @@
 import { db, ADMIN_EMAIL } from "./firebase-config.js";
 import { guardPage, signOutUser } from "./auth.js";
 import {
-  collection, addDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where,
+  collection, addDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { toEmbedUrl } from "./embed.js";
+import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons } from "./embed.js";
 
 let currentUser = null;
 function el(id) { return document.getElementById(id); }
@@ -61,6 +61,13 @@ async function enroll(sectionId, section, subject, studentName) {
     // Sections created before multi-teacher support have no ownerEmail -
     // those belong to the super admin (the one teacher that existed then).
     ownerEmail: section.ownerEmail || ADMIN_EMAIL,
+    // Powers the teacher's notification bell "new joins" bucket - flipped
+    // to true once they've seen it (js/teacher.js). Missing on every
+    // enrollment made before this field existed, which is fine: a query for
+    // seen==false only ever matches docs that have the field, so old
+    // enrollments are implicitly "already seen" with no backfill needed.
+    seen: false,
+    joinedAt: serverTimestamp(),
   });
 }
 
@@ -284,7 +291,7 @@ async function loadEverything() {
         const instructionsFileBlock = a.instructionsLink
           ? (instructionsEmbed
             ? `<iframe src="${instructionsEmbed}" class="submission-preview"></iframe>`
-            : `<div class="muted"><a href="${a.instructionsLink}" target="_blank" rel="noopener">Instructions file</a></div>`)
+            : `<div class="muted"><a href="${a.instructionsLink}" target="_blank" rel="noopener">Instructions file</a>${openInChromeButton(a.instructionsLink)}</div>`)
           : "";
         row.innerHTML = `
           <strong>${a.title}</strong> <span class="muted">due ${a.dueDate || "no date"}</span>
@@ -502,6 +509,7 @@ function attachSubmitHandlers() {
 }
 
 el("sign-out").addEventListener("click", signOutUser);
+wireOpenInChromeButtons(el("assignments-list"));
 
 // ---------- init ----------
 guardPage("student").then((user) => {

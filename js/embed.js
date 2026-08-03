@@ -34,3 +34,25 @@ export function toEmbedUrl(link) {
 
   return null;
 }
+
+// Android-only escape hatch for links that don't embed (toEmbedUrl() above
+// returned null, so the caller fell back to a plain <a target="_blank">) -
+// on some Android phones the OS hands that tap to whatever app claims the
+// file type instead of Chrome (seen in the field: a "Document Viewer" app
+// that can't parse it), with no in-page error. intent:// with an explicit
+// package forces Chrome specifically. No iOS equivalent exists (Apple gives
+// pages no way to pick the handler), so this renders nothing there.
+export function openInChromeButton(url) {
+  if (!/Android/i.test(navigator.userAgent || "")) return "";
+  const bare = url.replace(/^https?:\/\//, "");
+  return ` <button type="button" class="secondary open-in-chrome" data-open-chrome-bare="${encodeURIComponent(bare)}">Open in Chrome</button>`;
+}
+
+export function wireOpenInChromeButtons(container) {
+  container.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-open-chrome-bare]");
+    if (!b) return;
+    const bare = decodeURIComponent(b.dataset.openChromeBare);
+    window.location.href = `intent://${bare}#Intent;scheme=https;package=com.android.chrome;end`;
+  });
+}
