@@ -15,6 +15,11 @@ export function toEmbedUrl(link) {
   const driveId = extractDriveFileId(link);
   if (driveId) return `https://drive.google.com/file/d/${driveId}/preview`;
 
+  // A folder link (the standard way to share multiple files at once) -
+  // #grid gives a thumbnail grid, better than #list for image/PDF worksheets.
+  const folder = link.match(/drive\.google\.com\/drive\/folders\/([^/?#]+)/);
+  if (folder) return `https://drive.google.com/embeddedfolderview?id=${folder[1]}#grid`;
+
   const doc = link.match(/docs\.google\.com\/(document|presentation|spreadsheets)\/d\/([^/]+)/);
   if (doc) return `https://docs.google.com/${doc[1]}/d/${doc[2]}/preview`;
 

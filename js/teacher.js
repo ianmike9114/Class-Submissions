@@ -786,12 +786,65 @@ function renderScoresSummary(submissions, totalPoints) {
     </details>`;
 }
 
+// A per-assignment gallery of every submitted photo (photoPages, or the
+// legacy single photoData), with a one-click "download everything as one
+// ZIP" button - all client-side (JSZip CDN), no Storage involved, since
+// the images already live inline on the submission docs.
+function renderImagesGallery(submissions, assignmentTitle) {
+  const container = el("images-gallery");
+  const withPhotos = submissions
+    .map((s) => ({ name: s.studentName, photos: s.photoPages?.length ? s.photoPages : s.photoData ? [s.photoData] : [] }))
+    .filter((s) => s.photos.length > 0);
+  if (withPhotos.length === 0) {
+    container.innerHTML = "";
+    return;
+  }
+  const total = withPhotos.reduce((sum, s) => sum + s.photos.length, 0);
+  container.innerHTML = `
+    <details class="card">
+      <summary><strong>Photo submissions</strong> (${total} image${total > 1 ? "s" : ""} from ${withPhotos.length} student${withPhotos.length > 1 ? "s" : ""})</summary>
+      <div style="margin-top:0.75rem;">
+        <button type="button" id="download-all-photos">Download all as ZIP</button>
+        <div class="photo-thumbs" style="margin-top:0.75rem;">
+          ${withPhotos.map((s) => s.photos.map((p, i) =>
+            `<a href="${p}" target="_blank" rel="noopener" title="${s.name} - page ${i + 1}"><img src="${p}" /></a>`
+          ).join("")).join("")}
+        </div>
+      </div>
+    </details>`;
+  el("download-all-photos").addEventListener("click", async (e) => {
+    e.target.disabled = true;
+    e.target.textContent = "Zipping...";
+    try {
+      const zip = new JSZip();
+      withPhotos.forEach((s) => {
+        const safeName = s.name.replace(/[/\\:*?"<>|]/g, "-");
+        s.photos.forEach((p, i) => {
+          const base64 = p.split(",")[1];
+          zip.file(`${safeName}-page${i + 1}.jpg`, base64, { base64: true });
+        });
+      });
+      const blob = await zip.generateAsync({ type: "blob" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${assignmentTitle.replace(/[/\\:*?"<>|]/g, "-")}-photos.zip`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (err) {
+      alert("Couldn't build the ZIP: " + err.message);
+    }
+    e.target.disabled = false;
+    e.target.textContent = "Download all as ZIP";
+  });
+}
+
 async function loadSubmissions() {
   const filter = el("submission-filter").value;
   const q = ownerScopedQuery("submissions", where("assignmentId", "==", state.assignmentId));
   const [snap, aDoc] = await Promise.all([getDocs(q), getDoc(doc(db, "assignments", state.assignmentId))]);
   const ownedDocs = snap.docs.filter((d) => ownedByViewAs(d.data()));
   renderScoresSummary(ownedDocs.map((d) => d.data()), aDoc.data()?.totalPoints);
+  renderImagesGallery(ownedDocs.map((d) => d.data()), aDoc.data()?.title || "submissions");
   const list = el("submissions-list");
   list.innerHTML = "";
   ownedDocs.forEach((d) => {
