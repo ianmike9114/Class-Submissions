@@ -707,7 +707,8 @@ async function openSection(sectionId) {
   // instead of only being visible right after a fresh upload. Older
   // sections saved a plain string[] before gender tracking existed -
   // normalize those to {name, gender: ""} on load.
-  rosterPreviewNames = (section.roster || []).map((r) => (typeof r === "string" ? { name: r, gender: "" } : r));
+  rosterPreviewNames = (section.roster || []).map((r) =>
+    typeof r === "string" ? { name: r.toUpperCase(), gender: "" } : { ...r, name: r.name.toUpperCase() });
   pendingDuplicateReview = [];
   el("roster-message").textContent = "";
   el("roster-preview").innerHTML = "";
