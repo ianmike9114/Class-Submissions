@@ -17,8 +17,10 @@ const firebaseConfig = {
   appId: "1:1077801155399:web:9a2c0d728da9a4a9dbaa62",
 };
 
-// Also update this in firestore.rules (which hardcodes it too).
-export const TEACHER_EMAIL = "galutira.ianjoseph.f@gmail.com";
+// The permanent super admin - can act as any teacher, manage the /teachers
+// allowlist (see js/auth.js's isTeacherEmail()), and see/edit any teacher's
+// data. Also update this in firestore.rules (which hardcodes it too).
+export const ADMIN_EMAIL = "galutira.ianjoseph.f@gmail.com";
 
 // Google OAuth Web Client ID (NOT the same as apiKey above). Firebase
 // auto-creates one when you enable Google Sign-In: Firebase Console ->

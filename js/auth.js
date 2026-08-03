@@ -1,10 +1,11 @@
-import { auth, TEACHER_EMAIL, GOOGLE_CLIENT_ID } from "./firebase-config.js";
+import { auth, db, ADMIN_EMAIL, GOOGLE_CLIENT_ID } from "./firebase-config.js";
 import {
   GoogleAuthProvider,
   signInWithCredential,
   signOut,
   onAuthStateChanged,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // Uses Google Identity Services directly (the accounts.google.com/gsi/client
 // script tag on index.html) instead of Firebase's signInWithPopup/Redirect.
@@ -46,21 +47,25 @@ export function signOutUser() {
   return signOut(auth);
 }
 
-export function isTeacherEmail(email) {
-  return email === TEACHER_EMAIL;
+// Super admin is always a teacher; anyone else needs a granted /teachers/
+// {email} doc (added by the super admin from teacher.html's Settings panel).
+export async function isTeacherEmail(email) {
+  if (email === ADMIN_EMAIL) return true;
+  const snap = await getDoc(doc(db, "teachers", email.toLowerCase()));
+  return snap.exists();
 }
 
 // Call on any page that requires a signed-in user. Redirects to the correct
 // dashboard if the user is on the wrong page, or back to index if signed out.
 export function guardPage(expectedRole) {
   return new Promise((resolve) => {
-    onAuthStateChanged(auth, (user) => {
+    onAuthStateChanged(auth, async (user) => {
       if (!user) {
         if (expectedRole) window.location.href = "index.html";
         resolve(null);
         return;
       }
-      const role = isTeacherEmail(user.email) ? "teacher" : "student";
+      const role = (await isTeacherEmail(user.email)) ? "teacher" : "student";
       if (expectedRole && role !== expectedRole) {
         window.location.href = role === "teacher" ? "teacher.html" : "student.html";
         return;

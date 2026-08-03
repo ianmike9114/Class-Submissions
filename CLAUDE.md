@@ -10,9 +10,12 @@ Spark plan — no credit card, ever). Students sign in with Gmail, submit a
 file uploads) per subject/section/assignment. Teacher grades each
 submission with a single score out of the assignment's total points, with
 an optional Drive/Docs rubric-reference link shown alongside the score box
-for their own use, then publishes to the student. Single teacher = the
-only admin, hardcoded by email — no multi-admin system, no password system
-(Google Sign-In only).
+for their own use, then publishes to the student. Multiple teachers can
+use the site, each isolated to their own subjects/sections/assignments/
+submissions/enrollments; one super admin (hardcoded by email, see
+`ADMIN_EMAIL` below) can see/edit any teacher's data and grants/revokes
+other teachers' access. No password system either way (Google Sign-In
+only).
 
 **AI rubric-check is hidden, not deleted.** `js/teacher.js`'s
 `AI_CHECK_ENABLED` flag (currently `false`) gates the "Run AI Check"
@@ -34,8 +37,10 @@ how to deploy.
 ## Architecture (3 layers, no build step)
 
 - **Frontend**: plain HTML/CSS/JS, no bundler. `index.html` (login) →
-  `teacher.html` or `student.html` based on whether the signed-in email
-  matches `TEACHER_EMAIL`. Firebase JS SDK loaded via CDN ES modules.
+  `teacher.html` or `student.html` based on `js/auth.js`'s
+  `isTeacherEmail()` (async: `true` for `ADMIN_EMAIL`, or if a
+  `teachers/{email}` doc exists — see Data model). Firebase JS SDK loaded
+  via CDN ES modules.
 - **Firebase**: Auth (Google only) + Firestore (data) only.
 - **AI**: `js/gemini.js` calls the Gemini API directly from the browser
   using the teacher's own key (never the student's, never in git).
@@ -43,9 +48,14 @@ how to deploy.
   frontend code. Any change to who-can-do-what goes there, not just in
   the UI.
 
-`TEACHER_EMAIL` / the admin check is duplicated in **2 places** on
-purpose (no shared config in a static-site setup) — if you ever change the
-teacher's email, update both: `firestore.rules`, `js/firebase-config.js`.
+**Two-tier admin model.** `ADMIN_EMAIL` (the super admin, formerly
+`TEACHER_EMAIL`) is duplicated in **2 places** on purpose (no shared
+config in a static-site setup) — if you ever change the super admin's
+email, update both: `firestore.rules`, `js/firebase-config.js`. Regular
+teachers are different: they're granted access by the super admin at
+runtime (a `teachers/{email}` doc, added/removed from `teacher.html`'s
+Settings panel), not hardcoded anywhere — see "Adding/removing a teacher
+account" below and the `teachers` collection in Data model.
 
 **Sign-in uses Google Identity Services directly, not
 `signInWithPopup`/`signInWithRedirect`.** Both of those route through a
@@ -80,8 +90,9 @@ tried first and silently failed cross-browser.
 | Section-wide activities overview (all Written Work + Performance Task assignments, title/points/due, for eyeballing/encoding into the Class Record) | `js/teacher.js`'s `renderActivitiesSummary()`, called from `loadAssignments()` — a collapsed `<details>` above the assignment cards on `#view-section`, `teacher.html`'s `#activities-summary`; distinct from the per-assignment scores summary (lists students) and the Records grid (also lists students, per-assignment columns) — this one lists activities |
 | Fixing a garbled student name from anywhere it shows (Enrolled Students, or a submission card while reviewing) | `js/teacher.js`'s `renameStudentEverywhere(studentUID, newName)` — updates every `enrollments` doc AND every `submissions` doc for that `studentUID` in one go, since `submissions.studentName` is a cached snapshot taken at submit time, not looked up live; both edit-name entry points (`openEnrolled()`, `loadSubmissions()`) call this shared helper now |
 | Student dashboard UI/behavior (join class/submit a link/view results) | `js/student.js` + `student.html` |
-| Google Sign-In / role routing (teacher vs student) | `js/auth.js` (uses Google Identity Services directly + `signInWithCredential`, not Firebase's own popup/redirect — see note below) |
-| Firebase project keys / teacher email constant (frontend) | `js/firebase-config.js` |
+| Google Sign-In / role routing (teacher vs student) | `js/auth.js` (uses Google Identity Services directly + `signInWithCredential`, not Firebase's own popup/redirect — see note below; `isTeacherEmail()` is async, checks `ADMIN_EMAIL` then the `teachers` collection) |
+| Firebase project keys / super admin email constant (frontend) | `js/firebase-config.js` (`ADMIN_EMAIL`, formerly `TEACHER_EMAIL`) |
+| Adding/removing a teacher account (isolated dashboard, granted by the super admin) | `js/teacher.js`'s `loadTeachers()` (list + remove) / `add-teacher-form` handler (add, `setDoc(doc(db,"teachers",email), ...)`) / `renderViewAsPicker()` (admin's per-teacher "view as" `<select>`, sets `state.viewAsEmail`) — all gated behind `#admin-teachers-section` in `teacher.html`'s Settings panel, shown only when `currentUser.email === ADMIN_EMAIL`; `ownerScopedQuery()`/`ownedByViewAs()` (top of `js/teacher.js`) are the shared helpers every list query and write in the file goes through for per-teacher isolation |
 | Who can read/write what in Firestore | `firestore.rules` |
 | AI rubric-check logic (prompt, Gemini model/params, key storage, image-vision fetch) | `js/gemini.js` (`runRubricCheck()`; `tryFetchImagePart()` for "image" assignments — best-effort, see limitations; `photoData` param sends an in-app camera capture directly as inline image data, no link needed) |
 | In-app camera photo capture, multi-page (student, "image" and "document" assignments) | `js/student.js` (`compressImage()` per photo, `pendingPhotos` Map + `renderPhotoThumbs()` — up to `MAX_PHOTOS` (3) pages per submission, each capped at `PER_PHOTO_MAX_LEN` chars so all of them together still fit Firestore's 1MiB doc cap; saved as `submissions.photoPages` string[] of base64 data URLs, no Storage involved; `renderSubmitForm()`'s type check gates which assignment types show the camera input) + `js/teacher.js` (`loadSubmissions()` renders a `.photo-thumbs` row when `photoPages` is set, falls back to the legacy single `photoData` field for submissions made before multi-page support) |
@@ -93,14 +104,14 @@ tried first and silently failed cross-browser.
 | In-app-browser sign-in warning (Messenger/Instagram/Line/TikTok links) | `index.html`'s inline module script, `isInAppBrowser()` (user-agent sniff) + `#in-app-browser-warning` banner - Google blocks OAuth inside these embedded WebViews on purpose (`disallowed_useragent`), can't be bypassed, only worked around by pointing the user at a real browser (Android gets an `intent://` "Open in Chrome" button, everyone gets "Copy link") |
 | Sign-in failure notification (GIS script didn't load, credential exchange failed, or a slow-load timeout) | `index.html`'s `showError()`/`FRIENDLY_ERRORS` + the `#error` box (hidden until something actually fails) |
 | Preventing duplicate enrollment in the same section, join success feedback | `js/student.js`'s `join-form` handler (checks for an existing `enrollments` doc for that `studentUID`+`sectionId` before enrolling either way) |
-| Settings panel toggle (Gemini key, hidden by default) | `teacher.html`'s header `#toggle-settings` button + `#settings-panel` (starts with `hidden` class, independent of the `show()` view stack so it stays open/closed across navigation) |
+| Settings panel toggle (Gemini key, hidden by default; teacher-account management, super admin only) | `teacher.html`'s header `#toggle-settings` button + `#settings-panel` (starts with `hidden` class, independent of the `show()` view stack so it stays open/closed across navigation) — the button itself stays visible for the super admin even with `AI_CHECK_ENABLED` off, since it's now also the entry point to `#admin-teachers-section` |
 | Enrolled students list (subject-wide from `#view-subject`, or one section only from `#view-section`'s own "View Enrolled Students" button) + removing a wrong/duplicate enrollment | `js/teacher.js` (`openEnrolled(onlySectionId)` - omit the arg for subject-wide, pass `state.sectionId` for one section; `deleteDoc` on the Remove button, row numbers via `${i+1}`) + `teacher.html` (`#view-enrolled`, shared by both entry points) |
 | Student requesting to leave a class (flagged, teacher approves - not instant self-removal) | `js/student.js` (My classes card's `data-toggle-leave` button, `updateDoc(..., {leaveRequested})`) + `js/teacher.js` (`getLeaveRequestCounts()`/`leaveBadge()` mirroring the pending-submission badge, `openEnrolled()`'s request-aware Remove confirm message) + `firestore.rules`'s `enrollments` update rule (added `leaveRequested` to the student-self-update field allowlist; delete stays teacher-only) |
 | Row numbers on the Enrolled Students table | `js/teacher.js`'s `openEnrolled()` row rendering (`#` column, same pattern as `renderRosterPreview()`'s existing `${i+1}`) - deliberately not added to the Records grid (`loadRecords()`, gender-grouped) |
 | Student retracting their own submission (only while `status == "pending"`, never after grading) | `js/student.js`'s `loadEverything()` submission branch ("Remove submission" button, `deleteDoc`) + `firestore.rules`'s `submissions` delete rule (student may delete only their own pending submission; teacher-only once published) |
 | Small icon-style delete buttons (Enrolled Students Remove, subject/section/assignment Delete) | `css/style.css`'s `button.danger.icon` (compact circular variant of `.danger`) + the 4 button sites in `js/teacher.js` - `confirm()`/`disabled` logic unchanged at each, markup-only change |
 | Join flow / pick-your-name-from-roster | `js/student.js` (`join-form` handler, `renderNamePicker()`, `claimedNames()`, `enroll()`) + `student.html`'s `#join-name-picker` — only kicks in when the section already has a roster (`sections.roster`), otherwise falls back to using the Google account name; QR/deep-link join → next row |
-| QR-code join (per-section "Show QR", scan-to-join deep link) | `js/teacher.js`'s `joinLinkFor()`/`renderSectionQR()` (called from `loadSections()`, renders into `#qr-${sectionId}`) + `teacher.html`'s `qrcodejs` CDN `<script>` tag (client-side generation only — the join link never leaves the device, no external QR image API) + `js/student.js`'s `?code=` deep-link handling (`applyPendingJoinCode()`, stashes into `sessionStorage` before `guardPage()` can redirect a signed-out student through `index.html` for sign-in, so the code survives that hop) — no `firestore.rules` change needed, `sections` read was already `isSignedIn()`-only |
+| QR-code join (per-section "Show QR", scan-to-join deep link) | `js/teacher.js`'s `joinLinkFor()`/`renderSectionQR()` (called from `loadSections()`, renders into `#qr-${sectionId}`) + `teacher.html`'s `qrcodejs` CDN `<script>` tag (client-side generation only — the join link never leaves the device, no external QR image API) + `js/student.js`'s `?code=` deep-link handling (`applyPendingJoinCode()`, stashes into `sessionStorage` before `guardPage()` can redirect a signed-out student through `index.html` for sign-in, so the code survives that hop) — no `firestore.rules` change needed, `sections` read was already `isSignedIn()`-only; the QR block shows a `state.subjectName` — section name caption above the code so a screenshotted/printed QR is still identifiable out of context (`state.subjectName` is set in `openSubject()`) |
 | Notification bell (header dropdown: pending submissions + leave requests, click to jump straight there) | `js/teacher.js`'s `getNotifications()`/`refreshNotifications()` (data), `renderNotifDropdown()`/`closeNotifDropdown()` (UI), `goToAssignment()`/`goToLeaveRequests()` (navigation — replays `openSubject → openSection → openAssignment/openEnrolled` so Back buttons and `state.subjectId` stay correct) + `teacher.html`'s `#notif-bell`/`#notif-count`/`#notif-dropdown` — refreshes on page load, on bell click, after publishing a grade, and after resolving a leave request (no real-time listeners, see limitations) |
 | Student's Assignments list grouping by subject | `js/student.js` (`loadEverything()` — groups by `subjectName` via a `sectionId → subjectName` map built from the student's own enrollments) |
 | Styling / UI patterns (cards, buttons, tables, collapsibles, status colors) | `DESIGN_SYSTEM.md` first — has every pattern with copy-pasteable HTML, avoids re-reading `css/style.css` from scratch. Only open `css/style.css` itself for a genuinely new pattern not covered there. Color/font/radius tokens are the "Academic Clarity" palette (deep navy `--blue`, Source Serif 4 headlines, Atkinson Hyperlegible Next body, loaded via Google Fonts `<link>` in each HTML `<head>`) — see `DESIGN_SYSTEM.md`'s Tokens section for exact values. |
@@ -109,6 +120,37 @@ tried first and silently failed cross-browser.
 
 ## Data model (Firestore)
 
+- `teachers` — doc ID is the granted teacher's lowercased email; fields
+  `email`, `addedAt`, `addedBy`. Purely an allowlist (existence = access),
+  managed only by the super admin from `teacher.html`'s Settings panel
+  (`loadTeachers()`/`add-teacher-form` in `js/teacher.js`). The super admin
+  itself is never a doc here — it's the permanently hardcoded `ADMIN_EMAIL`
+  (see Architecture above), which avoids a bootstrap chicken-and-egg
+  problem for granting the very first admin.
+- `subjects`, `sections`, `assignments`, `submissions`, `enrollments` all
+  carry an `ownerEmail` field (the creating teacher's email; for
+  student-created `submissions`/`enrollments` it's copied from the parent
+  assignment/section, not the student) — this is what isolates each
+  teacher's dashboard to their own data. **Docs created before multi-
+  teacher support have no `ownerEmail` field at all** and are treated as
+  the super admin's via `firestore.rules`' `isLegacyUnowned()` and
+  `js/teacher.js`'s matching `ownedByViewAs()` — no backfill is required
+  for the app to keep working, though running one (stamp `ownerEmail:
+  ADMIN_EMAIL` on every pre-existing doc) is recommended before onboarding
+  a second real teacher, so no legacy-null edge case is ever hit by a
+  student submitting against an old, not-yet-backfilled assignment. Every
+  list query and write in `js/teacher.js` goes through the shared
+  `ownerScopedQuery(collectionName, ...wheres)` / `ownedByViewAs(data)`
+  helpers (top of the file) rather than filtering by `ownerEmail` inline —
+  `ownerScopedQuery()` queries unfiltered for the super admin (Firestore's
+  rules already grant them unconditional list access) and narrows with
+  `ownedByViewAs()` client-side, since a plain `where("ownerEmail","==",
+  ...)` filter would silently exclude every legacy doc. A granted
+  (non-admin) teacher always gets a strict server-side filter instead,
+  since they never have legacy data. `state.viewAsEmail` (defaults to the
+  signed-in teacher's own email) is what both helpers key off — the super
+  admin's "view as" `<select>` (`renderViewAsPicker()`) is the only thing
+  that ever changes it to someone else's email.
 - `subjects` — name, gradeLevel, schoolYear (free text, e.g. "2026-2027"), term ("1"|"2"|"3"), archived. Old subjects from before Term/Year existed just show "—" for both — not backfilled.
 - `sections` — subjectId, sectionName, joinCode
 - `assignments` — subjectId, sectionId, title, instructions (free text shown to students - objective/output format/anything they need), instructionsLink (optional Drive/Docs link to an instructions file, embedded via `js/embed.js`'s `toEmbedUrl()` same as submission previews), component ("written" | "performance" - drives the Records grid's grouped header, older assignments without this land in a fallback "Other" group), dueDate, allowedFileTypes (a link-type hint, not an upload constraint), totalPoints (number - the score cap, teacher grades one raw number against this), rubricReferenceLink (optional Drive/Docs link to the teacher's own rubric PDF/Word, shown embedded on the Review screen for the teacher's reference only - not parsed, not used to compute anything)
@@ -151,6 +193,16 @@ tried first and silently failed cross-browser.
 
 ## Known v1 limitations (deliberate, see README)
 
+- **Multi-teacher isolation is write-side and submissions/enrollments-read
+  enforced, not fully read-locked on `subjects`/`sections`/`assignments`.**
+  Those three collections stay readable by any signed-in user (unchanged
+  from the single-teacher version) — a technically sophisticated other
+  teacher could hand-craft a raw query to list subject/section names
+  across teachers. No grades or student PII live in those collections
+  (that's `submissions`/`enrollments`, which *are* fully owner-scoped on
+  read); this was accepted rather than splitting join-code lookup into a
+  separate world-readable `joinCodes` collection, which true list-level
+  lock-down would require. Flag if this ever needs to change.
 - No file uploads — everything is a link. Non-YouTube links must be shared
   "anyone with the link can view" or the AI (and the teacher) can't open
   them.

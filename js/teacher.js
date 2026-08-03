@@ -1,7 +1,7 @@
-import { db } from "./firebase-config.js";
+import { db, ADMIN_EMAIL } from "./firebase-config.js";
 import { guardPage, signOutUser } from "./auth.js";
 import {
-  collection, addDoc, doc, updateDoc, deleteDoc, getDoc, getDocs, query, where,
+  collection, addDoc, doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, query, where,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getGeminiKey, setGeminiKey, runRubricCheck } from "./gemini.js";
 import { toEmbedUrl } from "./embed.js";
@@ -16,7 +16,26 @@ import { loadWorkbook } from "./class-record.js";
 // would need a small adapter first.
 const AI_CHECK_ENABLED = false;
 
-const state = { subjectId: null, sectionId: null, assignmentId: null };
+const state = { subjectId: null, sectionId: null, assignmentId: null, subjectName: null, viewAsEmail: null };
+let currentUser = null;
+
+// Legacy (pre-multi-teacher) docs have no ownerEmail field at all - a plain
+// where("ownerEmail","==",...) filter would silently exclude them forever,
+// "losing" all of the admin's own pre-existing data the moment this ships,
+// with no backfill run yet. The super admin's firestore.rules already grant
+// unconditional list access (isSuperAdmin() doesn't depend on resource.data),
+// so when viewing as themselves, query unfiltered and narrow to "mine or
+// legacy" client-side instead - mirrors firestore.rules' isLegacyUnowned().
+// Any other (granted) teacher never has legacy data, so always gets a
+// strict server-side filter.
+function ownedByViewAs(data) {
+  return data.ownerEmail === state.viewAsEmail || (!("ownerEmail" in data) && state.viewAsEmail === ADMIN_EMAIL);
+}
+function ownerScopedQuery(collectionName, ...wheres) {
+  return state.viewAsEmail === ADMIN_EMAIL
+    ? query(collection(db, collectionName), ...wheres)
+    : query(collection(db, collectionName), where("ownerEmail", "==", state.viewAsEmail), ...wheres);
+}
 
 function el(id) { return document.getElementById(id); }
 function genJoinCode() {
@@ -52,8 +71,13 @@ function renderSectionQR(sectionId, joinCode) {
 // tolerable once a deleted subject kept showing up on a student's
 // dashboard). These walk the same parent->child chain the rest of the
 // app already queries by (subjectId -> sectionId -> assignmentId).
+// Both current callers (submissions, enrollments) have owner-gated read
+// rules - an unfiltered query would be rejected outright for a non-admin
+// teacher (Firestore can't prove ownership without an ownerEmail filter in
+// the query itself), so this goes through ownerScopedQuery() like every
+// other owner-gated read in this file.
 async function deleteWhere(collectionName, field, value) {
-  const snap = await getDocs(query(collection(db, collectionName), where(field, "==", value)));
+  const snap = await getDocs(ownerScopedQuery(collectionName, where(field, "==", value)));
   await Promise.all(snap.docs.map((d) => deleteDoc(d.ref)));
 }
 
@@ -82,9 +106,9 @@ async function cascadeDeleteSubject(subjectId) {
 // separate nested queries per card.
 async function getPendingCounts() {
   const [sectionsSnap, assignSnap, subSnap] = await Promise.all([
-    getDocs(collection(db, "sections")),
-    getDocs(collection(db, "assignments")),
-    getDocs(query(collection(db, "submissions"), where("status", "==", "pending"))),
+    getDocs(ownerScopedQuery("sections")),
+    getDocs(ownerScopedQuery("assignments")),
+    getDocs(ownerScopedQuery("submissions", where("status", "==", "pending"))),
   ]);
   const sectionToSubject = new Map(sectionsSnap.docs.map((d) => [d.id, d.data().subjectId]));
   const assignmentToSection = new Map(assignSnap.docs.map((d) => [d.id, d.data().sectionId]));
@@ -93,6 +117,7 @@ async function getPendingCounts() {
   const bySection = new Map();
   const bySubject = new Map();
   subSnap.forEach((d) => {
+    if (!ownedByViewAs(d.data())) return; // admin's unfiltered submissions query includes every teacher's - narrow to mine/legacy
     const assignmentId = d.data().assignmentId;
     const sectionId = assignmentToSection.get(assignmentId);
     const subjectId = sectionToSubject.get(sectionId);
@@ -110,14 +135,15 @@ function pendingBadge(count) {
 // ---------- leave-request counts (mirrors getPendingCounts()/pendingBadge() above) ----------
 async function getLeaveRequestCounts() {
   const [sectionsSnap, enrollSnap] = await Promise.all([
-    getDocs(collection(db, "sections")),
-    getDocs(query(collection(db, "enrollments"), where("leaveRequested", "==", true))),
+    getDocs(ownerScopedQuery("sections")),
+    getDocs(ownerScopedQuery("enrollments", where("leaveRequested", "==", true))),
   ]);
   const sectionToSubject = new Map(sectionsSnap.docs.map((d) => [d.id, d.data().subjectId]));
 
   const bySection = new Map();
   const bySubject = new Map();
   enrollSnap.forEach((d) => {
+    if (!ownedByViewAs(d.data())) return; // admin's unfiltered enrollments query includes every teacher's - narrow to mine/legacy
     const sectionId = d.data().sectionId;
     const subjectId = sectionToSubject.get(sectionId);
     bySection.set(sectionId, (bySection.get(sectionId) || 0) + 1);
@@ -139,11 +165,11 @@ let lastNotifications = { submissions: [], leaves: [], totalCount: 0, error: fal
 // surrounding context of its own.
 async function getNotifications() {
   const [subjectsSnap, sectionsSnap, assignSnap, pendingSnap, leaveSnap] = await Promise.all([
-    getDocs(collection(db, "subjects")),
-    getDocs(collection(db, "sections")),
-    getDocs(collection(db, "assignments")),
-    getDocs(query(collection(db, "submissions"), where("status", "==", "pending"))),
-    getDocs(query(collection(db, "enrollments"), where("leaveRequested", "==", true))),
+    getDocs(ownerScopedQuery("subjects")),
+    getDocs(ownerScopedQuery("sections")),
+    getDocs(ownerScopedQuery("assignments")),
+    getDocs(ownerScopedQuery("submissions", where("status", "==", "pending"))),
+    getDocs(ownerScopedQuery("enrollments", where("leaveRequested", "==", true))),
   ]);
 
   const subjectNames = new Map(subjectsSnap.docs.map((d) => [d.id, d.data().name]));
@@ -152,6 +178,7 @@ async function getNotifications() {
 
   const submissionCounts = new Map();
   pendingSnap.forEach((d) => {
+    if (!ownedByViewAs(d.data())) return; // admin's unfiltered submissions query includes every teacher's - narrow to mine/legacy
     const assignmentId = d.data().assignmentId;
     submissionCounts.set(assignmentId, (submissionCounts.get(assignmentId) || 0) + 1);
   });
@@ -171,6 +198,7 @@ async function getNotifications() {
 
   const leaveCounts = new Map();
   leaveSnap.forEach((d) => {
+    if (!ownedByViewAs(d.data())) return; // admin's unfiltered enrollments query includes every teacher's - narrow to mine/legacy
     const sectionId = d.data().sectionId;
     leaveCounts.set(sectionId, (leaveCounts.get(sectionId) || 0) + 1);
   });
@@ -282,24 +310,28 @@ async function goToLeaveRequests(subjectId, sectionId) {
 // studentUID, or old submission cards/scores summaries would keep showing
 // the stale name forever.
 async function renameStudentEverywhere(studentUID, newName) {
+  // The same Google account can be enrolled under two different teachers -
+  // owner-scope this too, or fixing a garbled name under one teacher would
+  // silently rewrite it in another teacher's classes as well.
   const [enrollSnap, subSnap] = await Promise.all([
-    getDocs(query(collection(db, "enrollments"), where("studentUID", "==", studentUID))),
-    getDocs(query(collection(db, "submissions"), where("studentUID", "==", studentUID))),
+    getDocs(ownerScopedQuery("enrollments", where("studentUID", "==", studentUID))),
+    getDocs(ownerScopedQuery("submissions", where("studentUID", "==", studentUID))),
   ]);
   await Promise.all([
-    ...enrollSnap.docs.map((d) => updateDoc(d.ref, { studentName: newName })),
-    ...subSnap.docs.map((d) => updateDoc(d.ref, { studentName: newName })),
+    ...enrollSnap.docs.filter((d) => ownedByViewAs(d.data())).map((d) => updateDoc(d.ref, { studentName: newName })),
+    ...subSnap.docs.filter((d) => ownedByViewAs(d.data())).map((d) => updateDoc(d.ref, { studentName: newName })),
   ]);
 }
 
 // ---------- subjects ----------
 async function loadSubjects() {
   const showArchived = el("toggle-archived").checked;
-  const [snap, counts, leaveCounts] = await Promise.all([getDocs(collection(db, "subjects")), getPendingCounts(), getLeaveRequestCounts()]);
+  const [snap, counts, leaveCounts] = await Promise.all([getDocs(ownerScopedQuery("subjects")), getPendingCounts(), getLeaveRequestCounts()]);
   const list = el("subjects-list");
   list.innerHTML = "";
   snap.forEach((d) => {
     const s = d.data();
+    if (!ownedByViewAs(s)) return; // admin's unfiltered subjects query includes every teacher's - narrow to mine/legacy
     if (s.archived && !showArchived) return;
     const row = document.createElement("div");
     row.className = "card";
@@ -372,6 +404,7 @@ el("add-subject-form").addEventListener("submit", async (e) => {
     schoolYear: el("subject-year").value.trim(),
     term: el("subject-term").value,
     archived: false,
+    ownerEmail: state.viewAsEmail,
   });
   e.target.reset();
   loadSubjects();
@@ -384,6 +417,7 @@ async function openSubject(subjectId) {
   state.sectionId = null;
   state.assignmentId = null;
   const subject = (await getDoc(doc(db, "subjects", subjectId))).data();
+  state.subjectName = subject.name;
   el("subject-view-name").textContent = `${subject.name} (${subject.gradeLevel || "—"} — SY ${subject.schoolYear || "—"} · Term ${subject.term || "—"})`;
   show("view-subject");
   loadSections();
@@ -412,6 +446,7 @@ async function loadSections() {
       <details style="margin-top:0.5rem;">
         <summary class="muted" style="cursor:pointer;">Show QR</summary>
         <div style="margin-top:0.5rem;">
+          <p class="muted" style="margin:0 0 0.35rem;"><strong>${state.subjectName || "—"}</strong> — ${s.sectionName}</p>
           <div id="qr-${d.id}" class="qr-code"></div>
           <p class="muted">Scan to join, or share this link:<br>
             <a href="${joinLinkFor(s.joinCode)}" target="_blank" rel="noopener">${joinLinkFor(s.joinCode)}</a></p>
@@ -458,6 +493,7 @@ el("add-section-form").addEventListener("submit", async (e) => {
     subjectId: state.subjectId,
     sectionName: el("section-name").value.trim(),
     joinCode: genJoinCode(),
+    ownerEmail: state.viewAsEmail,
   });
   e.target.reset();
   loadSections();
@@ -494,9 +530,10 @@ async function openEnrolled(onlySectionId) {
 
   // Firestore 'in' queries cap at 30 - fine for a solo-teacher class load.
   const enrollSnap = await getDocs(
-    query(collection(db, "enrollments"), where("sectionId", "in", sectionIds.slice(0, 30)))
+    ownerScopedQuery("enrollments", where("sectionId", "in", sectionIds.slice(0, 30)))
   );
   const rows = enrollSnap.docs
+    .filter((d) => ownedByViewAs(d.data()))
     .map((d) => ({ id: d.id, ...d.data() }))
     .sort((a, b) =>
       (sectionMap.get(a.sectionId) || "").localeCompare(sectionMap.get(b.sectionId) || "")
@@ -660,6 +697,7 @@ el("add-assignment-form").addEventListener("submit", async (e) => {
     totalPoints: Number(el("assignment-total-points").value) || 0,
     rubricReferenceLink: el("assignment-rubric-link").value.trim(),
     createdAt: Date.now(),
+    ownerEmail: state.viewAsEmail,
   });
   e.target.reset();
   loadAssignments();
@@ -721,12 +759,13 @@ function renderScoresSummary(submissions, totalPoints) {
 
 async function loadSubmissions() {
   const filter = el("submission-filter").value;
-  const q = query(collection(db, "submissions"), where("assignmentId", "==", state.assignmentId));
+  const q = ownerScopedQuery("submissions", where("assignmentId", "==", state.assignmentId));
   const [snap, aDoc] = await Promise.all([getDocs(q), getDoc(doc(db, "assignments", state.assignmentId))]);
-  renderScoresSummary(snap.docs.map((d) => d.data()), aDoc.data()?.totalPoints);
+  const ownedDocs = snap.docs.filter((d) => ownedByViewAs(d.data()));
+  renderScoresSummary(ownedDocs.map((d) => d.data()), aDoc.data()?.totalPoints);
   const list = el("submissions-list");
   list.innerHTML = "";
-  snap.forEach((d) => {
+  ownedDocs.forEach((d) => {
     const s = d.data();
     if (filter !== "all" && s.status !== filter) return;
     const row = document.createElement("div");
@@ -969,14 +1008,14 @@ async function loadRecords() {
     return;
   }
 
-  const enrollSnap = await getDocs(query(collection(db, "enrollments"), where("sectionId", "==", state.sectionId)));
-  const enrollments = enrollSnap.docs.map((d) => d.data());
+  const enrollSnap = await getDocs(ownerScopedQuery("enrollments", where("sectionId", "==", state.sectionId)));
+  const enrollments = enrollSnap.docs.filter((d) => ownedByViewAs(d.data())).map((d) => d.data());
 
   const submissionsByAssignment = {};
   for (const a of assignments) {
-    const subSnap = await getDocs(query(collection(db, "submissions"), where("assignmentId", "==", a.id)));
+    const subSnap = await getDocs(ownerScopedQuery("submissions", where("assignmentId", "==", a.id)));
     const byStudent = new Map();
-    subSnap.forEach((d) => byStudent.set(d.data().studentUID, d.data()));
+    subSnap.forEach((d) => { if (ownedByViewAs(d.data())) byStudent.set(d.data().studentUID, d.data()); });
     submissionsByAssignment[a.id] = byStudent;
   }
 
@@ -1057,16 +1096,88 @@ el("settings-form").addEventListener("submit", (e) => {
   el("settings-message").textContent = "Saved (kept in this browser only).";
 });
 
+// ---------- admin: teacher accounts (super admin only, see firestore.rules) ----------
+async function loadTeachers() {
+  const snap = await getDocs(collection(db, "teachers"));
+  const rows = snap.docs.map((d) => d.data()).sort((a, b) => a.email.localeCompare(b.email));
+  const container = el("teachers-list");
+  container.innerHTML = rows.length
+    ? `<table class="records-grid"><thead><tr><th>Email</th><th></th></tr></thead><tbody>
+        ${rows.map((t) => `<tr><td>${t.email}</td><td>
+          <button class="danger icon" data-remove-teacher="${t.email}" title="Remove" aria-label="Remove teacher access">×</button>
+        </td></tr>`).join("")}
+      </tbody></table>`
+    : '<p class="muted">No other teachers added yet.</p>';
+
+  container.querySelectorAll("[data-remove-teacher]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const email = b.dataset.removeTeacher;
+      const ok = confirm(`Remove ${email}'s teacher access? Their existing classes stay intact, just no longer editable by them.`);
+      if (!ok) return;
+      b.disabled = true;
+      await deleteDoc(doc(db, "teachers", email));
+      loadTeachers();
+      renderViewAsPicker();
+    }));
+}
+
+el("add-teacher-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const email = el("add-teacher-email").value.trim().toLowerCase();
+  if (!email) return;
+  await setDoc(doc(db, "teachers", email), {
+    email,
+    addedAt: Date.now(),
+    addedBy: currentUser.email,
+  });
+  e.target.reset();
+  loadTeachers();
+  renderViewAsPicker();
+});
+
+// ---------- admin: "view as" picker (super admin only) ----------
+async function renderViewAsPicker() {
+  const picker = el("view-as-picker");
+  const snap = await getDocs(collection(db, "teachers"));
+  const emails = snap.docs.map((d) => d.data().email).sort();
+  picker.innerHTML =
+    `<option value="${ADMIN_EMAIL}">My Classes</option>` +
+    emails.map((email) => `<option value="${email}">View as: ${email}</option>`).join("");
+  picker.value = state.viewAsEmail;
+  picker.classList.remove("hidden");
+}
+
+el("view-as-picker").addEventListener("change", (e) => {
+  state.viewAsEmail = e.target.value;
+  show("view-subjects");
+  loadSubjects();
+  refreshNotifications();
+});
+
 // ---------- init ----------
 guardPage("teacher").then((user) => {
   if (!user) return;
+  currentUser = user;
+  state.viewAsEmail = user.email;
   el("teacher-email").textContent = user.email;
+  const isAdmin = user.email === ADMIN_EMAIL;
   if (AI_CHECK_ENABLED) {
     el("gemini-key").value = getGeminiKey();
   } else {
-    el("toggle-settings").classList.add("hidden");
     const aiOption = el("submission-filter").querySelector('option[value="ai-drafted"]');
     if (aiOption) aiOption.hidden = true;
+  }
+  // The Settings button used to only gate the (now-hidden) Gemini key box,
+  // so it hid itself whenever AI_CHECK_ENABLED was off. It's also the entry
+  // point to teacher-account management now, so the super admin always
+  // keeps it, regardless of that flag.
+  if (!AI_CHECK_ENABLED && !isAdmin) {
+    el("toggle-settings").classList.add("hidden");
+  }
+  if (isAdmin) {
+    el("admin-teachers-section").classList.remove("hidden");
+    loadTeachers();
+    renderViewAsPicker();
   }
   loadSubjects();
   refreshNotifications();

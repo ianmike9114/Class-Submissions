@@ -1,4 +1,4 @@
-import { db } from "./firebase-config.js";
+import { db, ADMIN_EMAIL } from "./firebase-config.js";
 import { guardPage, signOutUser } from "./auth.js";
 import {
   collection, addDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where,
@@ -57,6 +57,9 @@ async function enroll(sectionId, section, subject, studentName) {
     subjectName: subject.name,
     sectionId,
     sectionName: section.sectionName,
+    // Sections created before multi-teacher support have no ownerEmail -
+    // those belong to the super admin (the one teacher that existed then).
+    ownerEmail: section.ownerEmail || ADMIN_EMAIL,
   });
 }
 
@@ -254,6 +257,7 @@ async function loadEverything() {
     const subjectName = sectionToSubject.get(aDoc.data().sectionId) || "Other";
     if (!assignmentsBySubject.has(subjectName)) assignmentsBySubject.set(subjectName, []);
     assignmentsBySubject.get(subjectName).push(aDoc);
+    assignmentsById.set(aDoc.id, aDoc.data());
   }
 
   for (const [subjectName, aDocs] of assignmentsBySubject) {
@@ -408,6 +412,11 @@ function compressImage(file, maxLen = PER_PHOTO_MAX_LEN) {
 // order the student added them (i.e. page order).
 const pendingPhotos = new Map();
 
+// assignmentId -> assignment data, refreshed every loadEverything() - lets
+// the submit-form handler below (wired up once, reused across renders) look
+// up an assignment's ownerEmail without a re-fetch at submit time.
+const assignmentsById = new Map();
+
 function renderPhotoThumbs(assignmentId) {
   const container = document.querySelector(`[data-thumbs="${assignmentId}"]`);
   if (!container) return;
@@ -465,6 +474,10 @@ function attachSubmitHandlers() {
       btn.textContent = "Submitting...";
 
       try {
+        // Assignments created before multi-teacher support have no
+        // ownerEmail - those belong to the super admin (the one teacher
+        // that existed then).
+        const assignmentOwnerEmail = assignmentsById.get(assignmentId)?.ownerEmail || ADMIN_EMAIL;
         await addDoc(collection(db, "submissions"), {
           assignmentId,
           studentUID: currentUser.uid,
@@ -473,6 +486,7 @@ function attachSubmitHandlers() {
           photoPages,
           status: "pending",
           submittedAt: Date.now(),
+          ownerEmail: assignmentOwnerEmail,
         });
         pendingPhotos.delete(assignmentId);
         loadEverything();

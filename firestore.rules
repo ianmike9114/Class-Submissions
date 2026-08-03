@@ -1,7 +1,14 @@
 rules_version = '2';
 
-// This is the ONLY admin check in the whole app - no separate admin system.
-// Also duplicated in js/firebase-config.js - keep both in sync.
+// Two-tier admin model:
+// - Super admin = the site owner, permanently hardcoded (avoids a bootstrap
+//   chicken-and-egg problem for the /teachers allowlist below). Can act as
+//   any teacher, on any teacher's data, and is the only one who can grant/
+//   revoke regular teacher access via /teachers.
+// - Regular teacher = a doc exists at /teachers/{their lowercased email},
+//   added by the super admin from teacher.html's Settings panel. Isolated
+//   to their own subjects/sections/assignments/submissions/enrollments.
+// ADMIN_EMAIL is also duplicated in js/firebase-config.js - keep in sync.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -9,62 +16,119 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isTeacher() {
+    function isSuperAdmin() {
       return isSignedIn() && request.auth.token.email == "galutira.ianjoseph.f@gmail.com";
     }
 
-    // subjects: everyone signed in can read (for lists/join flow), only teacher writes
+    function isGrantedTeacher() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/teachers/$(request.auth.token.email));
+    }
+
+    function isOwnerOrAdmin(data) {
+      return isSuperAdmin()
+        || (isGrantedTeacher() && data.ownerEmail == request.auth.token.email);
+    }
+
+    // Docs written before this migration have no ownerEmail at all -
+    // treat those as the super admin's (the one teacher that existed
+    // before multi-tenancy). New writes always stamp ownerEmail (enforced
+    // by the create rules below), so this only ever matches pre-migration
+    // docs.
+    function isLegacyUnowned(data) {
+      return !("ownerEmail" in data) && isSuperAdmin();
+    }
+
+    function canActAsOwner(data) {
+      return isOwnerOrAdmin(data) || isLegacyUnowned(data);
+    }
+
+    // ---------- teachers (admin allowlist) ----------
+    match /teachers/{teacherEmail} {
+      // Any signed-in user may look up ONLY their own doc, for role routing.
+      allow get: if isSignedIn() && request.auth.token.email == teacherEmail;
+      // Full roster (admin screen's table) - super admin only.
+      allow list: if isSuperAdmin();
+      allow create: if isSuperAdmin() && request.resource.data.email == teacherEmail;
+      allow update, delete: if isSuperAdmin();
+    }
+
+    // ---------- subjects ----------
     match /subjects/{subjectId} {
-      allow read: if isSignedIn();
-      allow write: if isTeacher();
+      // get: single-doc lookups only - a student resolving a subject after
+      // already resolving a section via join code, or a teacher opening
+      // one of their own. Left open to any signed-in user: subject docs
+      // have no student PII or grades, and doc IDs aren't enumerable.
+      allow get: if isSignedIn();
+      // list (the dashboard's subjects list): owner or super admin only.
+      // Firestore rejects any list query not filtered by
+      // where("ownerEmail","==", <caller>) against this rule - this is
+      // what actually gives "isolated per teacher" for the dashboard.
+      allow list: if isSignedIn() && (isSuperAdmin() || resource.data.ownerEmail == request.auth.token.email);
+      allow create: if isSuperAdmin()
+                    || (isGrantedTeacher() && request.resource.data.ownerEmail == request.auth.token.email);
+      allow update, delete: if canActAsOwner(resource.data);
     }
 
-    // sections: read needed so students can validate a join code client-side
+    // ---------- sections ----------
     match /sections/{sectionId} {
+      // Read stays open to any signed-in user (unchanged from today):
+      // students must query by joinCode before they know who owns the
+      // section, which can't be simultaneously owner-scoped in a Firestore
+      // list rule. No grades/PII live here (roster names/genders only).
+      // Isolation is enforced on write, and by the dashboard's own
+      // ownerEmail-filtered queries.
       allow read: if isSignedIn();
-      allow write: if isTeacher();
+      allow create: if isSuperAdmin()
+                    || (isGrantedTeacher() && request.resource.data.ownerEmail == request.auth.token.email);
+      allow update, delete: if canActAsOwner(resource.data);
     }
 
-    // assignments: read needed for students to see their section's work
+    // ---------- assignments ----------
     match /assignments/{assignmentId} {
+      // Same reasoning as sections: students query by sectionId (their own
+      // enrollments), not by ownerEmail.
       allow read: if isSignedIn();
-      allow write: if isTeacher();
+      allow create: if isSuperAdmin()
+                    || (isGrantedTeacher() && request.resource.data.ownerEmail == request.auth.token.email);
+      allow update, delete: if canActAsOwner(resource.data);
     }
 
-    // submissions: student creates their own (a link, no file upload), only
-    // teacher updates AI draft / final grade / status
+    // ---------- submissions (grades/links - fully owner-scoped on read) ----------
     match /submissions/{submissionId} {
       allow create: if isSignedIn()
-                    && request.resource.data.studentUID == request.auth.uid;
+                    && request.resource.data.studentUID == request.auth.uid
+                    && request.resource.data.ownerEmail is string;
       allow read: if isSignedIn()
-                  && (resource.data.studentUID == request.auth.uid || isTeacher());
-      allow update: if isTeacher();
+                  && (resource.data.studentUID == request.auth.uid || canActAsOwner(resource.data));
+      allow update: if canActAsOwner(resource.data);
       // A student may retract their own submission, but only while it's
-      // still pending - once published (graded), it's teacher-only, same
+      // still pending - once published (graded), it's owner-only, same
       // as any other change to a graded submission.
-      allow delete: if isTeacher()
+      allow delete: if canActAsOwner(resource.data)
                     || (isSignedIn()
                         && resource.data.studentUID == request.auth.uid
                         && resource.data.status == "pending");
     }
 
-    // enrollments: one doc per student linking them to a subject+section via join code
+    // ---------- enrollments ----------
     match /enrollments/{enrollmentId} {
       allow read: if isSignedIn()
-                  && (resource.data.studentUID == request.auth.uid || isTeacher());
+                  && (resource.data.studentUID == request.auth.uid || canActAsOwner(resource.data));
       allow create: if isSignedIn()
-                    && request.resource.data.studentUID == request.auth.uid;
+                    && request.resource.data.studentUID == request.auth.uid
+                    && request.resource.data.ownerEmail is string;
       // Students may self-correct a garbled Google display name, and may
       // flag a request to leave the class (leaveRequested) - but may only
       // ever touch those two fields on their own enrollment. Everything
-      // else (which subject/section, studentEmail) stays teacher-controlled,
-      // and delete stays teacher-only below - a request is just a flag, the
-      // teacher still has to act on it.
-      allow update: if isTeacher()
+      // else (which subject/section, studentEmail) stays owner-controlled,
+      // and delete stays owner-only below - a request is just a flag, the
+      // owning teacher still has to act on it.
+      allow update: if canActAsOwner(resource.data)
                     || (isSignedIn()
                         && resource.data.studentUID == request.auth.uid
                         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['studentName', 'leaveRequested']));
-      allow delete: if isTeacher();
+      allow delete: if canActAsOwner(resource.data);
     }
   }
 }
