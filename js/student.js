@@ -141,6 +141,7 @@ el("join-form").addEventListener("submit", async (e) => {
   btn.textContent = "Joining...";
   try {
     await withTimeout((async () => {
+      msg.textContent = "Looking up class code...";
       const q = query(collection(db, "sections"), where("joinCode", "==", code));
       const snap = await getDocs(q);
       if (snap.empty) {
@@ -150,6 +151,7 @@ el("join-form").addEventListener("submit", async (e) => {
       const sectionDoc = snap.docs[0];
       const section = sectionDoc.data();
 
+      msg.textContent = "Checking your enrollment...";
       const already = await getDocs(query(
         collection(db, "enrollments"),
         where("sectionId", "==", sectionDoc.id),
@@ -160,9 +162,11 @@ el("join-form").addEventListener("submit", async (e) => {
         return;
       }
 
+      msg.textContent = "Loading class details...";
       const subject = (await getDoc(doc(db, "subjects", section.subjectId))).data();
 
       if (!section.roster || section.roster.length === 0) {
+        msg.textContent = "Joining...";
         await enroll(sectionDoc.id, section, subject, currentUser.displayName || currentUser.email);
         e.target.reset();
         msg.textContent = `Joined ${section.sectionName}!`;
@@ -172,7 +176,8 @@ el("join-form").addEventListener("submit", async (e) => {
       }
 
       pendingJoin = { sectionDoc, section, subject };
-      renderNamePicker();
+      msg.textContent = "";
+      await renderNamePicker();
     })());
   } catch (err) {
     msg.textContent = "Join failed: " + err.message;
