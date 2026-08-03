@@ -479,6 +479,7 @@ async function loadSections() {
           <div id="qr-${d.id}" class="qr-code"></div>
           <p class="muted">Scan to join, or share this link:<br>
             <a href="${joinLinkFor(s.joinCode)}" target="_blank" rel="noopener">${joinLinkFor(s.joinCode)}</a></p>
+          <p class="muted" style="font-size:0.85em;">Tip for students: after scanning, tap "Open in Safari/Chrome" on the banner that pops up — don't use the in-scanner preview, sign-in won't work there.</p>
         </div>
       </details>`;
     list.appendChild(row);
