@@ -1343,7 +1343,8 @@ async function loadRecords() {
 
   const section = (await getDoc(doc(db, "sections", state.sectionId))).data();
   el("records-view-title").textContent = section.sectionName;
-  const roster = (section.roster || []).map((r) => (typeof r === "string" ? { name: r, gender: "" } : r));
+  const roster = (section.roster || []).map((r) =>
+    typeof r === "string" ? { name: r.toUpperCase(), gender: "" } : { ...r, name: r.name.toUpperCase() });
 
   if (roster.length === 0) {
     container.innerHTML = `<p class="muted">No roster set for this section yet - go back and use "Set Roster" first.</p>`;
