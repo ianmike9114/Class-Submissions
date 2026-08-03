@@ -71,29 +71,17 @@ async function enroll(sectionId, section, subject, studentName) {
   });
 }
 
-async function claimedNames(sectionId) {
-  const snap = await getDocs(query(collection(db, "enrollments"), where("sectionId", "==", sectionId)));
-  return new Set(snap.docs.map((d) => (d.data().studentName || "").toLowerCase()));
-}
-
 async function renderNamePicker() {
-  const { sectionDoc, section } = pendingJoin;
-  const claimed = await claimedNames(sectionDoc.id);
+  const { section } = pendingJoin;
   // Older sections saved a plain string[] roster before gender tracking
   // existed - normalize both shapes to plain names here.
   const rosterNames = section.roster.map((r) => (typeof r === "string" ? r : r.name));
-  const available = rosterNames.filter((name) => !claimed.has(name.toLowerCase()));
   const container = el("join-name-picker");
-
-  if (available.length === 0) {
-    container.innerHTML = '<p class="muted">All roster names for this class are already claimed. Ask your teacher to check the Enrolled Students list.</p>';
-    return;
-  }
 
   container.innerHTML = `
     <label>Which name is yours?</label>
     <select id="join-name-select">
-      ${available.map((name) => `<option value="${name}">${name}</option>`).join("")}
+      ${rosterNames.map((name) => `<option value="${name}">${name}</option>`).join("")}
     </select>
     <button type="button" id="join-name-confirm">This is me</button>
     <p id="join-name-message" class="muted"></p>`;
@@ -103,12 +91,6 @@ async function renderNamePicker() {
     const btn = el("join-name-confirm");
     btn.disabled = true;
     try {
-      const stillClaimed = await claimedNames(pendingJoin.sectionDoc.id);
-      if (stillClaimed.has(chosen.toLowerCase())) {
-        el("join-name-message").textContent = "That name was just taken - pick another.";
-        renderNamePicker();
-        return;
-      }
       const sectionName = pendingJoin.section.sectionName;
       await enroll(pendingJoin.sectionDoc.id, pendingJoin.section, pendingJoin.subject, chosen);
       pendingJoin = null;
