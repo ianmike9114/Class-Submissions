@@ -115,7 +115,8 @@ async function renderNamePicker() {
       el("join-form").reset();
       container.innerHTML = "";
       el("join-message").textContent = `Joined ${sectionName} as ${chosen}!`;
-      loadEverything();
+      await loadEverything();
+      el("assignments-list").scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (err) {
       el("join-name-message").textContent = "Join failed: " + err.message;
       btn.disabled = false;
@@ -165,7 +166,8 @@ el("join-form").addEventListener("submit", async (e) => {
         await enroll(sectionDoc.id, section, subject, currentUser.displayName || currentUser.email);
         e.target.reset();
         msg.textContent = `Joined ${section.sectionName}!`;
-        loadEverything();
+        await loadEverything();
+        el("assignments-list").scrollIntoView({ behavior: "smooth", block: "start" });
         return;
       }
 

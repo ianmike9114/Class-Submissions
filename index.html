@@ -74,10 +74,17 @@
       if (/Android/i.test(navigator.userAgent)) {
         const openBtn = document.getElementById("open-in-chrome");
         openBtn.classList.remove("hidden");
-        openBtn.addEventListener("click", () => {
+        const openInChrome = () => {
           const bare = location.href.replace(/^https?:\/\//, "");
           window.location.href = `intent://${bare}#Intent;scheme=https;package=com.android.chrome;end`;
-        });
+        };
+        openBtn.addEventListener("click", openInChrome);
+        // Fire immediately too - a student who "only knows how to click"
+        // may never notice the button. Some embedding WebViews block a
+        // script-initiated navigation with no prior tap, so the button
+        // (and Copy link, and the menu instructions below) stay as a
+        // fallback - this is a bonus first attempt, not a replacement.
+        openInChrome();
       }
 
       document.getElementById("copy-link").addEventListener("click", async (e) => {
