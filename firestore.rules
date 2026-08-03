@@ -108,7 +108,7 @@ service cloud.firestore {
       allow delete: if canActAsOwner(resource.data)
                     || (isSignedIn()
                         && resource.data.studentUID == request.auth.uid
-                        && resource.data.status == "pending");
+                        && (resource.data.status == "pending" || resource.data.status == "returned"));
     }
 
     // ---------- enrollments ----------

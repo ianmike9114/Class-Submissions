@@ -92,7 +92,7 @@ input:focus, select:focus, textarea:focus {
 
 label { font-weight: 600; font-size: 0.85rem; display: block; margin-bottom: 0.2rem; }
 
-.status-pending, .status-ai-drafted, .status-published {
+.status-pending, .status-ai-drafted, .status-published, .status-returned {
   display: inline-block;
   padding: 0.15rem 0.6rem;
   border-radius: 9999px;
@@ -102,6 +102,7 @@ label { font-weight: 600; font-size: 0.85rem; display: block; margin-bottom: 0.2
 .status-pending    { color: var(--amber); background: #fef3c7; }
 .status-ai-drafted { color: var(--blue);  background: #dbe4ef; }
 .status-published  { color: var(--green); background: #dcfce7; }
+.status-returned   { color: #b91c1c;      background: #fee2e2; }
 
 .qr-code {
   display: inline-block;

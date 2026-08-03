@@ -838,12 +838,36 @@ function renderAssignmentContext(a) {
 
 async function openAssignment(assignmentId) {
   state.assignmentId = assignmentId;
-  const a = await getDoc(doc(db, "assignments", assignmentId));
-  el("assignment-view-title").textContent = a.data().title;
-  renderAssignmentContext(a.data());
+  const data = (await getDoc(doc(db, "assignments", assignmentId))).data();
+  el("assignment-view-title").textContent = data.title;
+  el("edit-assignment-title").value = data.title || "";
+  el("edit-assignment-instructions").value = data.instructions || "";
+  el("edit-assignment-instructions-link").value = data.instructionsLink || "";
+  el("edit-assignment-component").value = data.component || "written";
+  el("edit-assignment-due").value = data.dueDate || "";
+  el("edit-assignment-filetype").value = data.allowedFileTypes || "document";
+  el("edit-assignment-total-points").value = data.totalPoints ?? "";
+  el("edit-assignment-rubric-link").value = data.rubricReferenceLink || "";
+  renderAssignmentContext(data);
   show("view-assignment");
   loadSubmissions();
 }
+
+el("edit-assignment-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const assignmentId = state.assignmentId;
+  await updateDoc(doc(db, "assignments", assignmentId), {
+    title: el("edit-assignment-title").value.trim(),
+    instructions: el("edit-assignment-instructions").value.trim(),
+    instructionsLink: el("edit-assignment-instructions-link").value.trim(),
+    component: el("edit-assignment-component").value,
+    dueDate: el("edit-assignment-due").value,
+    allowedFileTypes: el("edit-assignment-filetype").value,
+    totalPoints: Number(el("edit-assignment-total-points").value) || 0,
+    rubricReferenceLink: el("edit-assignment-rubric-link").value.trim(),
+  });
+  await openAssignment(assignmentId);
+});
 
 function renderScoresSummary(submissions, totalPoints) {
   const container = el("scores-summary");
@@ -1124,6 +1148,7 @@ async function openReview(submissionId) {
       <label>Feedback</label>
       <textarea id="feedback-${submissionId}" rows="3">${draft.feedback || ""}</textarea>
       <button data-publish="${submissionId}">Publish to student</button>
+      <button type="button" class="secondary" data-return="${submissionId}">Return for revision</button>
     </div>`;
 
   container.querySelector(`[data-publish]`).addEventListener("click", async () => {
@@ -1134,6 +1159,23 @@ async function openReview(submissionId) {
       },
       status: "published",
       publishedAt: Date.now(),
+    });
+    loadSubmissions();
+    refreshNotifications();
+  });
+
+  // Sends the submission back to the student to redo instead of grading it -
+  // reuses the same score/feedback boxes so the teacher can leave a note on
+  // what needs fixing. Student side then deletes and resubmits, same as the
+  // existing pending-submission "Remove" flow.
+  container.querySelector(`[data-return]`).addEventListener("click", async () => {
+    await updateDoc(ref, {
+      finalGrade: {
+        score: Number(el(`score-${submissionId}`).value) || 0,
+        feedback: el(`feedback-${submissionId}`).value,
+      },
+      status: "returned",
+      returnedAt: Date.now(),
     });
     loadSubmissions();
     refreshNotifications();
@@ -1431,6 +1473,46 @@ function show(viewId) {
   ["view-subjects", "view-subject", "view-enrolled", "view-section", "view-assignment", "view-records"].forEach((v) => {
     el(v).classList.toggle("hidden", v !== viewId);
   });
+  // Survives a page refresh - restoreNavState() below replays whichever
+  // view this was on init instead of always landing back on the subjects list.
+  try {
+    sessionStorage.setItem("teacherNavState", JSON.stringify({
+      view: viewId,
+      subjectId: state.subjectId,
+      sectionId: state.sectionId,
+      assignmentId: state.assignmentId,
+      enrolledBackView,
+    }));
+  } catch {}
+}
+
+async function restoreNavState() {
+  let saved;
+  try { saved = JSON.parse(sessionStorage.getItem("teacherNavState") || "null"); } catch { saved = null; }
+  if (!saved || saved.view === "view-subjects" || !saved.subjectId) {
+    show("view-subjects");
+    loadSubjects();
+    return;
+  }
+  try {
+    await openSubject(saved.subjectId);
+    if (saved.view === "view-subject") return;
+
+    if (saved.view === "view-enrolled" && saved.enrolledBackView === "view-subject") {
+      await openEnrolled();
+      return;
+    }
+
+    if (!saved.sectionId) return; // already showing view-subject from openSubject above
+    await openSection(saved.sectionId);
+    if (saved.view === "view-section") return;
+    if (saved.view === "view-records") { await openRecords(); return; }
+    if (saved.view === "view-enrolled") { await openEnrolled(saved.sectionId); return; }
+    if (saved.view === "view-assignment" && saved.assignmentId) { await openAssignment(saved.assignmentId); return; }
+  } catch {
+    show("view-subjects");
+    loadSubjects();
+  }
 }
 el("go-home").addEventListener("click", () => { show("view-subjects"); loadSubjects(); });
 el("toggle-settings").addEventListener("click", () => el("settings-panel").classList.toggle("hidden"));
@@ -1531,7 +1613,6 @@ guardPage("teacher").then((user) => {
     loadTeachers();
     renderViewAsPicker();
   }
-  loadSubjects();
   refreshNotifications();
-  show("view-subjects");
+  restoreNavState();
 });

@@ -291,9 +291,13 @@ async function loadEverything() {
           ${renderSubmitForm(aDoc.id, a.allowedFileTypes)}`;
       } else {
         const s = subDoc.data();
+        const statusLabel = s.status === "published" ? "Graded"
+          : s.status === "returned" ? "Returned — please revise and resubmit"
+          : "Submitted, pending review";
         row.innerHTML = `
           <strong>${a.title}</strong>
-          <span class="status-${s.status}"> — ${s.status === "published" ? "Graded" : "Submitted, pending review"}</span>
+          <span class="status-${s.status}"> — ${statusLabel}</span>
+          ${s.status === "returned" && s.finalGrade?.feedback ? `<p class="muted">Teacher note: ${s.finalGrade.feedback}</p>` : ""}
           ${s.status === "published" ? renderResult(s, a) : `<div style="margin-top:0.5rem;"><button type="button" class="danger" data-remove-submission="${subDoc.id}">Remove submission</button></div>`}`;
       }
       list.appendChild(row);

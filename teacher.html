@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=3" />
+  <link rel="stylesheet" href="css/style.css?v=4" />
 </head>
 <body>
   <header>
@@ -186,6 +186,40 @@
     <section id="view-assignment" class="hidden">
       <button class="secondary" id="back-to-section">&larr; Back</button>
       <h2 id="assignment-view-title"></h2>
+
+      <details class="card">
+        <summary><strong>Edit assignment</strong></summary>
+        <form id="edit-assignment-form" style="margin-top:0.75rem;">
+          <label>Title</label>
+          <input id="edit-assignment-title" required />
+          <label>Instructions (shown to students)</label>
+          <textarea id="edit-assignment-instructions" rows="4"></textarea>
+          <label>Instructions file link (optional)</label>
+          <input id="edit-assignment-instructions-link" type="url" placeholder="https://drive.google.com/file/d/..." />
+          <label>Component (for grouping in Records)</label>
+          <select id="edit-assignment-component">
+            <option value="written">Written Work</option>
+            <option value="performance">Performance Task</option>
+          </select>
+          <label>Due date</label>
+          <input id="edit-assignment-due" type="date" />
+          <label>Expected link type</label>
+          <select id="edit-assignment-filetype">
+            <option value="document">Document (Google Doc/PDF - "anyone with link")</option>
+            <option value="code">Code (CodePen recommended - you can see it run; GitHub Gist also OK)</option>
+            <option value="image">Image / slides (Drive or Slides link, "anyone with link")</option>
+            <option value="video">Video (YouTube, unlisted)</option>
+          </select>
+          <label>Total points</label>
+          <input id="edit-assignment-total-points" type="number" required />
+          <label style="margin-top:0.75rem;">Rubric reference file (optional)</label>
+          <input id="edit-assignment-rubric-link" type="url" placeholder="https://drive.google.com/file/d/..." />
+          <div style="margin-top:0.75rem;">
+            <button type="submit">Save changes</button>
+          </div>
+        </form>
+      </details>
+
       <div id="assignment-context"></div>
       <div id="scores-summary"></div>
       <div id="images-gallery"></div>
@@ -193,6 +227,7 @@
       <select id="submission-filter">
         <option value="all">All</option>
         <option value="pending">Pending</option>
+        <option value="returned">Returned for revision</option>
         <option value="ai-drafted">AI drafted</option>
         <option value="published">Published</option>
       </select>
@@ -210,6 +245,6 @@
   <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-  <script type="module" src="js/teacher.js?v=12"></script>
+  <script type="module" src="js/teacher.js?v=13"></script>
 </body>
 </html>
