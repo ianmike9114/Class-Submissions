@@ -294,17 +294,24 @@ async function loadEverything() {
         const statusLabel = s.status === "published" ? "Graded"
           : s.status === "returned" ? "Returned — please revise and resubmit"
           : "Submitted, pending review";
+        const actionsBlock = s.status === "published"
+          ? renderResult(s, a)
+          : `<div style="margin-top:0.5rem;">
+               <button type="button" class="secondary" data-edit-submission="${subDoc.id}">Edit submission</button>
+               <button type="button" class="danger" data-remove-submission="${subDoc.id}">Remove submission</button>
+             </div>
+             <div data-edit-container="${subDoc.id}"></div>`;
         row.innerHTML = `
           <strong>${a.title}</strong>
           <span class="status-${s.status}"> — ${statusLabel}</span>
           ${s.status === "returned" && s.finalGrade?.feedback ? `<p class="muted">Teacher note: ${s.finalGrade.feedback}</p>` : ""}
-          ${s.status === "published" ? renderResult(s, a) : `<div style="margin-top:0.5rem;"><button type="button" class="danger" data-remove-submission="${subDoc.id}">Remove submission</button></div>`}`;
+          ${actionsBlock}`;
       }
       list.appendChild(row);
 
-      // Only while pending - once graded (published), the submission is
-      // immutable from the student's side (firestore.rules enforces this too,
-      // not just hidden here).
+      // Only while pending/returned - once graded (published), the
+      // submission is immutable from the student's side (firestore.rules
+      // enforces this too, not just hidden here).
       if (subDoc && subDoc.data().status !== "published") {
         const removeBtn = row.querySelector("[data-remove-submission]");
         if (removeBtn) {
@@ -319,6 +326,37 @@ async function loadEverything() {
               alert("Couldn't remove submission: " + err.message);
               removeBtn.disabled = false;
             }
+          });
+        }
+
+        const editBtn = row.querySelector("[data-edit-submission]");
+        const editContainer = row.querySelector("[data-edit-container]");
+        if (editBtn && editContainer) {
+          editBtn.addEventListener("click", () => {
+            if (editContainer.dataset.open === "true") return;
+            const s = subDoc.data();
+            // Legacy submissions saved before multi-page support have a
+            // single photoData string instead of photoPages[] - fall back
+            // so editing/re-saving one doesn't silently drop that photo.
+            const existingPhotos = s.photoPages || (s.photoData ? [s.photoData] : []);
+            pendingPhotos.set(aDoc.id, [...existingPhotos]);
+            editContainer.innerHTML = renderSubmitForm(aDoc.id, a.allowedFileTypes, {
+              id: subDoc.id,
+              link: s.link || "",
+              photoPages: existingPhotos,
+            });
+            editContainer.dataset.open = "true";
+            editBtn.disabled = true;
+            renderPhotoThumbs(aDoc.id);
+            wireSubmitForm(editContainer.querySelector(".submit-form"));
+            const photoInput = editContainer.querySelector(".submission-photo");
+            if (photoInput) wirePhotoInput(photoInput);
+            editContainer.querySelector("[data-cancel-edit]")?.addEventListener("click", () => {
+              editContainer.innerHTML = "";
+              editContainer.dataset.open = "false";
+              editBtn.disabled = false;
+              pendingPhotos.delete(aDoc.id);
+            });
           });
         }
       }
@@ -351,19 +389,24 @@ const LINK_HINTS = {
 const MAX_PHOTOS = 10;
 const PER_PHOTO_MAX_LEN = 100000;
 
-function renderSubmitForm(assignmentId, type) {
+function renderSubmitForm(assignmentId, type, prefill = null) {
   const photoBlock = (type === "image" || type === "document") ? `
       <label>Or take/upload photos (up to ${MAX_PHOTOS} pages - add one at a time for back-to-back work)</label>
       <input type="file" accept="image/*" class="submission-photo" data-assignment="${assignmentId}" />
       <div class="photo-thumbs" data-thumbs="${assignmentId}"></div>
       <p class="muted">Each photo is compressed and saved directly - skip the link above if you use this. For full-quality photos, check if your teacher gave a shared folder link in the Instructions above - upload there instead and paste that file's link.</p>` : "";
+  // prefill: { id, link, photoPages } - present only when editing an
+  // existing submission in place, never on the normal blank first-submit form.
+  const submissionAttr = prefill ? ` data-submission="${prefill.id}"` : "";
+  const linkValue = prefill?.link ? ` value="${String(prefill.link).replace(/"/g, "&quot;")}"` : "";
+  const cancelBtn = prefill ? ` <button type="button" class="secondary" data-cancel-edit>Cancel</button>` : "";
   return `
-    <form class="submit-form" data-assignment="${assignmentId}">
+    <form class="submit-form" data-assignment="${assignmentId}"${submissionAttr}>
       <label>Submission link</label>
-      <input type="url" class="submission-link" placeholder="https://..." />
+      <input type="url" class="submission-link" placeholder="https://..."${linkValue} />
       <p class="muted">${LINK_HINTS[type] || "Paste a shareable link"}</p>
       ${photoBlock}
-      <button type="submit">Submit</button>
+      <button type="submit">${prefill ? "Save changes" : "Submit"}</button>${cancelBtn}
     </form>`;
 }
 
@@ -435,47 +478,59 @@ function renderPhotoThumbs(assignmentId) {
     }));
 }
 
-function attachSubmitHandlers() {
-  document.querySelectorAll(".submission-photo").forEach((input) => {
-    input.addEventListener("change", async () => {
-      const assignmentId = input.dataset.assignment;
-      const file = input.files[0];
-      input.value = ""; // let the same input capture another page next
-      if (!file) return;
+function wirePhotoInput(input) {
+  input.addEventListener("change", async () => {
+    const assignmentId = input.dataset.assignment;
+    const file = input.files[0];
+    input.value = ""; // let the same input capture another page next
+    if (!file) return;
 
-      const photos = pendingPhotos.get(assignmentId) || [];
-      if (photos.length >= MAX_PHOTOS) {
-        alert(`Up to ${MAX_PHOTOS} pages only - remove one first if you need to swap.`);
-        return;
-      }
-      try {
-        const dataUrl = await compressImage(file);
-        photos.push(dataUrl);
-        pendingPhotos.set(assignmentId, photos);
-        renderPhotoThumbs(assignmentId);
-      } catch (err) {
-        alert(err.message);
-      }
-    });
+    const photos = pendingPhotos.get(assignmentId) || [];
+    if (photos.length >= MAX_PHOTOS) {
+      alert(`Up to ${MAX_PHOTOS} pages only - remove one first if you need to swap.`);
+      return;
+    }
+    try {
+      const dataUrl = await compressImage(file);
+      photos.push(dataUrl);
+      pendingPhotos.set(assignmentId, photos);
+      renderPhotoThumbs(assignmentId);
+    } catch (err) {
+      alert(err.message);
+    }
   });
+}
 
-  document.querySelectorAll(".submit-form").forEach((form) => {
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const assignmentId = form.dataset.assignment;
-      const btn = form.querySelector("button");
-      const link = form.querySelector(".submission-link").value.trim();
-      const photoPages = pendingPhotos.get(assignmentId) || [];
+function wireSubmitForm(form) {
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const assignmentId = form.dataset.assignment;
+    const submissionId = form.dataset.submission || null; // present -> editing an existing doc in place
+    const btn = form.querySelector("button");
+    const originalLabel = btn.textContent;
+    const link = form.querySelector(".submission-link").value.trim();
+    const photoPages = pendingPhotos.get(assignmentId) || [];
 
-      if (!link && photoPages.length === 0) {
-        alert("Add a link or take a photo first.");
-        return;
-      }
+    if (!link && photoPages.length === 0) {
+      alert("Add a link or take a photo first.");
+      return;
+    }
 
-      btn.disabled = true;
-      btn.textContent = "Submitting...";
+    btn.disabled = true;
+    btn.textContent = submissionId ? "Saving..." : "Submitting...";
 
-      try {
+    try {
+      if (submissionId) {
+        // Editing re-queues it for review - always writes status back to
+        // "pending", which also clears the "returned" teacher-note state
+        // on the card, and refreshes submittedAt.
+        await updateDoc(doc(db, "submissions", submissionId), {
+          link,
+          photoPages,
+          status: "pending",
+          submittedAt: Date.now(),
+        });
+      } else {
         // Assignments created before multi-teacher support have no
         // ownerEmail - those belong to the super admin (the one teacher
         // that existed then).
@@ -490,15 +545,20 @@ function attachSubmitHandlers() {
           submittedAt: Date.now(),
           ownerEmail: assignmentOwnerEmail,
         });
-        pendingPhotos.delete(assignmentId);
-        loadEverything();
-      } catch (err) {
-        alert("Submit failed: " + err.message);
-        btn.disabled = false;
-        btn.textContent = "Submit";
       }
-    });
+      pendingPhotos.delete(assignmentId);
+      loadEverything();
+    } catch (err) {
+      alert((submissionId ? "Save failed: " : "Submit failed: ") + err.message);
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+    }
   });
+}
+
+function attachSubmitHandlers() {
+  document.querySelectorAll(".submission-photo").forEach(wirePhotoInput);
+  document.querySelectorAll(".submit-form").forEach(wireSubmitForm);
 }
 
 el("sign-out").addEventListener("click", signOutUser);

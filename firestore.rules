@@ -101,7 +101,18 @@ service cloud.firestore {
                     && request.resource.data.ownerEmail is string;
       allow read: if isSignedIn()
                   && (resource.data.studentUID == request.auth.uid || canActAsOwner(resource.data));
-      allow update: if canActAsOwner(resource.data);
+      // A student may edit their own submission's link/photos in place
+      // (fix a mistake without deleting + recreating), but only while
+      // it's still pending or returned - never once published, and never
+      // touching any other field. An edit always re-queues it for review:
+      // the written status must be "pending", which also clears the
+      // "returned" teacher-note state on the student's own dashboard.
+      allow update: if canActAsOwner(resource.data)
+                    || (isSignedIn()
+                        && resource.data.studentUID == request.auth.uid
+                        && (resource.data.status == "pending" || resource.data.status == "returned")
+                        && request.resource.data.status == "pending"
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['link', 'photoPages', 'status', 'submittedAt']));
       // A student may retract their own submission, but only while it's
       // still pending - once published (graded), it's owner-only, same
       // as any other change to a graded submission.
