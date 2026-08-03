@@ -29,13 +29,13 @@ export function initGoogleSignIn(buttonElementId, onSignInError) {
         onSignInError?.(e);
       }
     },
-    // Chrome is enforcing FedCM for Identity Services on a staged rollout -
-    // without this, the classic flow breaks with a Google-hosted "Service
-    // Not Allowed" error for whichever users have already been migrated,
-    // while others are unaffected until their own rollout hits. Opting in
-    // explicitly avoids depending on the rollout timing.
-    use_fedcm_for_prompt: true,
-    use_fedcm_for_button: true,
+    // use_fedcm_for_button was on to pre-empt Chrome's staged FedCM rollout,
+    // but Brave's engine doesn't implement the FedCM API at all -
+    // navigator.credentials.get() throws NotSupportedError internally
+    // inside Google's own client library, with no fallback, so the button
+    // silently does nothing on click. Safe to leave off: this app never
+    // calls accounts.id.prompt() (One Tap), so the flag only ever affected
+    // renderButton() below - no other code path depends on it.
   });
   window.google.accounts.id.renderButton(document.getElementById(buttonElementId), {
     theme: "outline",
