@@ -47,8 +47,11 @@ function joinLinkFor(joinCode) {
 }
 
 // Renders a QR entirely client-side (qrcodejs CDN global) - the join link
-// never leaves the device, no external QR image API involved.
-function renderSectionQR(sectionId, joinCode) {
+// never leaves the device, no external QR image API involved. The
+// subject/section label is baked into the same canvas (not just a sibling
+// <p>) so a tight screenshot or print crop of just the code still
+// identifies which class it's for.
+function renderSectionQR(sectionId, joinCode, label) {
   const container = el(`qr-${sectionId}`);
   if (!container) return;
   container.innerHTML = "";
@@ -56,12 +59,37 @@ function renderSectionQR(sectionId, joinCode) {
     container.innerHTML = '<p class="muted">QR code library failed to load.</p>';
     return;
   }
-  new QRCode(container, {
+  const qrHolder = document.createElement("div");
+  new QRCode(qrHolder, {
     text: joinLinkFor(joinCode),
     width: 160,
     height: 160,
     correctLevel: QRCode.CorrectLevel.M,
   });
+  const qrCanvas = qrHolder.querySelector("canvas");
+  if (!qrCanvas) {
+    // Very old browser - qrcodejs fell back to a <table> instead of
+    // canvas. Show the plain QR, skip the baked-in label rather than crash.
+    container.appendChild(qrHolder);
+    return;
+  }
+  const labelHeight = 34;
+  const composite = document.createElement("canvas");
+  composite.width = 160;
+  composite.height = 160 + labelHeight;
+  const ctx = composite.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, composite.width, composite.height);
+  ctx.fillStyle = "#002045";
+  ctx.textAlign = "center";
+  // Canvas text ignores the page's custom @font-face fonts unless loaded
+  // via document.fonts first - not worth the complexity for a small label.
+  ctx.font = "bold 13px Arial, sans-serif";
+  ctx.fillText(label, composite.width / 2, 16, 150);
+  ctx.font = "11px Arial, sans-serif";
+  ctx.fillText("Scan to join", composite.width / 2, 30, 150);
+  ctx.drawImage(qrCanvas, 0, labelHeight);
+  container.appendChild(composite);
 }
 
 // ---------- cascade deletes ----------
@@ -405,6 +433,7 @@ el("add-subject-form").addEventListener("submit", async (e) => {
     term: el("subject-term").value,
     archived: false,
     ownerEmail: state.viewAsEmail,
+    ownerName: currentUser.displayName || currentUser.email,
   });
   e.target.reset();
   loadSubjects();
@@ -453,7 +482,7 @@ async function loadSections() {
         </div>
       </details>`;
     list.appendChild(row);
-    renderSectionQR(d.id, s.joinCode);
+    renderSectionQR(d.id, s.joinCode, `${state.subjectName || "—"} — ${s.sectionName}`);
   });
   list.querySelectorAll("[data-open]").forEach((b) =>
     b.addEventListener("click", () => openSection(b.dataset.open)));
