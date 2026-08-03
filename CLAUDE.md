@@ -167,17 +167,19 @@ short since it's loaded into every session automatically.
   longer tied to a live enrollment; if they rejoin (even picking a
   different roster name), those old submissions won't reappear under the
   new enrollment. Flag if this ever needs to change.
-- In-app camera capture (`photoPages`) only exists for "image" and
-  "document" assignments, as an alternative to pasting a link — not a
-  general file-upload feature. Capped at `MAX_PHOTOS` (3) pages per
-  submission — enough for a typical multi-page handwritten answer, but not
-  unlimited (shared 1MiB Firestore doc budget across however many pages
-  are added). `js/student.js`'s `compressImage()` resizes each photo to
-  max 1280px and drops JPEG quality until it's under `PER_PHOTO_MAX_LEN`
-  (300,000 chars/photo, so 3 photos stay well inside the 1MiB cap
-  alongside the rest of the submission's fields). Very detailed/high-res
-  photos (e.g. dense handwriting) can lose some sharpness to this
-  compression — if that's ever a problem, the student can still fall back
+- In-app photo capture (`photoPages`, camera or gallery via a plain
+  `<input type="file" accept="image/*">` — no `capture` attribute, so the
+  OS's native chooser offers both) only exists for "image" and "document"
+  assignments, as an alternative to pasting a link — not a general
+  file-upload feature. Capped at `MAX_PHOTOS` (10) pages per submission —
+  not unlimited (shared 1MiB Firestore doc budget across however many
+  pages are added). `js/student.js`'s `compressImage()` resizes each photo
+  to max 1280px and drops JPEG quality until it's under
+  `PER_PHOTO_MAX_LEN` (100,000 chars/photo, so 10 photos stay under the
+  1MiB cap alongside the rest of the submission's fields). Very
+  detailed/high-res photos (e.g. dense handwriting) can lose noticeably
+  more sharpness to this compression than at the old 3-photo cap — if
+  that's ever a problem, the student can still fall back
   to the Drive-link path instead.
 - **No separate "decline a leave request without removing the student"
   action.** A teacher's only response to a flagged `leaveRequested` is

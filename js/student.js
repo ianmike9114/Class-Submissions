@@ -345,16 +345,16 @@ const LINK_HINTS = {
 };
 
 // Multiple photos share one Firestore document's 1MiB cap, so each photo
-// gets a smaller slice than the old single-photo budget (700,000 chars) -
-// MAX_PHOTOS * PER_PHOTO_MAX_LEN stays comfortably under the cap with room
-// left for the submission doc's other fields.
-const MAX_PHOTOS = 3;
-const PER_PHOTO_MAX_LEN = 300000;
+// gets a slice of it - MAX_PHOTOS * PER_PHOTO_MAX_LEN (10 * 100,000 =
+// 1,000,000 chars) stays under the 1,048,576-byte doc cap with ~48KB left
+// for the submission doc's other (tiny string) fields.
+const MAX_PHOTOS = 10;
+const PER_PHOTO_MAX_LEN = 100000;
 
 function renderSubmitForm(assignmentId, type) {
   const photoBlock = (type === "image" || type === "document") ? `
       <label>Or take/upload photos (up to ${MAX_PHOTOS} pages - add one at a time for back-to-back work)</label>
-      <input type="file" accept="image/*" capture="environment" class="submission-photo" data-assignment="${assignmentId}" />
+      <input type="file" accept="image/*" class="submission-photo" data-assignment="${assignmentId}" />
       <div class="photo-thumbs" data-thumbs="${assignmentId}"></div>
       <p class="muted">Each photo is compressed and saved directly - skip the link above if you use this. For full-quality photos, check if your teacher gave a shared folder link in the Instructions above - upload there instead and paste that file's link.</p>` : "";
   return `
