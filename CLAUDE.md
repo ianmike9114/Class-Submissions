@@ -241,6 +241,22 @@ directly.
   technique as `index.html`'s in-app-browser escape hatch. Renders nothing
   on iOS — Apple gives pages no way to pick the handler app, so there's no
   equivalent fix there (same conclusion as the iOS Code Scanner QR issue).
+- **Accomplishment report + photo collage generator, per assignment**
+  (`js/teacher.js`'s `renderCollagePreview()`/`drawScatteredCollage()`/
+  `buildAccomplishmentReportDocx()`/`generateAccomplishmentReport()`,
+  called from `renderImagesGallery()`) — for DepEd's work-from-home/
+  modular-activity documentation requirement during calamities. Entirely
+  client-side, no Storage/Functions: the collage is a randomized
+  `<canvas>` scrapbook layout (varied photo size/rotation/scatter, a
+  centered title/section/date badge) that reshuffles on every
+  "Regenerate layout" click, and the `.docx` is built via the `docx`
+  library (CDN ESM import, `https://cdn.jsdelivr.net/npm/docx@.../dist/index.mjs`
+  — the one CDN-ESM dependency in this file beyond Firebase). The report
+  body is a short, teacher-editable narrative (`draftReportDescription()`
+  auto-drafts one sentence from the assignment title/section/dates, plus
+  the assignment's own `instructions` text if set) — deliberately not a
+  student/photo-count table. No "activity date" field exists on
+  assignments, so the teacher fills in a date range manually per report.
 
 ## Conventions
 

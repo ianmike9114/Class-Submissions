@@ -7,8 +7,7 @@ import { getGeminiKey, setGeminiKey, runRubricCheck } from "./gemini.js";
 import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons } from "./embed.js";
 import { loadWorkbook } from "./class-record.js";
 import {
-  Document, Packer, Paragraph, TextRun, ImageRun, Table, TableRow, TableCell,
-  WidthType, HeadingLevel, AlignmentType,
+  Document, Packer, Paragraph, TextRun, ImageRun, HeadingLevel, AlignmentType,
 } from "https://cdn.jsdelivr.net/npm/docx@9.7.1/dist/index.mjs";
 
 // AI rubric-check is hidden (not deleted) - per-call Gemini cost isn't
@@ -1103,6 +1102,20 @@ function collageDateLabel() {
   return from || to;
 }
 
+// Short auto-draft so the report reads as a brief explanation of the WFH
+// activity, not a submission count - folds in the assignment's own
+// `instructions` text (already shown to students) when present, since
+// that's the closest existing data to an actual activity description.
+// Teacher can freely rewrite this before generating.
+function draftReportDescription({ assignmentTitle, sectionName, instructions, dateLabel }) {
+  const dateClause = dateLabel ? ` on ${dateLabel}` : "";
+  let sentence = `Students of ${sectionName || "the class"} completed "${assignmentTitle}" as a work-from-home activity${dateClause}, submitting photo documentation of their work.`;
+  if (instructions && instructions.trim()) {
+    sentence += ` ${instructions.trim()}`;
+  }
+  return sentence;
+}
+
 // Decodes every submitted photo once, draws the initial collage, then wires
 // "Regenerate layout" (redraw with fresh randomization) and the two export
 // buttons. Runs inside the same per-assignment gallery scope as the existing
@@ -1142,13 +1155,14 @@ async function renderCollagePreview(withPhotos, context) {
   });
 
   el("generate-report-docx").addEventListener("click", (e) =>
-    generateAccomplishmentReport(withPhotos, context, canvas, e.target));
+    generateAccomplishmentReport(context, canvas, e.target));
 }
 
 // DepEd accomplishment-report .docx structure - kept deliberately simple and
-// adjustable (header fields, collage, participant table) since the teacher
-// will share their real report template later to refine the exact layout.
-async function buildAccomplishmentReportDocx({ title, subjectName, sectionName, dateLabel, withPhotos, collageBuffer, collageWidth, collageHeight }) {
+// adjustable (header fields, collage, brief activity narrative) since the
+// teacher will share their real report template later to refine the exact
+// layout.
+async function buildAccomplishmentReportDocx({ title, subjectName, sectionName, dateLabel, description, collageBuffer, collageWidth, collageHeight }) {
   const pageContentWidth = 540;
   const imgHeight = Math.round(pageContentWidth * (collageHeight / collageWidth));
 
@@ -1169,30 +1183,13 @@ async function buildAccomplishmentReportDocx({ title, subjectName, sectionName, 
           })],
         }),
         new Paragraph({ text: "" }),
-        new Paragraph({ text: "Participating Students", heading: HeadingLevel.HEADING_2 }),
-        new Table({
-          width: { size: 100, type: WidthType.PERCENTAGE },
-          rows: [
-            new TableRow({
-              children: [
-                new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Name", bold: true })] })] }),
-                new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Photos submitted", bold: true })] })] }),
-              ],
-            }),
-            ...withPhotos.map((s) => new TableRow({
-              children: [
-                new TableCell({ children: [new Paragraph(s.name)] }),
-                new TableCell({ children: [new Paragraph(String(s.photos.length))] }),
-              ],
-            })),
-          ],
-        }),
+        new Paragraph({ children: [new TextRun({ text: description || "" })] }),
       ],
     }],
   });
 }
 
-async function generateAccomplishmentReport(withPhotos, context, canvas, buttonEl) {
+async function generateAccomplishmentReport(context, canvas, buttonEl) {
   buttonEl.disabled = true;
   const original = buttonEl.textContent;
   buttonEl.textContent = "Generating...";
@@ -1205,7 +1202,7 @@ async function generateAccomplishmentReport(withPhotos, context, canvas, buttonE
       subjectName: context.subjectName || "",
       sectionName: context.sectionName || "",
       dateLabel: collageDateLabel(),
-      withPhotos,
+      description: el("report-description").value,
       collageBuffer,
       collageWidth: canvas.width,
       collageHeight: canvas.height,
@@ -1239,6 +1236,9 @@ function renderImagesGallery(submissions, assignmentTitle, context) {
     return;
   }
   const total = withPhotos.reduce((sum, s) => sum + s.photos.length, 0);
+  const defaultDescription = draftReportDescription({
+    assignmentTitle, sectionName: context?.sectionName, instructions: context?.instructions, dateLabel: "",
+  });
   container.innerHTML = `
     <details class="card">
       <summary><strong>Photo submissions</strong> (${total} image${total > 1 ? "s" : ""} from ${withPhotos.length} student${withPhotos.length > 1 ? "s" : ""})</summary>
@@ -1260,6 +1260,8 @@ function renderImagesGallery(submissions, assignmentTitle, context) {
           <input type="date" id="report-date-from" />
           <input type="date" id="report-date-to" />
         </div>
+        <label>Activity description</label>
+        <textarea id="report-description" rows="3">${defaultDescription}</textarea>
         <div style="margin-top:0.75rem;">
           <canvas id="collage-preview" class="collage-preview"></canvas>
         </div>
@@ -1362,6 +1364,7 @@ async function loadSubmissions() {
   renderImagesGallery(ownedDocs.map((d) => d.data()), aDoc.data()?.title || "submissions", {
     subjectName: state.subjectName,
     sectionName: el("section-view-name").textContent,
+    instructions: aDoc.data()?.instructions,
   });
   const list = el("submissions-list");
   list.innerHTML = "";
