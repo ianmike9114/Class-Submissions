@@ -50,11 +50,13 @@ to re-derive the design system from the stylesheet every session.
 | In-app-browser sign-in warning (Messenger/Instagram/Line/TikTok links) | `index.html`'s inline module script, `isInAppBrowser()` (user-agent sniff) + `#in-app-browser-warning` banner - Google blocks OAuth inside these embedded WebViews on purpose (`disallowed_useragent`), can't be bypassed, only worked around by pointing the user at a real browser (Android gets an `intent://` "Open in Chrome" button, everyone gets "Copy link") |
 | Sign-in failure notification (GIS script didn't load, credential exchange failed, or a slow-load timeout) | `index.html`'s `showError()`/`FRIENDLY_ERRORS` + the `#error` box (hidden until something actually fails) |
 | Preventing duplicate enrollment in the same section, join success feedback | `js/student.js`'s `join-form` handler (checks for an existing `enrollments` doc for that `studentUID`+`sectionId` before enrolling either way) |
+| Invite a student by Gmail, auto-join on sign-in (no email-click-to-accept step) | `js/teacher.js`'s `loadSections()` ("Invite by email" `<details>` next to "Show QR", `getPendingInvites()` for the section's pending list + Cancel) + `js/student.js`'s `applyPendingInvites()` (called right after sign-in, before `loadEverything()`) — writes/consumes the `invites` collection (see Data model), supplements the join-code/QR flow rather than replacing it |
 | Settings panel toggle (Gemini key, hidden by default; teacher-account management, super admin only) | `teacher.html`'s header `#toggle-settings` button + `#settings-panel` (starts with `hidden` class, independent of the `show()` view stack so it stays open/closed across navigation) — the button itself stays visible for the super admin even with `AI_CHECK_ENABLED` off, since it's now also the entry point to `#admin-teachers-section` |
 | Enrolled students list (subject-wide from `#view-subject`, or one section only from `#view-section`'s own "View Enrolled Students" button) + removing a wrong/duplicate enrollment | `js/teacher.js` (`openEnrolled(onlySectionId)` - omit the arg for subject-wide, pass `state.sectionId` for one section; `deleteDoc` on the Remove button, row numbers via `${i+1}`) + `teacher.html` (`#view-enrolled`, shared by both entry points) |
 | Student requesting to leave a class (flagged, teacher approves - not instant self-removal) | `js/student.js` (My classes card's `data-toggle-leave` button, `updateDoc(..., {leaveRequested})`) + `js/teacher.js` (`getLeaveRequestCounts()`/`leaveBadge()` mirroring the pending-submission badge, `openEnrolled()`'s request-aware Remove confirm message) + `firestore.rules`'s `enrollments` update rule (added `leaveRequested` to the student-self-update field allowlist; delete stays teacher-only) |
 | Row numbers on the Enrolled Students table | `js/teacher.js`'s `openEnrolled()` row rendering (`#` column, same pattern as `renderRosterPreview()`'s existing `${i+1}`) - deliberately not added to the Records grid (`loadRecords()`, gender-grouped) |
 | Student retracting their own submission (only while `status == "pending"`, never after grading) | `js/student.js`'s `loadEverything()` submission branch ("Remove submission" button, `deleteDoc`) + `firestore.rules`'s `submissions` delete rule (student may delete only their own pending submission; teacher-only once published) |
+| Teacher deleting any single submission directly (typed-name confirm) | `js/teacher.js`'s `loadSubmissions()` "Delete" button, gated by the existing `confirmByTyping()` — no `firestore.rules` change needed, `canActAsOwner` could already delete a submission regardless of `status` |
 | Small icon-style delete buttons (Enrolled Students Remove, subject/section/assignment Delete) | `css/style.css`'s `button.danger.icon` (compact circular variant of `.danger`) + the 4 button sites in `js/teacher.js` - markup-only change; see next row for the subject/section/assignment confirm text itself |
 | Delete confirmation strength (subject/section/assignment cascade deletes vs. remove-one-enrollment/remove-a-teacher) | `js/teacher.js`'s `confirmByTyping(message, name)` — used only on the 3 cascade deletes (`loadSubjects()`/`loadSections()`/`loadAssignments()`'s delete handlers, each building an id→name `Map` for the prompt), since those wipe everything nested under the thing you deleted; the lower-stakes single-doc removals (`openEnrolled()`'s Remove, `loadTeachers()`'s Remove) stay a plain `confirm()` |
 | Join flow / pick-your-name-from-roster | `js/student.js` (`join-form` handler, `renderNamePicker()`, `claimedNames()`, `enroll()`) + `student.html`'s `#join-name-picker` — only kicks in when the section already has a roster (`sections.roster`), otherwise falls back to using the Google account name; QR/deep-link join → next row |
@@ -123,6 +125,16 @@ to re-derive the design system from the stylesheet every session.
   needed), joinedAt (`serverTimestamp()`, stamped alongside `seen` - not
   currently read anywhere, just available if a "joined on X" display is
   ever wanted)
+- `invites` — studentEmail (lowercased Gmail the teacher typed in),
+  studentName, subjectId, subjectName, sectionId, sectionName, teacherName,
+  ownerEmail, createdAt. Written by `js/teacher.js`'s "Invite by email"
+  form (`loadSections()`); consumed (read then `deleteDoc`'d) by
+  `js/student.js`'s `applyPendingInvites()` the moment the invited student
+  signs in with that email — calls the same `enroll()` used by the join-
+  code flow, so the resulting `enrollments` doc is identical either way.
+  One doc per invited student per section; deleted whether or not it
+  resulted in a new enrollment (e.g. the student had already joined some
+  other way), so a stale invite can never re-fire or accumulate.
 - `sections.roster` — `{name, gender}[]` of official students, set via the
   Set Roster manual paste or `.xlsx` upload in `view-section` (gender is
   `"Male"`/`"Female"`/`""`; xlsx-loaded rosters always get `""` since the

@@ -1,7 +1,7 @@
 import { db, ADMIN_EMAIL } from "./firebase-config.js";
 import { guardPage, signOutUser } from "./auth.js";
 import {
-  collection, addDoc, doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, query, where,
+  collection, addDoc, doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, query, where, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getGeminiKey, setGeminiKey, runRubricCheck } from "./gemini.js";
 import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons } from "./embed.js";
@@ -19,7 +19,7 @@ import {
 // would need a small adapter first.
 const AI_CHECK_ENABLED = false;
 
-const state = { subjectId: null, sectionId: null, assignmentId: null, subjectName: null, viewAsEmail: null };
+const state = { subjectId: null, sectionId: null, assignmentId: null, subjectName: null, subjectOwnerName: null, viewAsEmail: null };
 let currentUser = null;
 
 // Legacy (pre-multi-teacher) docs have no ownerEmail field at all - a plain
@@ -200,6 +200,19 @@ async function getLeaveRequestCounts() {
 
 function leaveBadge(count) {
   return count ? `<span class="status-pending"> — ${count} leave request${count > 1 ? "s" : ""}</span>` : "";
+}
+
+// ---------- pending invites (invite-by-email auto-join, mirrors getPendingCounts()/getLeaveRequestCounts() above) ----------
+async function getPendingInvites() {
+  const snap = await getDocs(ownerScopedQuery("invites"));
+  const bySection = new Map();
+  snap.forEach((d) => {
+    if (!ownedByViewAs(d.data())) return; // admin's unfiltered invites query includes every teacher's - narrow to mine/legacy
+    const sectionId = d.data().sectionId;
+    if (!bySection.has(sectionId)) bySection.set(sectionId, []);
+    bySection.get(sectionId).push({ id: d.id, ...d.data() });
+  });
+  return bySection;
 }
 
 let lastNotifications = { submissions: [], leaves: [], totalCount: 0, error: false };
@@ -518,6 +531,7 @@ async function openSubject(subjectId) {
   state.assignmentId = null;
   const subject = (await getDoc(doc(db, "subjects", subjectId))).data();
   state.subjectName = subject.name;
+  state.subjectOwnerName = subject.ownerName || "—";
   el("subject-view-name").textContent = `${subject.name} (${subject.gradeLevel || "—"} — SY ${subject.schoolYear || "—"} · Term ${subject.term || "—"})`;
   show("view-subject");
   loadSections();
@@ -525,13 +539,16 @@ async function openSubject(subjectId) {
 
 async function loadSections() {
   const q = query(collection(db, "sections"), where("subjectId", "==", state.subjectId));
-  const [snap, counts, leaveCounts] = await Promise.all([getDocs(q), getPendingCounts(), getLeaveRequestCounts()]);
+  const [snap, counts, leaveCounts, invitesBySection] = await Promise.all([
+    getDocs(q), getPendingCounts(), getLeaveRequestCounts(), getPendingInvites(),
+  ]);
   const list = el("sections-list");
   list.innerHTML = "";
   const sectionNames = new Map(); // id -> name, for the delete-confirm prompt below
   snap.forEach((d) => {
     const s = d.data();
     sectionNames.set(d.id, s.sectionName);
+    const pendingInvites = invitesBySection.get(d.id) || [];
     const row = document.createElement("div");
     row.className = "card";
     row.innerHTML = `
@@ -554,6 +571,27 @@ async function loadSections() {
             <a href="${joinLinkFor(s.joinCode)}" target="_blank" rel="noopener">${joinLinkFor(s.joinCode)}</a></p>
           <p class="muted" style="font-size:0.85em;">Tip for students: after scanning, tap "Open in Safari/Chrome" on the banner that pops up — don't use the in-scanner preview, sign-in won't work there.</p>
         </div>
+      </details>
+      <details style="margin-top:0.5rem;">
+        <summary class="muted" style="cursor:pointer;">Invite by email</summary>
+        <div style="margin-top:0.5rem;">
+          <p class="muted" style="margin:0 0 0.5rem;">Adds a student by their Gmail address — they're enrolled automatically the moment they sign in with that address, no email/click-to-accept step needed. Use this for students who can't reliably use the join code/QR.</p>
+          <form class="invite-form" data-section="${d.id}">
+            <label>Student's Gmail address</label>
+            <input class="invite-email" type="email" required placeholder="name@gmail.com" />
+            <label>Student's name (as it should appear on your roster)</label>
+            <input class="invite-name" required placeholder="e.g. Alcaide, Led Jervis J." />
+            <button type="submit">Send invite</button>
+          </form>
+          <p class="invite-message muted"></p>
+          <div class="invite-pending">
+            ${pendingInvites.length ? pendingInvites.map((inv) => `
+              <div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.35rem;">
+                <span class="muted">Pending: ${inv.studentName} (${inv.studentEmail})</span>
+                <button type="button" class="secondary" data-cancel-invite="${inv.id}">Cancel</button>
+              </div>`).join("") : ""}
+          </div>
+        </div>
       </details>`;
     list.appendChild(row);
     renderSectionQR(d.id, s.joinCode, `${state.subjectName || "—"} — ${s.sectionName}`);
@@ -571,6 +609,40 @@ async function loadSections() {
       if (!ok) return;
       b.disabled = true;
       await cascadeDeleteSection(b.dataset.deleteSection);
+      loadSections();
+    }));
+  list.querySelectorAll(".invite-form").forEach((form) =>
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const sectionId = form.dataset.section;
+      const email = form.querySelector(".invite-email").value.trim().toLowerCase();
+      const studentName = form.querySelector(".invite-name").value.trim();
+      const msg = form.parentElement.querySelector(".invite-message");
+      const btn = form.querySelector("button");
+      btn.disabled = true;
+      try {
+        await addDoc(collection(db, "invites"), {
+          studentEmail: email,
+          studentName,
+          subjectId: state.subjectId,
+          subjectName: state.subjectName,
+          sectionId,
+          sectionName: sectionNames.get(sectionId),
+          teacherName: state.subjectOwnerName,
+          ownerEmail: state.viewAsEmail,
+          createdAt: serverTimestamp(),
+        });
+        msg.textContent = `Invited ${studentName} — they'll join automatically once they sign in with ${email}.`;
+        form.reset();
+        loadSections();
+      } catch (err) {
+        msg.textContent = "Invite failed: " + err.message;
+        btn.disabled = false;
+      }
+    }));
+  list.querySelectorAll("[data-cancel-invite]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      await deleteDoc(doc(db, "invites", b.dataset.cancelInvite));
       loadSections();
     }));
 }
@@ -1391,6 +1463,7 @@ async function loadSubmissions() {
       <div style="margin-top:0.5rem;">
         ${AI_CHECK_ENABLED ? `<button data-ai="${d.id}">Run AI Check</button>` : ""}
         <button class="secondary" data-review="${d.id}">Review / Grade</button>
+        <button class="danger" data-delete-sub="${d.id}">Delete</button>
       </div>`;
     list.appendChild(row);
   });
@@ -1400,6 +1473,18 @@ async function loadSubmissions() {
   }
   list.querySelectorAll("[data-review]").forEach((b) =>
     b.addEventListener("click", () => openReview(b.dataset.review)));
+  list.querySelectorAll("[data-delete-sub]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const s = ownedDocs.find((d) => d.id === b.dataset.deleteSub)?.data();
+      const ok = confirmByTyping(
+        `Delete ${s?.studentName || "this student"}'s submission? This cannot be undone.`,
+        s?.studentName || ""
+      );
+      if (!ok) return;
+      b.disabled = true;
+      await deleteDoc(doc(db, "submissions", b.dataset.deleteSub));
+      loadSubmissions();
+    }));
 
   // Fix a garbled name right while reviewing the work, instead of having to
   // go find the student in Enrolled Students first.

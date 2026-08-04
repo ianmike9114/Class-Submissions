@@ -257,6 +257,30 @@ directly.
   the assignment's own `instructions` text if set) — deliberately not a
   student/photo-count table. No "activity date" field exists on
   assignments, so the teacher fills in a date range manually per report.
+- **Invite a student by Gmail, auto-join on sign-in — no email-click-to-
+  accept step.** A new `invites/{inviteId}` collection (`studentEmail`
+  lowercased, `studentName`, `subjectId`/`subjectName`, `sectionId`/
+  `sectionName`, `teacherName`, `ownerEmail`, `createdAt`). Teacher-side
+  form lives in `js/teacher.js`'s `loadSections()` (an "Invite by email"
+  `<details>` next to "Show QR"), backed by `getPendingInvites()` for the
+  section's pending-invite list + Cancel button. Consumed on the student
+  side by `js/student.js`'s `applyPendingInvites()`, called right after
+  sign-in (before `loadEverything()`) — queries `invites` by the signed-in
+  email, calls the existing `enroll()` unchanged, then deletes the invite
+  doc whether or not it resulted in a new enrollment (so a stale/duplicate
+  invite can't re-fire). Exists alongside the join-code/QR flow, not a
+  replacement — added because some students don't reliably have Gmail
+  access to click an emailed accept link. `firestore.rules`'s new
+  `invites` match block: create is teacher/owner-only, read/delete allow
+  either the owning teacher or the invited student themselves (matching
+  the email on their auth token) — this is what lets the student's own
+  auto-join code consume (delete) its own invite.
+- **Teacher can delete any single submission directly**, via a `Delete`
+  button in `js/teacher.js`'s `loadSubmissions()` row, gated by the
+  existing `confirmByTyping()` (type the student's name to confirm, same
+  pattern as the section/assignment cascade deletes). No `firestore.rules`
+  change was needed — the delete rule on `submissions` already lets
+  `canActAsOwner` delete regardless of `status`.
 
 ## Conventions
 

@@ -122,6 +122,19 @@ service cloud.firestore {
                         && (resource.data.status == "pending" || resource.data.status == "returned"));
     }
 
+    // ---------- invites (teacher adds a student by Gmail; consumed/deleted
+    // on auto-join at sign-in - see js/student.js's applyPendingInvites()) ----------
+    match /invites/{inviteId} {
+      allow create: if isSuperAdmin()
+                    || (isGrantedTeacher() && request.resource.data.ownerEmail == request.auth.token.email);
+      allow read: if isSignedIn()
+                  && (canActAsOwner(resource.data) || resource.data.studentEmail == request.auth.token.email.lower());
+      // Delete covers two cases: the teacher cancelling an invite they sent,
+      // and the invited student consuming their own invite once auto-enrolled.
+      allow delete: if canActAsOwner(resource.data)
+                    || (isSignedIn() && resource.data.studentEmail == request.auth.token.email.lower());
+    }
+
     // ---------- enrollments ----------
     match /enrollments/{enrollmentId} {
       allow read: if isSignedIn()

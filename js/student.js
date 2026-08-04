@@ -71,6 +71,33 @@ async function enroll(sectionId, section, subject, studentName) {
   });
 }
 
+// Auto-join for students the teacher invited by Gmail (js/teacher.js's
+// "Invite by email", no email-click-to-accept step) - runs once per
+// sign-in, before loadEverything() so a newly-created enrollment shows up
+// on the very first render. Each invite doc is consumed (deleted) whether
+// or not it resulted in a new enrollment, so a stale/duplicate invite
+// can't linger and re-fire.
+async function applyPendingInvites() {
+  const snap = await getDocs(query(collection(db, "invites"), where("studentEmail", "==", currentUser.email.toLowerCase())));
+  for (const inviteDoc of snap.docs) {
+    const invite = inviteDoc.data();
+    const already = await getDocs(query(
+      collection(db, "enrollments"),
+      where("studentUID", "==", currentUser.uid),
+      where("sectionId", "==", invite.sectionId)
+    ));
+    if (already.empty) {
+      await enroll(
+        invite.sectionId,
+        { subjectId: invite.subjectId, sectionName: invite.sectionName, ownerEmail: invite.ownerEmail },
+        { name: invite.subjectName, ownerName: invite.teacherName },
+        invite.studentName
+      );
+    }
+    await deleteDoc(doc(db, "invites", inviteDoc.id));
+  }
+}
+
 async function renderNamePicker() {
   const { section } = pendingJoin;
   // Older sections saved a plain string[] roster before gender tracking
@@ -569,10 +596,11 @@ el("sign-out").addEventListener("click", signOutUser);
 wireOpenInChromeButtons(el("assignments-list"));
 
 // ---------- init ----------
-guardPage("student").then((user) => {
+guardPage("student").then(async (user) => {
   if (!user) return;
   currentUser = user;
   el("student-email").textContent = user.email;
+  await applyPendingInvites();
   loadEverything();
   applyPendingJoinCode();
 });
