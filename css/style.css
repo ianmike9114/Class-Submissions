@@ -255,4 +255,18 @@ details.card summary::marker { color: var(--blue); }
     flex-wrap: wrap;
     justify-content: center;
   }
+  /* Anchor the dropdown to the full-width header, not the small bell-button
+     wrapper - once the header wraps, that wrapper can sit far enough
+     off-center that centering a 280px box under it still overflows the
+     viewport edge. Overriding the wrapper's inline `position:relative` back
+     to static promotes `header` (below) to the containing block instead. */
+  header { position: relative; }
+  header [style*="position:relative"] { position: static !important; }
+  .notif-dropdown {
+    left: 1rem;
+    right: 1rem;
+    min-width: 0;
+    max-width: calc(100vw - 2rem);
+    transform: none;
+  }
 }
