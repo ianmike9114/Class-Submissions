@@ -767,6 +767,7 @@ async function loadAssignments() {
       ${pendingBadge(counts.byAssignment.get(d.id))}
       ${a.instructions ? `<p class="muted">${a.instructions}</p>` : ""}
       ${a.instructionsLink ? `<div class="muted"><a href="${a.instructionsLink}" target="_blank" rel="noopener">Instructions file</a></div>` : ""}
+      ${a.uploadFolderLink ? `<div class="muted"><a href="${a.uploadFolderLink}" target="_blank" rel="noopener">Upload folder</a></div>` : ""}
       <div class="muted">Allowed: ${a.allowedFileTypes} — ${a.totalPoints} points</div>
       <div style="margin-top:0.5rem;">
         <button data-open="${d.id}">Open submissions</button>
@@ -798,6 +799,7 @@ el("add-assignment-form").addEventListener("submit", async (e) => {
     title: el("assignment-title").value.trim(),
     instructions: el("assignment-instructions").value.trim(),
     instructionsLink: el("assignment-instructions-link").value.trim(),
+    uploadFolderLink: el("assignment-upload-link").value.trim(),
     component: el("assignment-component").value,
     dueDate: el("assignment-due").value,
     allowedFileTypes: el("assignment-filetype").value,
@@ -827,6 +829,7 @@ function renderAssignmentContext(a) {
             ? `<iframe src="${instructionsEmbed}" class="submission-preview"></iframe>`
             : `<div class="muted"><a href="${a.instructionsLink}" target="_blank" rel="noopener">Instructions file</a>${openInChromeButton(a.instructionsLink)}</div>`)
           : ""}
+        ${a.uploadFolderLink ? `<div class="muted"><a href="${a.uploadFolderLink}" target="_blank" rel="noopener">Upload folder</a>${openInChromeButton(a.uploadFolderLink)}</div>` : ""}
         ${a.rubricReferenceLink ? `
           <label style="margin-top:0.75rem;">Rubric reference</label>
           ${rubricEmbed
@@ -843,6 +846,7 @@ async function openAssignment(assignmentId) {
   el("edit-assignment-title").value = data.title || "";
   el("edit-assignment-instructions").value = data.instructions || "";
   el("edit-assignment-instructions-link").value = data.instructionsLink || "";
+  el("edit-assignment-upload-link").value = data.uploadFolderLink || "";
   el("edit-assignment-component").value = data.component || "written";
   el("edit-assignment-due").value = data.dueDate || "";
   el("edit-assignment-filetype").value = data.allowedFileTypes || "document";
@@ -860,6 +864,7 @@ el("edit-assignment-form").addEventListener("submit", async (e) => {
     title: el("edit-assignment-title").value.trim(),
     instructions: el("edit-assignment-instructions").value.trim(),
     instructionsLink: el("edit-assignment-instructions-link").value.trim(),
+    uploadFolderLink: el("edit-assignment-upload-link").value.trim(),
     component: el("edit-assignment-component").value,
     dueDate: el("edit-assignment-due").value,
     allowedFileTypes: el("edit-assignment-filetype").value,

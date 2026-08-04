@@ -155,6 +155,8 @@
           <textarea id="assignment-instructions" rows="4" placeholder="e.g. Explore a CSS-related career or business opportunity and present your findings. Output: 5-7 minute presentation (PowerPoint, Canva, Poster, or Infographic)."></textarea>
           <label>Instructions file link (optional - a Drive-hosted PDF/doc, shared as "anyone with the link". Shows embedded to students, not just as a link.)</label>
           <input id="assignment-instructions-link" type="url" placeholder="https://drive.google.com/file/d/..." />
+          <label>Upload folder link (optional - a Drive folder shared "Anyone with the link: Editor". Shown to students as an "Upload here" button for large files like videos - they upload in Drive, then paste the resulting file link into their submission.)</label>
+          <input id="assignment-upload-link" type="url" placeholder="https://drive.google.com/drive/folders/..." />
           <label>Component (for grouping in Records)</label>
           <select id="assignment-component">
             <option value="written">Written Work</option>
@@ -196,6 +198,8 @@
           <textarea id="edit-assignment-instructions" rows="4"></textarea>
           <label>Instructions file link (optional)</label>
           <input id="edit-assignment-instructions-link" type="url" placeholder="https://drive.google.com/file/d/..." />
+          <label>Upload folder link (optional - Drive folder shared "Anyone with the link: Editor", shown to students as an "Upload here" button)</label>
+          <input id="edit-assignment-upload-link" type="url" placeholder="https://drive.google.com/drive/folders/..." />
           <label>Component (for grouping in Records)</label>
           <select id="edit-assignment-component">
             <option value="written">Written Work</option>
@@ -245,6 +249,6 @@
   <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-  <script type="module" src="js/teacher.js?v=13"></script>
+  <script type="module" src="js/teacher.js?v=14"></script>
 </body>
 </html>

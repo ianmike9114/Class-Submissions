@@ -282,10 +282,14 @@ async function loadEverything() {
             ? `<iframe src="${instructionsEmbed}" class="submission-preview"></iframe>`
             : `<div class="muted"><a href="${a.instructionsLink}" target="_blank" rel="noopener">Instructions file</a>${openInChromeButton(a.instructionsLink)}</div>`)
           : "";
+        const uploadFolderBlock = a.uploadFolderLink
+          ? `<div class="muted"><a href="${a.uploadFolderLink}" target="_blank" rel="noopener">Upload here (large files, e.g. video)</a>${openInChromeButton(a.uploadFolderLink)}</div>`
+          : "";
         row.innerHTML = `
           <strong>${a.title}</strong> <span class="muted">due ${a.dueDate || "no date"}</span>
           ${a.instructions ? `<p>${a.instructions}</p>` : ""}
           ${instructionsFileBlock}
+          ${uploadFolderBlock}
           <div class="muted">Type: ${a.allowedFileTypes}</div>
           <div class="muted">Total points: ${a.totalPoints}</div>
           ${renderSubmitForm(aDoc.id, a.allowedFileTypes)}`;
