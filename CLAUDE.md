@@ -59,6 +59,10 @@ this is a pure static site with zero build tooling, by design (see
 - **Rules are the real access control** — `firestore.rules`, not the
   frontend code. Any change to who-can-do-what goes there, not just in
   the UI.
+- `firebase.json` only declares `firestore.rules` as the rules file — no
+  `hosting` block, since GitHub Pages serves the static site, not Firebase
+  Hosting. `.firebaserc` pins the default Firebase project used by
+  `firebase deploy --only firestore:rules`.
 
 **Two-tier admin model.** `ADMIN_EMAIL` (the super admin, formerly
 `TEACHER_EMAIL`) is duplicated in **2 places** on purpose (no shared
