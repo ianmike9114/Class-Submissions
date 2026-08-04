@@ -255,18 +255,22 @@ details.card summary::marker { color: var(--blue); }
     flex-wrap: wrap;
     justify-content: center;
   }
-  /* Anchor the dropdown to the full-width header, not the small bell-button
-     wrapper - once the header wraps, that wrapper can sit far enough
-     off-center that centering a 280px box under it still overflows the
-     viewport edge. Overriding the wrapper's inline `position:relative` back
-     to static promotes `header` (below) to the containing block instead. */
-  header { position: relative; }
-  header [style*="position:relative"] { position: static !important; }
+  /* .notif-badge stays absolute/relative-to-its-button (unchanged) - it's
+     tiny and never overflows. .notif-dropdown is the one that overflowed:
+     it's anchored `right:0` to that same small button wrapper, which sits
+     off-center once the header wraps, so a 280px box grown leftward from
+     it runs past the screen edge. Switching only the dropdown to
+     `fixed` anchors it to the viewport instead, independent of exactly
+     where its button ends up - `top` is a fixed offset sized to clear
+     this header's stacked mobile height (measured ~200-220px across its
+     with/without-view-as-picker states) rather than something computed
+     per-render, since there's no JS involved in this CSS-only fix. */
   .notif-dropdown {
+    position: fixed;
+    top: 14.5rem;
     left: 1rem;
     right: 1rem;
     min-width: 0;
     max-width: calc(100vw - 2rem);
-    transform: none;
   }
 }
