@@ -281,6 +281,19 @@ directly.
   pattern as the section/assignment cascade deletes). No `firestore.rules`
   change was needed — the delete rule on `submissions` already lets
   `canActAsOwner` delete regardless of `status`.
+- **`css/style.css` had zero `@media` queries until the mobile-layout
+  fix below** — most of the app tolerated narrow screens by accident
+  (inputs/selects/textareas are globally full-width, `.card`/`main` have
+  no fixed width), but `teacher.html`'s `header` (two flex button groups,
+  no wrap) and `.records-grid` (many `white-space:nowrap` columns, no
+  scroll wrapper) broke on phones — reported as "teacher dashboard not
+  adjusting to mobile". Fixed with one `@media (max-width: 640px)` block
+  (header stacks/wraps) plus `#records-table { overflow-x: auto; }` (the
+  grid scrolls in its own box instead of the whole page scrolling
+  sideways) — both in `css/style.css` only, no HTML/JS changes. This is
+  a thin, single-breakpoint fix, not a full responsive redesign — treat
+  it as a starting point, not a guarantee every future UI addition will
+  degrade gracefully on mobile without its own check.
 
 ## Conventions
 

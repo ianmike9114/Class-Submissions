@@ -16,6 +16,12 @@ details/summary, tables, status colors, embed iframes) as copy-pasteable
 HTML with the exact class names — written specifically so you don't have
 to re-derive the design system from the stylesheet every session.
 
+**Mobile-layout work → `css/style.css`'s `@media (max-width: 640px)`
+block** (added for the "teacher dashboard not adjusting to mobile" fix —
+stacks/wraps `header`, plus `#records-table { overflow-x: auto; }` for
+the Records grid). This is the only breakpoint in the whole stylesheet —
+check it still covers any new header buttons or wide tables you add.
+
 ## Task map — common changes → exact edit location
 
 | Change | Edit |
