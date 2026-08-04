@@ -34,6 +34,18 @@ stop and flag it — it breaks the zero-cost guarantee, don't add silently.
 Full setup steps: `README.md`. This file is for **where to edit**, not
 how to deploy.
 
+## Commands
+
+No `package.json`, no bundler, no lint config, no test suite, no CI —
+this is a pure static site with zero build tooling, by design (see
+"no build step" below). There is nothing to `npm install`/build/lint/test.
+
+- **Preview locally**: `python -m http.server 8420` from repo root (also
+  configured in `.claude/launch.json`), then open `http://localhost:8420`.
+- **Deploy Firestore rules** (the only real "build artifact" in this
+  repo): `firebase deploy --only firestore:rules`, after `firebase login`.
+  Full deploy steps (Firebase project setup, GitHub Pages): `README.md`.
+
 ## Architecture (3 layers, no build step)
 
 - **Frontend**: plain HTML/CSS/JS, no bundler. `index.html` (login) →
@@ -81,6 +93,9 @@ schema, see `.claude/Skills/student-lms/SKILL.md` (invoked automatically
 for any change to this app's teacher/student/rules files) — that file
 carries the detailed, frequently-changing reference; this file stays
 short since it's loaded into every session automatically.
+
+For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not `css/style.css`
+directly.
 
 ## Known v1 limitations (deliberate, see README)
 
