@@ -231,3 +231,12 @@ label { font-weight: 600; font-size: 0.85rem; display: block; margin-bottom: 0.2
 
 details.card summary { cursor: pointer; }
 details.card summary::marker { color: var(--blue); }
+
+.collage-preview {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--gray-border);
+  border-radius: var(--radius-sm);
+}

@@ -6,6 +6,10 @@ import {
 import { getGeminiKey, setGeminiKey, runRubricCheck } from "./gemini.js";
 import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons } from "./embed.js";
 import { loadWorkbook } from "./class-record.js";
+import {
+  Document, Packer, Paragraph, TextRun, ImageRun, Table, TableRow, TableCell,
+  WidthType, HeadingLevel, AlignmentType,
+} from "https://cdn.jsdelivr.net/npm/docx@9.7.1/dist/index.mjs";
 
 // AI rubric-check is hidden (not deleted) - per-call Gemini cost isn't
 // worth it right now. Flip this back to true to restore the Run AI Check
@@ -923,13 +927,309 @@ async function downloadPhotosZip(withPhotos, filename, buttonEl) {
   buttonEl.textContent = original;
 }
 
+const MAX_COLLAGE_PHOTOS = 14;
+const COLLAGE_WIDTH = 1600;
+const COLLAGE_HEIGHT = 1200;
+
+// Decodes a base64 photo data-URI into an <img> so its natural size is known
+// for the collage layout/docx embed - photos already live inline on the
+// submission docs, no fetch/CORS step needed.
+function loadImageFromDataUri(dataUri) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = dataUri;
+  });
+}
+
+function canvasToBlob(canvas) {
+  return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+}
+
+async function downloadCollagePng(canvas, filename) {
+  const blob = await canvasToBlob(canvas);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// Draws a scrapbook-style collage: photos at randomized sizes/rotation,
+// scattered (not grid-aligned, deliberately allowed to overlap - that's what
+// makes it read as a scrapbook instead of a plain grid), with a centered
+// title/section/date badge drawn on top. No seeded RNG and nothing cached
+// here - every call (including "Regenerate layout") recomputes fresh
+// Math.random() placement, so the arrangement is genuinely different each time.
+function drawScatteredCollage(ctx, canvas, { images, title, sectionName, dateLabel }) {
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = "#f7fafc";
+  ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = "#e2e8f0";
+  ctx.lineWidth = 4;
+  ctx.strokeRect(2, 2, W - 4, H - 4);
+
+  if (images.length === 0) return;
+
+  const pool = images.length > MAX_COLLAGE_PHOTOS
+    ? [...images].sort(() => Math.random() - 0.5).slice(0, MAX_COLLAGE_PHOTOS)
+    : images;
+
+  const cols = 4, rows = 4;
+  const cellW = W / cols, cellH = H / rows;
+  const cells = [];
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) cells.push({ cx: c * cellW + cellW / 2, cy: r * cellH + cellH / 2 });
+  cells.sort(() => Math.random() - 0.5);
+
+  const placed = pool.slice(0, cells.length).map((p, i) => {
+    const cell = cells[i];
+    const targetW = cellW * (0.55 + Math.random() * 0.4);
+    const targetH = targetW * (p.naturalHeight / p.naturalWidth);
+    const jitterX = (Math.random() * 2 - 1) * cellW * 0.25;
+    const jitterY = (Math.random() * 2 - 1) * cellH * 0.25;
+    const angle = (Math.random() * 24 - 12) * Math.PI / 180;
+    return { img: p, targetW, targetH, cx: cell.cx + jitterX, cy: cell.cy + jitterY, angle };
+  });
+
+  // Largest photos first so smaller ones layer on top - reads as layered snapshots.
+  placed.sort((a, b) => (b.targetW * b.targetH) - (a.targetW * a.targetH));
+
+  placed.forEach(({ img, targetW, targetH, cx, cy, angle }) => {
+    // Clamp so the rotated bounding box never clips off the canvas edge.
+    const diag = Math.sqrt(targetW * targetW + targetH * targetH);
+    const clampedCx = Math.min(Math.max(cx, diag / 2), W - diag / 2);
+    const clampedCy = Math.min(Math.max(cy, diag / 2), H - diag / 2);
+    const mat = 12;
+    ctx.save();
+    ctx.translate(clampedCx, clampedCy);
+    ctx.rotate(angle);
+    ctx.shadowColor = "rgba(17,28,44,0.25)";
+    ctx.shadowBlur = 14;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(-targetW / 2 - mat, -targetH / 2 - mat, targetW + mat * 2, targetH + mat * 2);
+    ctx.shadowColor = "transparent";
+    ctx.shadowBlur = 0;
+    ctx.drawImage(img, -targetW / 2, -targetH / 2, targetW, targetH);
+    ctx.restore();
+  });
+
+  // Centered circular badge, drawn last so it always reads clearly on top.
+  const radius = Math.min(W, H) * 0.20;
+  const bcx = W / 2, bcy = H / 2;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(bcx, bcy, radius + 10, 0, Math.PI * 2);
+  ctx.setLineDash([6, 6]);
+  ctx.strokeStyle = "#002045";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.beginPath();
+  ctx.arc(bcx, bcy, radius, 0, Math.PI * 2);
+  ctx.fillStyle = "#fffaf0";
+  ctx.fill();
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = "#002045";
+  ctx.stroke();
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const chordAt = (dy) => 2 * Math.sqrt(Math.max(radius * radius - dy * dy, 0)) * 0.85;
+  const fitText = (text, maxWidth, startSize, weight) => {
+    let size = startSize;
+    ctx.font = `${weight} ${size}px 'Source Serif 4', Georgia, serif`;
+    while (ctx.measureText(text).width > maxWidth && size > 10) {
+      size -= 1;
+      ctx.font = `${weight} ${size}px 'Source Serif 4', Georgia, serif`;
+    }
+    return size;
+  };
+
+  ctx.fillStyle = "#002045";
+  const titleSize = fitText(title || "", chordAt(-radius * 0.35), Math.round(radius * 0.22), "bold");
+  ctx.font = `bold ${titleSize}px 'Source Serif 4', Georgia, serif`;
+  ctx.fillText(title || "", bcx, bcy - radius * 0.28);
+
+  const sectionSize = fitText(sectionName || "", chordAt(0), Math.round(radius * 0.14), "normal");
+  ctx.font = `${sectionSize}px 'Source Serif 4', Georgia, serif`;
+  ctx.fillText(sectionName || "", bcx, bcy + 2);
+
+  ctx.fillStyle = "#4a5568";
+  const dateSize = fitText(dateLabel || "", chordAt(radius * 0.35), Math.round(radius * 0.11), "normal");
+  ctx.font = `${dateSize}px 'Source Serif 4', Georgia, serif`;
+  ctx.fillText(dateLabel || "", bcx, bcy + radius * 0.32);
+  ctx.restore();
+
+  // Two simple decorative flourishes, drawn as plain shapes (not emoji -
+  // inconsistent glyph rendering across OS/font stacks would show up in the
+  // rasterized PNG/docx output).
+  ctx.save();
+  ctx.fillStyle = "rgba(148,163,184,0.55)";
+  const cloudX = W * 0.1, cloudY = H * 0.12;
+  [[0, 0, 30], [26, -10, 24], [50, 0, 28], [22, 12, 22]].forEach(([dx, dy, r]) => {
+    ctx.beginPath();
+    ctx.arc(cloudX + dx, cloudY + dy, r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.restore();
+
+  ctx.save();
+  const potX = W * 0.9, potY = H * 0.88;
+  ctx.fillStyle = "#c05621";
+  ctx.beginPath();
+  ctx.moveTo(potX - 22, potY);
+  ctx.lineTo(potX + 22, potY);
+  ctx.lineTo(potX + 14, potY + 36);
+  ctx.lineTo(potX - 14, potY + 36);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#38a169";
+  [[-14, -18], [0, -26], [14, -18]].forEach(([dx, dy]) => {
+    ctx.beginPath();
+    ctx.ellipse(potX + dx, potY + dy, 10, 18, dx === 0 ? 0 : dx < 0 ? -Math.PI / 6 : Math.PI / 6, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.restore();
+}
+
+function collageDateLabel() {
+  const from = el("report-date-from").value;
+  const to = el("report-date-to").value;
+  if (!from && !to) return "";
+  if (from && to && from !== to) return `${from} to ${to}`;
+  return from || to;
+}
+
+// Decodes every submitted photo once, draws the initial collage, then wires
+// "Regenerate layout" (redraw with fresh randomization) and the two export
+// buttons. Runs inside the same per-assignment gallery scope as the existing
+// ZIP download, so no extra Firestore reads are needed.
+async function renderCollagePreview(withPhotos, context) {
+  const canvas = el("collage-preview");
+  canvas.width = COLLAGE_WIDTH;
+  canvas.height = COLLAGE_HEIGHT;
+  const ctx = canvas.getContext("2d");
+
+  const flatPhotos = [];
+  withPhotos.forEach((s) => s.photos.forEach((p) => flatPhotos.push(p)));
+  const images = await Promise.all(flatPhotos.map(loadImageFromDataUri));
+
+  const draw = () => drawScatteredCollage(ctx, canvas, {
+    images,
+    title: el("report-title").value || context.assignmentTitle,
+    sectionName: context.sectionName || "",
+    dateLabel: collageDateLabel(),
+  });
+  draw();
+
+  el("regenerate-collage").addEventListener("click", draw);
+  el("report-title").addEventListener("input", draw);
+  el("report-date-from").addEventListener("change", draw);
+  el("report-date-to").addEventListener("change", draw);
+
+  el("download-collage-png").addEventListener("click", async (e) => {
+    const btn = e.target;
+    btn.disabled = true;
+    try {
+      const title = el("report-title").value || context.assignmentTitle;
+      await downloadCollagePng(canvas, `${title.replace(/[/\\:*?"<>|]/g, "-")}-collage.png`);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  el("generate-report-docx").addEventListener("click", (e) =>
+    generateAccomplishmentReport(withPhotos, context, canvas, e.target));
+}
+
+// DepEd accomplishment-report .docx structure - kept deliberately simple and
+// adjustable (header fields, collage, participant table) since the teacher
+// will share their real report template later to refine the exact layout.
+async function buildAccomplishmentReportDocx({ title, subjectName, sectionName, dateLabel, withPhotos, collageBuffer, collageWidth, collageHeight }) {
+  const pageContentWidth = 540;
+  const imgHeight = Math.round(pageContentWidth * (collageHeight / collageWidth));
+
+  return new Document({
+    sections: [{
+      children: [
+        new Paragraph({ text: title, heading: HeadingLevel.HEADING_1 }),
+        new Paragraph({ children: [new TextRun({ text: `Subject: ${subjectName}`, bold: true })] }),
+        new Paragraph({ children: [new TextRun({ text: `Section: ${sectionName}`, bold: true })] }),
+        new Paragraph({ children: [new TextRun({ text: `Date(s) Covered: ${dateLabel || "—"}`, bold: true })] }),
+        new Paragraph({ text: "" }),
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          children: [new ImageRun({
+            type: "png",
+            data: collageBuffer,
+            transformation: { width: pageContentWidth, height: imgHeight },
+          })],
+        }),
+        new Paragraph({ text: "" }),
+        new Paragraph({ text: "Participating Students", heading: HeadingLevel.HEADING_2 }),
+        new Table({
+          width: { size: 100, type: WidthType.PERCENTAGE },
+          rows: [
+            new TableRow({
+              children: [
+                new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Name", bold: true })] })] }),
+                new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Photos submitted", bold: true })] })] }),
+              ],
+            }),
+            ...withPhotos.map((s) => new TableRow({
+              children: [
+                new TableCell({ children: [new Paragraph(s.name)] }),
+                new TableCell({ children: [new Paragraph(String(s.photos.length))] }),
+              ],
+            })),
+          ],
+        }),
+      ],
+    }],
+  });
+}
+
+async function generateAccomplishmentReport(withPhotos, context, canvas, buttonEl) {
+  buttonEl.disabled = true;
+  const original = buttonEl.textContent;
+  buttonEl.textContent = "Generating...";
+  try {
+    const title = el("report-title").value || context.assignmentTitle;
+    const collageBlob = await canvasToBlob(canvas);
+    const collageBuffer = new Uint8Array(await collageBlob.arrayBuffer());
+    const doc = await buildAccomplishmentReportDocx({
+      title,
+      subjectName: context.subjectName || "",
+      sectionName: context.sectionName || "",
+      dateLabel: collageDateLabel(),
+      withPhotos,
+      collageBuffer,
+      collageWidth: canvas.width,
+      collageHeight: canvas.height,
+    });
+    const blob = await Packer.toBlob(doc);
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${title.replace(/[/\\:*?"<>|]/g, "-")}-accomplishment-report.docx`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (err) {
+    alert("Couldn't build the report: " + err.message);
+  }
+  buttonEl.disabled = false;
+  buttonEl.textContent = original;
+}
+
 // A per-assignment gallery of every submitted photo (photoPages, or the
 // legacy single photoData), with a one-click "download everything as one
 // ZIP" button. Easy to miss if this assignment has no other open card
 // nearby (it's a collapsed <details>) - the header "Photo ZIPs" panel
 // (getPhotoAssignments() below) surfaces the same download across every
 // assignment at once, so it doesn't require drilling in here first.
-function renderImagesGallery(submissions, assignmentTitle) {
+function renderImagesGallery(submissions, assignmentTitle, context) {
   const container = el("images-gallery");
   const withPhotos = submissions
     .map((s) => ({ name: s.studentName, photos: s.photoPages?.length ? s.photoPages : s.photoData ? [s.photoData] : [] }))
@@ -950,9 +1250,30 @@ function renderImagesGallery(submissions, assignmentTitle) {
           ).join("")).join("")}
         </div>
       </div>
+      <div class="card" style="margin-top:1rem;">
+        <strong>Accomplishment report</strong>
+        <p class="muted" style="margin-top:0.25rem;">For DepEd modular/work-from-home activity documentation.</p>
+        <label>Report title</label>
+        <input id="report-title" value="${assignmentTitle}" />
+        <label>Date(s) covered</label>
+        <div style="display:flex; gap:0.5rem;">
+          <input type="date" id="report-date-from" />
+          <input type="date" id="report-date-to" />
+        </div>
+        <div style="margin-top:0.75rem;">
+          <canvas id="collage-preview" class="collage-preview"></canvas>
+        </div>
+        <div style="margin-top:0.5rem;">
+          <button type="button" class="secondary" id="regenerate-collage">Regenerate layout</button>
+          <button type="button" class="secondary" id="download-collage-png">Download Collage (PNG)</button>
+          <button type="button" id="generate-report-docx">Generate Accomplishment Report (.docx)</button>
+        </div>
+      </div>
     </details>`;
   el("download-all-photos").addEventListener("click", (e) =>
     downloadPhotosZip(withPhotos, `${assignmentTitle.replace(/[/\\:*?"<>|]/g, "-")}-photos.zip`, e.target));
+
+  renderCollagePreview(withPhotos, { ...context, assignmentTitle });
 }
 
 // Header-wide list of every assignment (across every subject/section this
@@ -1038,7 +1359,10 @@ async function loadSubmissions() {
   const [snap, aDoc] = await Promise.all([getDocs(q), getDoc(doc(db, "assignments", state.assignmentId))]);
   const ownedDocs = snap.docs.filter((d) => ownedByViewAs(d.data()));
   renderScoresSummary(ownedDocs.map((d) => d.data()), aDoc.data()?.totalPoints);
-  renderImagesGallery(ownedDocs.map((d) => d.data()), aDoc.data()?.title || "submissions");
+  renderImagesGallery(ownedDocs.map((d) => d.data()), aDoc.data()?.title || "submissions", {
+    subjectName: state.subjectName,
+    sectionName: el("section-view-name").textContent,
+  });
   const list = el("submissions-list");
   list.innerHTML = "";
   ownedDocs.forEach((d) => {
@@ -1154,6 +1478,7 @@ async function openReview(submissionId) {
       <textarea id="feedback-${submissionId}" rows="3">${draft.feedback || ""}</textarea>
       <button data-publish="${submissionId}">Publish to student</button>
       <button type="button" class="secondary" data-return="${submissionId}">Return for revision</button>
+      <div class="muted" style="margin-top:0.4rem; font-size:0.85em;">Return for revision unlocks editing for the student to redo the work; Publish finalizes the grade and locks it.</div>
     </div>`;
 
   container.querySelector(`[data-publish]`).addEventListener("click", async () => {
