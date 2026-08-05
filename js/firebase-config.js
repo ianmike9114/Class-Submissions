@@ -5,7 +5,7 @@
 // plan by using links (Drive/YouTube/Gist) instead of file uploads, and
 // calling Gemini directly from the browser (see js/gemini.js).
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getAuth, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -36,3 +36,9 @@ export const GOOGLE_CLIENT_ID = "1077801155399-94fs3d8c4k1guh7h0tg77j8gg3lbthtv.
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+
+// Explicit instead of relying on the SDK's implicit default - guarantees
+// the session survives a browser restart (IndexedDB-backed) instead of
+// silently falling back to a weaker persistence mode in some environments,
+// which showed up as teachers/students having to sign in again every time.
+setPersistence(auth, browserLocalPersistence);

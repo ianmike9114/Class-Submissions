@@ -197,7 +197,47 @@ label { font-weight: 600; font-size: 0.85rem; display: block; margin-bottom: 0.2
   font-size: 0.75rem;
   line-height: 1.4;
 }
-.photo-thumbs a img { width: 150px; height: 150px; }
+.photo-thumbs a img, .photo-thumbs button img { width: 150px; height: 150px; }
+button.photo-thumb-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* Full-size in-page preview for a submitted photo (data: URL) - clicking a
+   thumbnail opens this instead of navigating to the raw data: URI, which
+   mobile/desktop browsers render unreliably (sometimes as raw base64 text)
+   when opened as a standalone page. */
+.photo-lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 1rem;
+}
+.photo-lightbox img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+}
+.photo-lightbox #photo-lightbox-close {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: rgba(255, 255, 255, 0.9);
+  color: #111;
+  border-radius: 50%;
+  width: 2.25rem;
+  height: 2.25rem;
+  font-size: 1.25rem;
+  line-height: 1;
+  padding: 0;
+}
 
 .records-grid {
   width: 100%;

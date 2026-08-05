@@ -48,6 +48,27 @@ function el(id) { return document.getElementById(id); }
 // *display* everywhere, without touching the stored value.
 function displayStudentName(name) { return (name || "").toUpperCase(); }
 
+// Submitted photos are inline data: URLs (no Storage) - opening one with
+// <a href target="_blank"> navigates the browser straight to a raw
+// data:image/...;base64,... "page", which desktop and mobile browsers alike
+// render unreliably (sometimes just the raw base64 text). Show it in-page
+// instead. Wired once via event delegation (below) so any current or future
+// [data-photo-src] thumbnail works without per-render rewiring.
+function openPhotoLightbox(src, label) {
+  const img = el("photo-lightbox-img");
+  img.src = src;
+  img.alt = label || "";
+  el("photo-lightbox").classList.remove("hidden");
+}
+el("photo-lightbox-close").addEventListener("click", () => el("photo-lightbox").classList.add("hidden"));
+el("photo-lightbox").addEventListener("click", (e) => {
+  if (e.target.id === "photo-lightbox") el("photo-lightbox").classList.add("hidden");
+});
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-photo-src]");
+  if (btn) openPhotoLightbox(btn.dataset.photoSrc, btn.title);
+});
+
 // Cascade deletes (subject/section/assignment - each wipes everything
 // nested under it, no undo) get a type-to-confirm instead of a plain OK/
 // Cancel dialog, since an accidental double-tap can clear a confirm() but
@@ -1471,7 +1492,7 @@ function renderImagesGallery(submissions, assignmentTitle, context) {
         <button type="button" id="download-all-photos">Download all as ZIP</button>
         <div class="photo-thumbs" style="margin-top:0.75rem;">
           ${withPhotos.map((s) => s.photos.map((p, i) =>
-            `<a href="${p}" target="_blank" rel="noopener" title="${s.name} - page ${i + 1}"><img src="${p}" /></a>`
+            `<button type="button" class="photo-thumb-btn" data-photo-src="${p}" title="${s.name} - page ${i + 1}"><img src="${p}" /></button>`
           ).join("")).join("")}
         </div>
       </div>
@@ -1600,9 +1621,9 @@ async function loadSubmissions() {
     row.className = "card";
     const embedUrl = toEmbedUrl(s.link);
     const linkBlock = (s.photoPages && s.photoPages.length > 0)
-      ? `<div class="photo-thumbs">${s.photoPages.map((p) => `<a href="${p}" target="_blank" rel="noopener"><img src="${p}" /></a>`).join("")}</div>`
+      ? `<div class="photo-thumbs">${s.photoPages.map((p, i) => `<button type="button" class="photo-thumb-btn" data-photo-src="${p}" title="page ${i + 1}"><img src="${p}" /></button>`).join("")}</div>`
       : s.photoData // legacy single-photo submissions made before multi-page support
-        ? `<img src="${s.photoData}" class="photo-preview" />`
+        ? `<button type="button" class="photo-thumb-btn" data-photo-src="${s.photoData}" title="submitted photo"><img src="${s.photoData}" class="photo-preview" /></button>`
         : embedUrl
         ? `<iframe src="${embedUrl}" class="submission-preview"></iframe>
          <div class="muted"><a href="${s.link}" target="_blank" rel="noopener">open in new tab</a></div>`
