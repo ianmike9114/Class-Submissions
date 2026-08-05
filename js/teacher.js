@@ -291,8 +291,38 @@ async function applyMasterListToSection(listId, sectionId, sectionName, pendingI
     ownerEmail: state.viewAsEmail,
     createdAt: serverTimestamp(),
   })));
+  // Remembers this section applied this list, so future enrollees can be
+  // synced back into it automatically - see syncEnrolleesToMasterList().
+  await updateDoc(doc(db, "sections", sectionId), { masterListId: listId });
 
   return { invited: toInvite.length, skippedEnrolled, skippedInvited };
+}
+
+// Keeps a section's linked master list caught up with newly enrolled
+// students, so "Build list from section" doesn't need re-running by hand
+// every time someone new joins. Never touches an existing list entry -
+// same no-clobber rule as buildMasterListFromSection's initial snapshot.
+async function syncEnrolleesToMasterList(sectionData, enrollments) {
+  if (!sectionData.masterListId) return null;
+  const listRef = doc(db, "masterLists", sectionData.masterListId);
+  const listSnap = await getDoc(listRef);
+  if (!listSnap.exists()) return null;
+  const list = listSnap.data();
+  const existingEmails = new Set((list.students || []).map((s) => (s.email || "").toLowerCase()));
+  const newStudents = [];
+  for (const e of enrollments) {
+    const email = (e.studentEmail || "").toLowerCase();
+    if (!email || existingEmails.has(email)) continue;
+    existingEmails.add(email);
+    newStudents.push({ name: e.studentName, email, gender: "" });
+  }
+  if (newStudents.length > 0) {
+    await updateDoc(listRef, {
+      students: [...(list.students || []), ...newStudents],
+      updatedAt: serverTimestamp(),
+    });
+  }
+  return { listName: list.name, synced: newStudents.length };
 }
 
 let lastNotifications = { submissions: [], leaves: [], totalCount: 0, error: false };
@@ -904,9 +934,9 @@ el("add-section-form").addEventListener("submit", async (e) => {
 let enrolledBackView = "view-subject";
 let enrolledSectionId = null; // set below when this is a single-section view - lets #build-master-list-btn know what to build from
 async function openEnrolled(onlySectionId) {
-  let sectionMap, titleText;
+  let sectionMap, titleText, sectionData;
   if (onlySectionId) {
-    const sectionData = (await getDoc(doc(db, "sections", onlySectionId))).data();
+    sectionData = (await getDoc(doc(db, "sections", onlySectionId))).data();
     sectionMap = new Map([[onlySectionId, sectionData.sectionName]]);
     titleText = sectionData.sectionName;
     enrolledBackView = "view-section";
@@ -940,14 +970,24 @@ async function openEnrolled(onlySectionId) {
       (sectionMap.get(a.sectionId) || "").localeCompare(sectionMap.get(b.sectionId) || "")
       || a.studentName.localeCompare(b.studentName));
 
-  list.innerHTML = rows.length
+  let masterListNote = "";
+  if (onlySectionId) {
+    const syncResult = await syncEnrolleesToMasterList(sectionData, rows);
+    if (syncResult) {
+      masterListNote = syncResult.synced > 0
+        ? `<p class="muted">Synced ${syncResult.synced} new student${syncResult.synced === 1 ? "" : "s"} to master list "${syncResult.listName}".</p>`
+        : `<p class="muted">Synced with master list "${syncResult.listName}".</p>`;
+    }
+  }
+
+  list.innerHTML = masterListNote + (rows.length
     ? `<table class="records-grid"><thead><tr><th>#</th><th>Name</th><th>Gmail</th><th>Section</th><th></th></tr></thead><tbody>
         ${rows.map((r, i) => `<tr><td>${i + 1}</td><td id="enroll-name-${r.id}">${displayStudentName(r.studentName)}${r.leaveRequested ? ' <span class="status-pending">(leave requested)</span>' : ""}</td><td>${r.studentEmail || ""}</td><td>${sectionMap.get(r.sectionId) || ""}</td><td>
           <button class="secondary" data-edit-enrollment="${r.id}" data-uid="${r.studentUID}" data-raw="${r.studentName}">Edit name</button>
           <button class="danger icon" data-remove-enrollment="${r.id}" data-leave-requested="${!!r.leaveRequested}" title="Remove" aria-label="Remove enrollment">×</button>
         </td></tr>`).join("")}
       </tbody></table>`
-    : '<p class="muted">No students enrolled yet.</p>';
+    : '<p class="muted">No students enrolled yet.</p>');
 
   // Fixes a garbled/raw Google display name (common when a section had no
   // roster to pick from at join time) without needing the student to
@@ -1021,13 +1061,16 @@ async function buildMasterListFromSection(sectionId) {
 
   msg.textContent = "Saving...";
   try {
-    await addDoc(collection(db, "masterLists"), {
+    const listRef = await addDoc(collection(db, "masterLists"), {
       ownerEmail: state.viewAsEmail,
       name: trimmed,
       students: candidates.map((e) => ({ name: e.studentName, email: e.studentEmail.toLowerCase(), gender: "" })),
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
+    // Links this section to the list it was just built from, so future
+    // enrollees sync back into it automatically - see syncEnrolleesToMasterList().
+    await updateDoc(doc(db, "sections", sectionId), { masterListId: listRef.id });
     msg.textContent = `Saved ${candidates.length} students to "${trimmed}"${skippedNoEmail ? ` (skipped ${skippedNoEmail} with no email on file)` : ""}. Find it under Student Lists in the header.`;
   } catch (err) {
     msg.textContent = "Couldn't save: " + err.message;
