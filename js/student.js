@@ -431,8 +431,8 @@ const PER_PHOTO_MAX_LEN = 100000;
 
 function renderSubmitForm(assignmentId, type, prefill = null) {
   const photoBlock = (type === "image" || type === "document") ? `
-      <label>Or take/upload photos (up to ${MAX_PHOTOS} pages - add one at a time for back-to-back work)</label>
-      <input type="file" accept="image/*" class="submission-photo" data-assignment="${assignmentId}" />
+      <label>Or take/upload photos (up to ${MAX_PHOTOS} pages - select several at once in order, or add one at a time)</label>
+      <input type="file" accept="image/*" multiple class="submission-photo" data-assignment="${assignmentId}" />
       <div class="photo-thumbs" data-thumbs="${assignmentId}"></div>
       <p class="muted">Each photo is compressed and saved directly - skip the link above if you use this. For full-quality photos, check if your teacher gave a shared folder link in the Instructions above - upload there instead and paste that file's link.</p>` : "";
   // prefill: { id, link, photoPages } - present only when editing an
@@ -521,22 +521,33 @@ function renderPhotoThumbs(assignmentId) {
 function wirePhotoInput(input) {
   input.addEventListener("change", async () => {
     const assignmentId = input.dataset.assignment;
-    const file = input.files[0];
-    input.value = ""; // let the same input capture another page next
-    if (!file) return;
+    const files = [...input.files];
+    input.value = ""; // let the same input capture more pages next
+    if (files.length === 0) return;
 
     const photos = pendingPhotos.get(assignmentId) || [];
-    if (photos.length >= MAX_PHOTOS) {
+    pendingPhotos.set(assignmentId, photos);
+
+    const remaining = MAX_PHOTOS - photos.length;
+    if (remaining <= 0) {
       alert(`Up to ${MAX_PHOTOS} pages only - remove one first if you need to swap.`);
       return;
     }
-    try {
-      const dataUrl = await compressImage(file);
-      photos.push(dataUrl);
-      pendingPhotos.set(assignmentId, photos);
-      renderPhotoThumbs(assignmentId);
-    } catch (err) {
-      alert(err.message);
+    const toAdd = files.slice(0, remaining);
+    if (files.length > toAdd.length) {
+      alert(`Only adding ${toAdd.length} of the ${files.length} you picked - up to ${MAX_PHOTOS} pages total.`);
+    }
+
+    // One at a time (not Promise.all) so pages land in the order picked,
+    // and a bad photo partway through doesn't block the rest.
+    for (const file of toAdd) {
+      try {
+        const dataUrl = await compressImage(file);
+        photos.push(dataUrl);
+        renderPhotoThumbs(assignmentId);
+      } catch (err) {
+        alert(err.message);
+      }
     }
   });
 }
