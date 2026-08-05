@@ -1614,7 +1614,14 @@ async function loadSubmissions() {
   });
   const list = el("submissions-list");
   list.innerHTML = "";
-  ownedDocs.forEach((d) => {
+  // Pending (and AI-drafted, still unreviewed) submissions need the
+  // teacher's attention most - surface those first instead of leaving them
+  // buried among already-published ones in query order.
+  const STATUS_PRIORITY = { pending: 0, "ai-drafted": 1, returned: 2, published: 3 };
+  const sortedDocs = ownedDocs.slice().sort(
+    (a, b) => (STATUS_PRIORITY[a.data().status] ?? 4) - (STATUS_PRIORITY[b.data().status] ?? 4)
+  );
+  sortedDocs.forEach((d) => {
     const s = d.data();
     if (filter !== "all" && s.status !== filter) return;
     const row = document.createElement("div");
