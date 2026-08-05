@@ -1710,6 +1710,9 @@ async function openReview(submissionId) {
     </div>`;
 
   container.querySelector(`[data-publish]`).addEventListener("click", async () => {
+    const btn = container.querySelector(`[data-publish]`);
+    btn.disabled = true;
+    btn.textContent = "Saving...";
     await updateDoc(ref, {
       finalGrade: {
         score: Number(el(`score-${submissionId}`).value) || 0,
@@ -1718,6 +1721,7 @@ async function openReview(submissionId) {
       status: "published",
       publishedAt: Date.now(),
     });
+    alert("Published — the student can now see their grade and feedback.");
     loadSubmissions();
     refreshNotifications();
   });
@@ -1727,6 +1731,9 @@ async function openReview(submissionId) {
   // what needs fixing. Student side then deletes and resubmits, same as the
   // existing pending-submission "Remove" flow.
   container.querySelector(`[data-return]`).addEventListener("click", async () => {
+    const btn = container.querySelector(`[data-return]`);
+    btn.disabled = true;
+    btn.textContent = "Saving...";
     await updateDoc(ref, {
       finalGrade: {
         score: Number(el(`score-${submissionId}`).value) || 0,
@@ -1735,6 +1742,7 @@ async function openReview(submissionId) {
       status: "returned",
       returnedAt: Date.now(),
     });
+    alert("Returned for revision — the student can now redo and resubmit.");
     loadSubmissions();
     refreshNotifications();
   });
