@@ -514,6 +514,12 @@ async function renameStudentEverywhere(studentUID, newName) {
 
 // ---------- subjects ----------
 async function loadSubjects() {
+  // Every path back to the Home view calls this - reset the global search
+  // box here too, so a stale query/result list from before navigating away
+  // doesn't linger on screen until the teacher notices and clears it by hand.
+  el("global-student-search").value = "";
+  el("global-search-results").innerHTML = "";
+  searchRequestSeq++; // invalidate any in-flight search so it can't repopulate this after the fact
   const showArchived = el("toggle-archived").checked;
   const [snap, counts, leaveCounts] = await Promise.all([getDocs(ownerScopedQuery("subjects")), getPendingCounts(), getLeaveRequestCounts()]);
   const list = el("subjects-list");
@@ -2335,16 +2341,18 @@ async function loadRecords() {
   function renderStudentRow(r) {
     const name = r.name;
     const enrollment = enrollments.find((en) => en.studentName.toLowerCase() === name.toLowerCase());
+    let missing = 0;
     const cells = orderedAssignments.map((a) => {
-      if (!enrollment) return `<td class="muted">Not joined</td>`;
+      if (!enrollment) { missing++; return `<td class="muted">Not joined</td>`; }
       const sub = submissionsByAssignment[a.id].get(enrollment.studentUID);
-      if (!sub) return `<td class="muted">No submission</td>`;
+      if (!sub) { missing++; return `<td class="muted">No submission</td>`; }
       if (sub.status === "published") {
         return `<td>${sub.finalGrade?.score ?? 0}/${a.totalPoints}</td>`;
       }
       return `<td class="status-${sub.status}">${sub.status}</td>`;
     }).join("");
-    return `<tr><td>${name}</td>${cells}</tr>`;
+    const missingCell = `<td><span class="status-${missing > 0 ? "returned" : "published"}">${missing}/${orderedAssignments.length}</span></td>`;
+    return `<tr><td>${name}</td>${missingCell}${cells}</tr>`;
   }
 
   // Group rows by gender (matches the real Class Record's MALE/FEMALE
@@ -2358,7 +2366,7 @@ async function loadRecords() {
 
   const bodyRows = genderGroups.length > 1
     ? genderGroups.map((g) => {
-        const header = `<tr class="gender-group"><td colspan="${orderedAssignments.length + 1}">${g.label}</td></tr>`;
+        const header = `<tr class="gender-group"><td colspan="${orderedAssignments.length + 2}">${g.label}</td></tr>`;
         return header + g.students.map(renderStudentRow).join("");
       }).join("")
     : roster.map(renderStudentRow).join("");
@@ -2366,8 +2374,8 @@ async function loadRecords() {
   container.innerHTML = `
     <table class="records-grid">
       <thead>
-        <tr><th></th>${groupHeaderCells}</tr>
-        <tr><th>Student</th>${titleHeaderCells}</tr>
+        <tr><th colspan="2"></th>${groupHeaderCells}</tr>
+        <tr><th>Student</th><th>Missing</th>${titleHeaderCells}</tr>
       </thead>
       <tbody>${bodyRows}</tbody>
     </table>`;
