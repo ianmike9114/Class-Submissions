@@ -2340,7 +2340,12 @@ async function loadRecords() {
 
   function renderStudentRow(r) {
     const name = r.name;
-    const enrollment = enrollments.find((en) => en.studentName.toLowerCase() === name.toLowerCase());
+    // Exact string match misses students whose enrollment name is a
+    // reordered/shortened version of the roster name (e.g. enrollment
+    // "Hannah De Leon" vs roster "De Leon, Hannah May O.") - reuse the
+    // same fuzzy word match already used for the Home dashboard search.
+    const enrollment = enrollments.find((en) =>
+      matchesNameSearch(en.studentName, name) || matchesNameSearch(name, en.studentName));
     let missing = 0;
     const cells = orderedAssignments.map((a) => {
       if (!enrollment) { missing++; return `<td class="muted">Not joined</td>`; }
