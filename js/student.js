@@ -1,7 +1,7 @@
 import { db, ADMIN_EMAIL } from "./firebase-config.js";
 import { guardPage, signOutUser } from "./auth.js";
 import {
-  collection, addDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where, serverTimestamp,
+  collection, addDoc, setDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons } from "./embed.js";
 
@@ -55,7 +55,15 @@ function withTimeout(promise, ms = 12000) {
 }
 
 async function enroll(sectionId, section, subject, studentName) {
-  await addDoc(collection(db, "enrollments"), {
+  // Deterministic ID (one section + one student = one doc, always) instead
+  // of addDoc's random ID - the "already enrolled?" checks above this call
+  // are a query-then-write race (two tabs, a double-click before the button
+  // disables), so without this a slipped-through second write could create
+  // a real duplicate enrollment. With a fixed ID it can only ever overwrite
+  // the same doc - and firestore.rules' student-update rule only allows
+  // touching studentName/leaveRequested, so a same-student overwrite from a
+  // second race loser gets cleanly rejected instead of corrupting data.
+  await setDoc(doc(db, "enrollments", `${sectionId}_${currentUser.uid}`), {
     studentUID: currentUser.uid,
     studentName,
     studentEmail: currentUser.email,
