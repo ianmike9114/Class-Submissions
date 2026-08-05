@@ -42,6 +42,12 @@ function ownerScopedQuery(collectionName, ...wheres) {
 
 function el(id) { return document.getElementById(id); }
 
+// Names arrive with inconsistent casing depending on source (roster
+// upload already uppercases on save, but the Google-account-name
+// fallback and submissions.studentName don't) - normalize how they
+// *display* everywhere, without touching the stored value.
+function displayStudentName(name) { return (name || "").toUpperCase(); }
+
 // Cascade deletes (subject/section/assignment - each wipes everything
 // nested under it, no undo) get a type-to-confirm instead of a plain OK/
 // Cancel dialog, since an accidental double-tap can clear a confirm() but
@@ -344,7 +350,7 @@ function renderNotifDropdown() {
     </button>`).join("");
   const joinRows = joins.map((j) => `
     <button class="notif-item" data-goto-join="${j.subjectId}|${j.sectionId}">
-      ${j.students.map((s) => s.studentName).join(", ")} joined <span class="muted">(${j.subjectName} &rsaquo; ${j.sectionName})</span>
+      ${j.students.map((s) => displayStudentName(s.studentName)).join(", ")} joined <span class="muted">(${j.subjectName} &rsaquo; ${j.sectionName})</span>
     </button>`).join("");
 
   dropdown.innerHTML =
@@ -580,14 +586,20 @@ async function loadSections() {
             <label>Student's Gmail address</label>
             <input class="invite-email" type="email" required placeholder="name@gmail.com" />
             <label>Student's name (as it should appear on your roster)</label>
-            <input class="invite-name" required placeholder="e.g. Alcaide, Led Jervis J." />
+            ${s.roster?.length ? `
+            <select class="invite-name-select">
+              ${s.roster.map((r) => (typeof r === "string" ? r : r.name)).map((name) => `<option value="${name}">${name}</option>`).join("")}
+              <option value="__other__">Other (type a name)</option>
+            </select>
+            <input class="invite-name" placeholder="e.g. Alcaide, Led Jervis J." style="display:none;" />` : `
+            <input class="invite-name" required placeholder="e.g. Alcaide, Led Jervis J." />`}
             <button type="submit">Send invite</button>
           </form>
           <p class="invite-message muted"></p>
           <div class="invite-pending">
             ${pendingInvites.length ? pendingInvites.map((inv) => `
               <div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.35rem;">
-                <span class="muted">Pending: ${inv.studentName} (${inv.studentEmail})</span>
+                <span class="muted">Pending: ${displayStudentName(inv.studentName)} (${inv.studentEmail})</span>
                 <button type="button" class="secondary" data-cancel-invite="${inv.id}">Cancel</button>
               </div>`).join("") : ""}
           </div>
@@ -611,12 +623,26 @@ async function loadSections() {
       await cascadeDeleteSection(b.dataset.deleteSection);
       loadSections();
     }));
+  list.querySelectorAll(".invite-name-select").forEach((select) => {
+    const textInput = select.parentElement.querySelector(".invite-name");
+    const sync = () => {
+      const isOther = select.value === "__other__";
+      textInput.style.display = isOther ? "" : "none";
+      textInput.required = isOther;
+      if (isOther) textInput.focus();
+    };
+    select.addEventListener("change", sync);
+    sync();
+  });
   list.querySelectorAll(".invite-form").forEach((form) =>
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       const sectionId = form.dataset.section;
       const email = form.querySelector(".invite-email").value.trim().toLowerCase();
-      const studentName = form.querySelector(".invite-name").value.trim();
+      const select = form.querySelector(".invite-name-select");
+      const studentName = (select && select.value !== "__other__"
+        ? select.value
+        : form.querySelector(".invite-name").value).trim();
       const msg = form.parentElement.querySelector(".invite-message");
       const btn = form.querySelector("button");
       btn.disabled = true;
@@ -717,8 +743,8 @@ async function openEnrolled(onlySectionId) {
 
   list.innerHTML = rows.length
     ? `<table class="records-grid"><thead><tr><th>#</th><th>Name</th><th>Gmail</th><th>Section</th><th></th></tr></thead><tbody>
-        ${rows.map((r, i) => `<tr><td>${i + 1}</td><td id="enroll-name-${r.id}">${r.studentName}${r.leaveRequested ? ' <span class="status-pending">(leave requested)</span>' : ""}</td><td>${r.studentEmail || ""}</td><td>${sectionMap.get(r.sectionId) || ""}</td><td>
-          <button class="secondary" data-edit-enrollment="${r.id}" data-uid="${r.studentUID}">Edit name</button>
+        ${rows.map((r, i) => `<tr><td>${i + 1}</td><td id="enroll-name-${r.id}">${displayStudentName(r.studentName)}${r.leaveRequested ? ' <span class="status-pending">(leave requested)</span>' : ""}</td><td>${r.studentEmail || ""}</td><td>${sectionMap.get(r.sectionId) || ""}</td><td>
+          <button class="secondary" data-edit-enrollment="${r.id}" data-uid="${r.studentUID}" data-raw="${r.studentName}">Edit name</button>
           <button class="danger icon" data-remove-enrollment="${r.id}" data-leave-requested="${!!r.leaveRequested}" title="Remove" aria-label="Remove enrollment">×</button>
         </td></tr>`).join("")}
       </tbody></table>`
@@ -733,7 +759,7 @@ async function openEnrolled(onlySectionId) {
     b.addEventListener("click", () => {
       const enrollmentId = b.dataset.editEnrollment;
       const cell = el(`enroll-name-${enrollmentId}`);
-      const current = cell.textContent;
+      const current = b.dataset.raw;
       cell.innerHTML = `<input id="edit-enroll-${enrollmentId}" value="${current}" style="margin-bottom:0;" />`;
       const input = el(`edit-enroll-${enrollmentId}`);
       input.focus();
@@ -963,7 +989,7 @@ function renderScoresSummary(submissions, totalPoints) {
       <summary><strong>Scores summary (${graded.length} graded)</strong></summary>
       <table class="records-grid" style="margin-top:0.75rem;">
         <thead><tr><th>Name</th><th>Score</th></tr></thead>
-        <tbody>${graded.map((s) => `<tr><td>${s.studentName}</td><td>${s.finalGrade?.score ?? "—"}/${totalPoints ?? "—"}</td></tr>`).join("")}</tbody>
+        <tbody>${graded.map((s) => `<tr><td>${displayStudentName(s.studentName)}</td><td>${s.finalGrade?.score ?? "—"}/${totalPoints ?? "—"}</td></tr>`).join("")}</tbody>
       </table>
     </details>`;
 }
@@ -1301,7 +1327,7 @@ async function generateAccomplishmentReport(context, canvas, buttonEl) {
 function renderImagesGallery(submissions, assignmentTitle, context) {
   const container = el("images-gallery");
   const withPhotos = submissions
-    .map((s) => ({ name: s.studentName, photos: s.photoPages?.length ? s.photoPages : s.photoData ? [s.photoData] : [] }))
+    .map((s) => ({ name: displayStudentName(s.studentName), photos: s.photoPages?.length ? s.photoPages : s.photoData ? [s.photoData] : [] }))
     .filter((s) => s.photos.length > 0);
   if (withPhotos.length === 0) {
     container.innerHTML = "";
@@ -1372,7 +1398,7 @@ async function getPhotoAssignments() {
     const photos = s.photoPages?.length ? s.photoPages : s.photoData ? [s.photoData] : [];
     if (photos.length === 0) return;
     if (!byAssignment.has(s.assignmentId)) byAssignment.set(s.assignmentId, []);
-    byAssignment.get(s.assignmentId).push({ name: s.studentName, photos });
+    byAssignment.get(s.assignmentId).push({ name: displayStudentName(s.studentName), photos });
   });
 
   return [...byAssignment.entries()].map(([assignmentId, withPhotos]) => {
@@ -1455,8 +1481,8 @@ async function loadSubmissions() {
          <div class="muted"><a href="${s.link}" target="_blank" rel="noopener">open in new tab</a></div>`
         : `<div class="muted"><a href="${s.link}" target="_blank" rel="noopener">${s.link}</a></div>`;
     row.innerHTML = `
-      <strong id="sub-name-${d.id}">${s.studentName}</strong>
-      <button type="button" class="secondary" data-edit-sub-name="${d.id}" data-uid="${s.studentUID}" style="margin-left:0.4rem;">Edit name</button>
+      <strong id="sub-name-${d.id}">${displayStudentName(s.studentName)}</strong>
+      <button type="button" class="secondary" data-edit-sub-name="${d.id}" data-uid="${s.studentUID}" data-raw="${s.studentName}" style="margin-left:0.4rem;">Edit name</button>
       <span class="status-${s.status}"> — ${s.status}</span>
       ${linkBlock}
       <div id="detail-${d.id}"></div>
@@ -1492,7 +1518,7 @@ async function loadSubmissions() {
     b.addEventListener("click", () => {
       const submissionId = b.dataset.editSubName;
       const nameEl = el(`sub-name-${submissionId}`);
-      const current = nameEl.textContent;
+      const current = b.dataset.raw;
       nameEl.innerHTML = `<input id="edit-sub-name-input-${submissionId}" value="${current}" style="width:auto; display:inline-block; margin-bottom:0;" />`;
       const input = el(`edit-sub-name-input-${submissionId}`);
       input.focus();

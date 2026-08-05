@@ -8,6 +8,12 @@ import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons } from "./embed
 let currentUser = null;
 function el(id) { return document.getElementById(id); }
 
+// Names arrive with inconsistent casing depending on source (roster
+// upload already uppercases on save, but the Google-account-name
+// fallback doesn't) - normalize how they *display*, without touching
+// the stored value.
+function displayStudentName(name) { return (name || "").toUpperCase(); }
+
 // Stash immediately at module load: guardPage() below may redirect a signed-
 // out student to index.html for Google Sign-In before this page gets a
 // second chance to read the query string - sessionStorage survives that
@@ -207,9 +213,9 @@ async function loadEverything() {
   classesList.innerHTML = enrollments.length
     ? enrollments.map((en) => `
         <span class="card" style="display:inline-block; margin-right:0.5rem;">
-          ${en.subjectName} — ${en.sectionName} (<span id="my-name-${en.id}">${en.studentName}</span>)
+          ${en.subjectName} — ${en.sectionName} (<span id="my-name-${en.id}">${displayStudentName(en.studentName)}</span>)
           <br><span class="muted" style="font-size:0.85em;">Teacher: ${en.teacherName || "—"}</span>
-          <button type="button" class="secondary" data-edit-my-name="${en.id}" style="margin-left:0.4rem;">Edit name</button>
+          <button type="button" class="secondary" data-edit-my-name="${en.id}" data-raw="${en.studentName}" style="margin-left:0.4rem;">Edit name</button>
           <button type="button" class="secondary" data-toggle-leave="${en.id}" data-current="${!!en.leaveRequested}" style="margin-left:0.4rem;">${en.leaveRequested ? "Cancel leave request" : "Request to leave"}</button>
           ${en.leaveRequested ? '<span class="status-pending"> — leave requested</span>' : ""}
         </span>`).join("")
@@ -219,7 +225,7 @@ async function loadEverything() {
     b.addEventListener("click", () => {
       const enrollmentId = b.dataset.editMyName;
       const nameEl = el(`my-name-${enrollmentId}`);
-      const current = nameEl.textContent;
+      const current = b.dataset.raw;
       nameEl.innerHTML = `<input id="edit-my-name-input-${enrollmentId}" value="${current}" style="width:auto; display:inline-block; margin-bottom:0;" />`;
       const input = el(`edit-my-name-input-${enrollmentId}`);
       input.focus();

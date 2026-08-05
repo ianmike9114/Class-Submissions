@@ -24,7 +24,7 @@ local storage only — never committed to git, never sent anywhere else).
 Replace `galutira.ianjoseph.f@gmail.com` if you ever change the teacher
 account, in:
 - `firestore.rules`
-- `js/firebase-config.js` (`TEACHER_EMAIL`)
+- `js/firebase-config.js` (`ADMIN_EMAIL`)
 
 Replace the Firebase config in `js/firebase-config.js` — get these values
 from Firebase Console → Project Settings (gear icon) → General → scroll to
