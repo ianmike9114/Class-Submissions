@@ -1744,13 +1744,27 @@ async function openReview(submissionId) {
       <div class="muted" style="margin-top:0.4rem; font-size:0.85em;">Return for revision unlocks editing for the student to redo the work; Publish finalizes the grade and locks it.</div>
     </div>`;
 
+  // <input max> only styles the field - it doesn't block typing or block a
+  // programmatic .value read, so an over-max score would otherwise save
+  // silently. Shared check for both buttons below.
+  function readValidScore() {
+    const score = Number(el(`score-${submissionId}`).value) || 0;
+    if (score < 0 || score > a.totalPoints) {
+      alert(`Score must be between 0 and ${a.totalPoints}.`);
+      return null;
+    }
+    return score;
+  }
+
   container.querySelector(`[data-publish]`).addEventListener("click", async () => {
+    const score = readValidScore();
+    if (score === null) return;
     const btn = container.querySelector(`[data-publish]`);
     btn.disabled = true;
     btn.textContent = "Saving...";
     await updateDoc(ref, {
       finalGrade: {
-        score: Number(el(`score-${submissionId}`).value) || 0,
+        score,
         feedback: el(`feedback-${submissionId}`).value,
       },
       status: "published",
@@ -1766,12 +1780,14 @@ async function openReview(submissionId) {
   // what needs fixing. Student side then deletes and resubmits, same as the
   // existing pending-submission "Remove" flow.
   container.querySelector(`[data-return]`).addEventListener("click", async () => {
+    const score = readValidScore();
+    if (score === null) return;
     const btn = container.querySelector(`[data-return]`);
     btn.disabled = true;
     btn.textContent = "Saving...";
     await updateDoc(ref, {
       finalGrade: {
-        score: Number(el(`score-${submissionId}`).value) || 0,
+        score,
         feedback: el(`feedback-${submissionId}`).value,
       },
       status: "returned",
