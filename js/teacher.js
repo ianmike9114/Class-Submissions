@@ -613,15 +613,22 @@ el("toggle-archived").addEventListener("change", loadSubjects);
 // teacher owns, from the Home dashboard - submissions only store
 // assignmentId (no subjectId/sectionId), so matches are resolved up the
 // assignment -> section -> subject chain to build the "Open" jump link.
+// Each keystroke fires its own async lookup, and a slower older request can
+// resolve after a faster newer one - searchRequestSeq lets a stale response
+// recognize it's been superseded and skip rendering instead of clobbering
+// the current query's results.
+let searchRequestSeq = 0;
 async function searchStudentGlobally() {
   const queryText = el("global-student-search").value;
   const results = el("global-search-results");
+  const requestId = ++searchRequestSeq;
   if (!queryText.trim()) {
     results.innerHTML = "";
     return;
   }
 
   const snap = await getDocs(ownerScopedQuery("submissions"));
+  if (requestId !== searchRequestSeq) return;
   const matches = snap.docs
     .map((d) => ({ id: d.id, ...d.data() }))
     .filter((s) => ownedByViewAs(s) && matchesNameSearch(s.studentName, queryText));
@@ -649,6 +656,7 @@ async function searchStudentGlobally() {
       .map((d) => [d.id, d.data()])
   );
 
+  if (requestId !== searchRequestSeq) return;
   results.innerHTML = matches.map((m) => {
     const a = assignments.get(m.assignmentId) || {};
     const sec = sections.get(a.sectionId) || {};
