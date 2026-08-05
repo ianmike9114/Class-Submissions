@@ -48,6 +48,17 @@ function el(id) { return document.getElementById(id); }
 // *display* everywhere, without touching the stored value.
 function displayStudentName(name) { return (name || "").toUpperCase(); }
 
+// Word-by-word match, order-independent and punctuation-insensitive, so
+// "narvasa lhian" matches a roster name stored as "Narvasa, Lhian M." -
+// every typed word just has to appear somewhere in the name.
+function matchesNameSearch(name, query) {
+  const words = (s) => (s || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
+  const queryWords = words(query);
+  if (queryWords.length === 0) return true;
+  const nameWords = words(name);
+  return queryWords.every((qw) => nameWords.some((nw) => nw.includes(qw)));
+}
+
 // Submitted photos are inline data: URLs (no Storage) - opening one with
 // <a href target="_blank"> navigates the browser straight to a raw
 // data:image/...;base64,... "page", which desktop and mobile browsers alike
@@ -597,6 +608,73 @@ el("add-subject-form").addEventListener("submit", async (e) => {
   loadSubjects();
 });
 el("toggle-archived").addEventListener("change", loadSubjects);
+
+// Finds a student's work across every subject/section/assignment the
+// teacher owns, from the Home dashboard - submissions only store
+// assignmentId (no subjectId/sectionId), so matches are resolved up the
+// assignment -> section -> subject chain to build the "Open" jump link.
+async function searchStudentGlobally() {
+  const queryText = el("global-student-search").value;
+  const results = el("global-search-results");
+  if (!queryText.trim()) {
+    results.innerHTML = "";
+    return;
+  }
+
+  const snap = await getDocs(ownerScopedQuery("submissions"));
+  const matches = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((s) => ownedByViewAs(s) && matchesNameSearch(s.studentName, queryText));
+
+  if (matches.length === 0) {
+    results.innerHTML = `<p class="muted">No matching student activity.</p>`;
+    return;
+  }
+
+  const assignmentIds = [...new Set(matches.map((m) => m.assignmentId))];
+  const assignments = new Map(
+    (await Promise.all(assignmentIds.map((id) => getDoc(doc(db, "assignments", id)))))
+      .map((d) => [d.id, d.data()])
+  );
+
+  const sectionIds = [...new Set([...assignments.values()].map((a) => a.sectionId).filter(Boolean))];
+  const sections = new Map(
+    (await Promise.all(sectionIds.map((id) => getDoc(doc(db, "sections", id)))))
+      .map((d) => [d.id, d.data()])
+  );
+
+  const subjectIds = [...new Set([...sections.values()].map((s) => s.subjectId).filter(Boolean))];
+  const subjects = new Map(
+    (await Promise.all(subjectIds.map((id) => getDoc(doc(db, "subjects", id)))))
+      .map((d) => [d.id, d.data()])
+  );
+
+  results.innerHTML = matches.map((m) => {
+    const a = assignments.get(m.assignmentId) || {};
+    const sec = sections.get(a.sectionId) || {};
+    const subj = subjects.get(sec.subjectId) || {};
+    return `
+      <div class="card">
+        <strong>${displayStudentName(m.studentName)}</strong>
+        <span class="status-${m.status}"> — ${m.status}</span>
+        <div class="muted">${subj.name || "—"} &rsaquo; ${sec.sectionName || "—"} &rsaquo; ${a.title || "—"}</div>
+        <button data-jump-subject="${sec.subjectId || ""}" data-jump-section="${a.sectionId || ""}" data-jump-assignment="${m.assignmentId}">Open</button>
+      </div>`;
+  }).join("");
+
+  results.querySelectorAll("[data-jump-assignment]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      if (!b.dataset.jumpSubject || !b.dataset.jumpSection) {
+        alert("Can't open this - its section or subject was deleted.");
+        return;
+      }
+      await openSubject(b.dataset.jumpSubject);
+      await openSection(b.dataset.jumpSection);
+      highlightStudentName = queryText;
+      await openAssignment(b.dataset.jumpAssignment);
+    }));
+}
+el("global-student-search").addEventListener("input", searchStudentGlobally);
 
 // ---------- sections ----------
 async function openSubject(subjectId) {
@@ -1601,8 +1679,16 @@ document.addEventListener("click", (e) => {
   if (!e.target.closest("#photos-bell, #photos-dropdown")) el("photos-dropdown").classList.add("hidden");
 });
 
+// Set right before openAssignment() when arriving via the Home dashboard's
+// global student search, so the matching row gets scrolled to/highlighted
+// once - cleared right after use so a later, normal visit to the same
+// assignment doesn't keep highlighting it.
+let highlightStudentName = "";
+
 async function loadSubmissions() {
   const filter = el("submission-filter").value;
+  const highlight = highlightStudentName;
+  highlightStudentName = "";
   const q = ownerScopedQuery("submissions", where("assignmentId", "==", state.assignmentId));
   const [snap, aDoc] = await Promise.all([getDocs(q), getDoc(doc(db, "assignments", state.assignmentId))]);
   const ownedDocs = snap.docs.filter((d) => ownedByViewAs(d.data()));
@@ -1626,6 +1712,7 @@ async function loadSubmissions() {
     if (filter !== "all" && s.status !== filter) return;
     const row = document.createElement("div");
     row.className = "card";
+    if (highlight && matchesNameSearch(s.studentName, highlight)) row.dataset.searchHighlight = "true";
     const embedUrl = toEmbedUrl(s.link);
     const linkBlock = (s.photoPages && s.photoPages.length > 0)
       ? `<div class="photo-thumbs">${s.photoPages.map((p, i) => `<button type="button" class="photo-thumb-btn" data-photo-src="${p}" title="page ${i + 1}"><img src="${p}" /></button>`).join("")}</div>`
@@ -1648,6 +1735,8 @@ async function loadSubmissions() {
       </div>`;
     list.appendChild(row);
   });
+  const highlighted = list.querySelector('[data-search-highlight="true"]');
+  if (highlighted) highlighted.scrollIntoView({ behavior: "smooth", block: "center" });
   if (AI_CHECK_ENABLED) {
     list.querySelectorAll("[data-ai]").forEach((b) =>
       b.addEventListener("click", () => runAiCheck(b.dataset.ai)));

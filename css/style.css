@@ -285,6 +285,13 @@ details.card summary::marker { color: var(--blue); }
   overflow-x: auto;
 }
 
+/* Marks the submission card jumped to from the Home dashboard's student
+   search, so it's obvious which row matched once the list scrolls to it. */
+[data-search-highlight="true"] {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
 @media (max-width: 640px) {
   header {
     flex-direction: column;
