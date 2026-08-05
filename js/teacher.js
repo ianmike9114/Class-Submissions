@@ -971,16 +971,26 @@ async function openEnrolled(onlySectionId) {
       || a.studentName.localeCompare(b.studentName));
 
   let masterListNote = "";
+  let masterListLinkControl = "";
   if (onlySectionId) {
     const syncResult = await syncEnrolleesToMasterList(sectionData, rows);
-    if (syncResult) {
-      masterListNote = syncResult.synced > 0
-        ? `<p class="muted">Synced ${syncResult.synced} new student${syncResult.synced === 1 ? "" : "s"} to master list "${syncResult.listName}".</p>`
-        : `<p class="muted">Synced with master list "${syncResult.listName}".</p>`;
+    if (syncResult && syncResult.synced > 0) {
+      masterListNote = `<p class="muted">Synced ${syncResult.synced} new student${syncResult.synced === 1 ? "" : "s"} to master list "${syncResult.listName}".</p>`;
     }
+    const lists = await getMasterLists();
+    masterListLinkControl = `
+      <div class="card">
+        <label>Linked master list</label>
+        <select id="master-list-link-select">
+          <option value="">— None (unlinked) —</option>
+          ${lists.map((l) => `<option value="${l.id}" ${l.id === sectionData.masterListId ? "selected" : ""}>${l.name}</option>`).join("")}
+        </select>
+        <p class="muted">Students who join this section are added to the linked list automatically. Change or clear it here anytime.</p>
+        ${masterListNote}
+      </div>`;
   }
 
-  list.innerHTML = masterListNote + (rows.length
+  list.innerHTML = masterListLinkControl + (rows.length
     ? `<table class="records-grid"><thead><tr><th>#</th><th>Name</th><th>Gmail</th><th>Section</th><th></th></tr></thead><tbody>
         ${rows.map((r, i) => `<tr><td>${i + 1}</td><td id="enroll-name-${r.id}">${displayStudentName(r.studentName)}${r.leaveRequested ? ' <span class="status-pending">(leave requested)</span>' : ""}</td><td>${r.studentEmail || ""}</td><td>${sectionMap.get(r.sectionId) || ""}</td><td>
           <button class="secondary" data-edit-enrollment="${r.id}" data-uid="${r.studentUID}" data-raw="${r.studentName}">Edit name</button>
@@ -988,6 +998,16 @@ async function openEnrolled(onlySectionId) {
         </td></tr>`).join("")}
       </tbody></table>`
     : '<p class="muted">No students enrolled yet.</p>');
+
+  const linkSelect = el("master-list-link-select");
+  if (linkSelect) {
+    linkSelect.addEventListener("change", async () => {
+      const newListId = linkSelect.value || null;
+      await updateDoc(doc(db, "sections", onlySectionId), { masterListId: newListId });
+      alert(newListId ? "Linked to that master list." : "Unlinked.");
+      openEnrolled(onlySectionId);
+    });
+  }
 
   // Fixes a garbled/raw Google display name (common when a section had no
   // roster to pick from at join time) without needing the student to
