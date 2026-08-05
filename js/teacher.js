@@ -517,7 +517,9 @@ async function loadSubjects() {
     b.addEventListener("click", () => editSubjectYearTerm(b.dataset.editYear)));
   list.querySelectorAll("[data-archive]").forEach((b) =>
     b.addEventListener("click", async () => {
-      await updateDoc(doc(db, "subjects", b.dataset.archive), { archived: b.dataset.value === "true" });
+      const archiving = b.dataset.value === "true";
+      await updateDoc(doc(db, "subjects", b.dataset.archive), { archived: archiving });
+      alert(archiving ? "Archived." : "Unarchived.");
       loadSubjects();
     }));
   list.querySelectorAll("[data-delete-subject]").forEach((b) =>
@@ -529,6 +531,7 @@ async function loadSubjects() {
       if (!ok) return;
       b.disabled = true;
       await cascadeDeleteSubject(b.dataset.deleteSubject);
+      alert("Deleted.");
       loadSubjects();
     }));
 }
@@ -552,6 +555,7 @@ async function editSubjectYearTerm(subjectId) {
       schoolYear: el(`edit-year-${subjectId}`).value.trim(),
       term: el(`edit-term-${subjectId}`).value,
     });
+    alert("Saved.");
     loadSubjects();
   });
 }
@@ -567,6 +571,7 @@ el("add-subject-form").addEventListener("submit", async (e) => {
     ownerEmail: state.viewAsEmail,
     ownerName: currentUser.displayName || currentUser.email,
   });
+  alert("Subject added.");
   e.target.reset();
   loadSubjects();
 });
@@ -676,6 +681,7 @@ async function loadSections() {
       if (!ok) return;
       b.disabled = true;
       await cascadeDeleteSection(b.dataset.deleteSection);
+      alert("Deleted.");
       loadSections();
     }));
   list.querySelectorAll(".invite-name-select").forEach((select) => {
@@ -724,6 +730,7 @@ async function loadSections() {
   list.querySelectorAll("[data-cancel-invite]").forEach((b) =>
     b.addEventListener("click", async () => {
       await deleteDoc(doc(db, "invites", b.dataset.cancelInvite));
+      alert("Invite cancelled.");
       loadSections();
     }));
   list.querySelectorAll(".apply-master-list-btn").forEach((b) =>
@@ -758,6 +765,7 @@ async function editSectionName(sectionId) {
     const name = el(`edit-section-name-${sectionId}`).value.trim();
     if (!name) return;
     await updateDoc(doc(db, "sections", sectionId), { sectionName: name });
+    alert("Saved.");
     loadSections();
   });
 }
@@ -770,6 +778,7 @@ el("add-section-form").addEventListener("submit", async (e) => {
     joinCode: genJoinCode(),
     ownerEmail: state.viewAsEmail,
   });
+  alert("Section added.");
   e.target.reset();
   loadSections();
 });
@@ -864,6 +873,7 @@ async function openEnrolled(onlySectionId) {
       const ok = confirm(msg);
       if (!ok) return;
       await deleteDoc(doc(db, "enrollments", b.dataset.removeEnrollment));
+      alert("Removed.");
       openEnrolled(onlySectionId);
       refreshNotifications();
     }));
@@ -1001,6 +1011,7 @@ async function loadAssignments() {
       if (!ok) return;
       b.disabled = true;
       await cascadeDeleteAssignment(b.dataset.deleteAssignment);
+      alert("Deleted.");
       loadAssignments();
     }));
 }
@@ -1023,6 +1034,7 @@ el("add-assignment-form").addEventListener("submit", async (e) => {
     createdAt: Date.now(),
     ownerEmail: state.viewAsEmail,
   });
+  alert("Assignment added.");
   e.target.reset();
   loadAssignments();
 });
@@ -1086,6 +1098,7 @@ el("edit-assignment-form").addEventListener("submit", async (e) => {
     totalPoints: Number(el("edit-assignment-total-points").value) || 0,
     rubricReferenceLink: el("edit-assignment-rubric-link").value.trim(),
   });
+  alert("Saved.");
   await openAssignment(assignmentId);
 });
 
@@ -1623,6 +1636,7 @@ async function loadSubmissions() {
       if (!ok) return;
       b.disabled = true;
       await deleteDoc(doc(db, "submissions", b.dataset.deleteSub));
+      alert("Deleted.");
       loadSubmissions();
     }));
 
@@ -2053,6 +2067,7 @@ async function loadMasterLists() {
         const name = el(`master-list-name-input-${listId}`).value.trim();
         if (!name) return;
         await updateDoc(doc(db, "masterLists", listId), { name, updatedAt: serverTimestamp() });
+        alert("Renamed.");
         loadMasterLists();
       });
     }));
@@ -2071,6 +2086,7 @@ async function loadMasterLists() {
       const ok = confirm(`Delete the student list "${list.name}"? This only deletes the saved list — it doesn't affect anyone already enrolled or invited.`);
       if (!ok) return;
       await deleteDoc(doc(db, "masterLists", listId));
+      alert("Deleted.");
       loadMasterLists();
     }));
 }
@@ -2113,6 +2129,7 @@ function renderMasterListStudentsEditor(listId, students) {
       b.addEventListener("click", () => { draft.splice(Number(b.dataset.removeStudent), 1); render(); }));
     el(`save-master-list-students-${listId}`).addEventListener("click", async () => {
       await updateDoc(doc(db, "masterLists", listId), { students: draft, updatedAt: serverTimestamp() });
+      alert("Saved.");
       loadMasterLists();
     });
   };
@@ -2301,6 +2318,7 @@ async function loadTeachers() {
       if (!ok) return;
       b.disabled = true;
       await deleteDoc(doc(db, "teachers", email));
+      alert("Access removed.");
       loadTeachers();
       renderViewAsPicker();
     }));
@@ -2315,6 +2333,7 @@ el("add-teacher-form").addEventListener("submit", async (e) => {
     addedAt: Date.now(),
     addedBy: currentUser.email,
   });
+  alert("Access granted.");
   e.target.reset();
   loadTeachers();
   renderViewAsPicker();

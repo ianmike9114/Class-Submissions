@@ -238,6 +238,7 @@ async function loadEverything() {
         try {
           if (name && name !== current) {
             await updateDoc(doc(db, "enrollments", enrollmentId), { studentName: name });
+            alert("Saved.");
           }
         } catch (err) {
           alert("Couldn't save name: " + err.message);
@@ -263,6 +264,7 @@ async function loadEverything() {
       b.disabled = true;
       try {
         await updateDoc(doc(db, "enrollments", enrollmentId), { leaveRequested: next });
+        alert(next ? "Leave request sent." : "Leave request cancelled.");
       } catch (err) {
         alert("Couldn't update leave request: " + err.message);
       }
@@ -358,6 +360,7 @@ async function loadEverything() {
             removeBtn.disabled = true;
             try {
               await deleteDoc(doc(db, "submissions", subDoc.id));
+              alert("Removed — you can resubmit now.");
               loadEverything();
             } catch (err) {
               alert("Couldn't remove submission: " + err.message);
@@ -584,6 +587,7 @@ function wireSubmitForm(form) {
         });
       }
       pendingPhotos.delete(assignmentId);
+      alert(submissionId ? "Saved — resubmitted for review." : "Submitted!");
       loadEverything();
     } catch (err) {
       alert((submissionId ? "Save failed: " : "Submit failed: ") + err.message);
