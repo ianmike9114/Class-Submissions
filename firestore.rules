@@ -135,6 +135,19 @@ service cloud.firestore {
                     || (isSignedIn() && resource.data.studentEmail == request.auth.token.email.lower());
     }
 
+    // ---------- masterLists (teacher's reusable name+email roster,
+    // independent of any subject/section - built from an enrolled
+    // section's real emails and/or pasted manually, applied to other
+    // sections as bulk invites; persists indefinitely so it can be
+    // reused next school year). No student-facing access - fully
+    // owner-locked on read, unlike sections/assignments above. ----------
+    match /masterLists/{listId} {
+      allow read: if isSignedIn() && canActAsOwner(resource.data);
+      allow create: if isSuperAdmin()
+                    || (isGrantedTeacher() && request.resource.data.ownerEmail == request.auth.token.email);
+      allow update, delete: if canActAsOwner(resource.data);
+    }
+
     // ---------- enrollments ----------
     match /enrollments/{enrollmentId} {
       allow read: if isSignedIn()

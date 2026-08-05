@@ -13,6 +13,7 @@
   <header>
     <div style="display:flex; align-items:center; gap:0.75rem;">
       <button class="secondary" id="go-home">&#8962; Home</button>
+      <button class="secondary" id="toggle-master-lists">Student Lists</button>
       <button class="secondary" id="toggle-settings">&#9881; Settings</button>
       <select id="view-as-picker" class="hidden" style="width:auto;"></select>
       <h1>Teacher Dashboard</h1>
@@ -104,7 +105,31 @@
     <section id="view-enrolled" class="hidden">
       <button class="secondary" id="back-to-subject-from-enrolled">&larr; Back</button>
       <h2 id="enrolled-view-name"></h2>
+      <button class="secondary hidden" id="build-master-list-btn">Save as a reusable student list</button>
+      <p id="build-master-list-message" class="muted"></p>
       <div id="enrolled-list" class="card"></div>
+    </section>
+
+    <!-- STUDENT LISTS (reusable name+email lists, independent of any subject/term) -->
+    <section id="view-master-lists" class="hidden">
+      <button class="secondary" id="back-from-master-lists">&larr; Back</button>
+      <h2>Student Lists</h2>
+      <p class="muted">Reusable name + email lists, independent of any subject or school term. Build one from an already-enrolled section's Enrolled Students page, or paste one manually below. Apply a list from a section's "Invite by email" panel to bulk-invite everyone in it at once.</p>
+
+      <details class="card">
+        <summary><strong>New list (paste names + emails)</strong></summary>
+        <div style="margin-top:0.75rem;">
+          <label>List name</label>
+          <input id="new-master-list-name" placeholder="e.g. Grade 12 TVL-ICT" />
+          <label>Paste one student per line — "Name, email@gmail.com", or paste two columns (Name, Email) straight from a spreadsheet</label>
+          <textarea id="master-list-manual-paste" rows="6" placeholder="Alcaide, Led Jervis J., led@gmail.com"></textarea>
+          <button type="button" id="master-list-add-manual">+ Add to list</button>
+          <p id="master-list-message" class="muted"></p>
+          <div id="master-list-preview"></div>
+        </div>
+      </details>
+
+      <div id="master-lists-list"></div>
     </section>
 
     <!-- ONE SECTION -> ASSIGNMENTS -->
@@ -249,6 +274,6 @@
   <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-  <script type="module" src="js/teacher.js?v=17"></script>
+  <script type="module" src="js/teacher.js?v=18"></script>
 </body>
 </html>

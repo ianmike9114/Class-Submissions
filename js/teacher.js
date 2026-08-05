@@ -221,6 +221,48 @@ async function getPendingInvites() {
   return bySection;
 }
 
+// ---------- master lists (reusable name+email rosters, independent of any
+// subject/section - see buildMasterListFromSection()/applyMasterListToSection()
+// below) ----------
+async function getMasterLists() {
+  const snap = await getDocs(ownerScopedQuery("masterLists"));
+  return snap.docs
+    .filter((d) => ownedByViewAs(d.data()))
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// Bulk-creates one invites doc per master-list student not already
+// enrolled in or invited to this section (by lowercased email) - same
+// doc shape as the one-at-a-time "Invite by email" form, just looped.
+async function applyMasterListToSection(listId, sectionId, sectionName, pendingInvites) {
+  const list = (await getDoc(doc(db, "masterLists", listId))).data();
+  const enrollSnap = await getDocs(ownerScopedQuery("enrollments", where("sectionId", "==", sectionId)));
+  const enrolledEmails = new Set(
+    enrollSnap.docs.filter((d) => ownedByViewAs(d.data())).map((d) => (d.data().studentEmail || "").toLowerCase())
+  );
+  const invitedEmails = new Set(pendingInvites.map((inv) => (inv.studentEmail || "").toLowerCase()));
+
+  const students = list.students || [];
+  const toInvite = students.filter((s) => s.email && !enrolledEmails.has(s.email.toLowerCase()) && !invitedEmails.has(s.email.toLowerCase()));
+  const skippedEnrolled = students.filter((s) => s.email && enrolledEmails.has(s.email.toLowerCase())).length;
+  const skippedInvited = students.filter((s) => s.email && invitedEmails.has(s.email.toLowerCase())).length;
+
+  await Promise.all(toInvite.map((student) => addDoc(collection(db, "invites"), {
+    studentEmail: student.email.toLowerCase(),
+    studentName: student.name,
+    subjectId: state.subjectId,
+    subjectName: state.subjectName,
+    sectionId,
+    sectionName,
+    teacherName: state.subjectOwnerName,
+    ownerEmail: state.viewAsEmail,
+    createdAt: serverTimestamp(),
+  })));
+
+  return { invited: toInvite.length, skippedEnrolled, skippedInvited };
+}
+
 let lastNotifications = { submissions: [], leaves: [], totalCount: 0, error: false };
 
 // One combined fetch that resolves ids to display names (unlike
@@ -545,8 +587,8 @@ async function openSubject(subjectId) {
 
 async function loadSections() {
   const q = query(collection(db, "sections"), where("subjectId", "==", state.subjectId));
-  const [snap, counts, leaveCounts, invitesBySection] = await Promise.all([
-    getDocs(q), getPendingCounts(), getLeaveRequestCounts(), getPendingInvites(),
+  const [snap, counts, leaveCounts, invitesBySection, masterLists] = await Promise.all([
+    getDocs(q), getPendingCounts(), getLeaveRequestCounts(), getPendingInvites(), getMasterLists(),
   ]);
   const list = el("sections-list");
   list.innerHTML = "";
@@ -603,6 +645,19 @@ async function loadSections() {
                 <button type="button" class="secondary" data-cancel-invite="${inv.id}">Cancel</button>
               </div>`).join("") : ""}
           </div>
+        </div>
+      </details>
+      <details style="margin-top:0.5rem;">
+        <summary class="muted" style="cursor:pointer;">Apply a saved student list</summary>
+        <div style="margin-top:0.5rem;">
+          ${masterLists.length ? `
+          <select class="master-list-select">
+            <option value="">Choose a list…</option>
+            ${masterLists.map((l) => `<option value="${l.id}">${l.name} (${l.students.length})</option>`).join("")}
+          </select>
+          <button type="button" class="apply-master-list-btn" data-section="${d.id}">Invite everyone in this list</button>` : `
+          <p class="muted">No saved lists yet — build one from an already-enrolled section's Enrolled Students page, or add one from Student Lists in the header.</p>`}
+          <p class="apply-master-list-message muted"></p>
         </div>
       </details>`;
     list.appendChild(row);
@@ -671,6 +726,24 @@ async function loadSections() {
       await deleteDoc(doc(db, "invites", b.dataset.cancelInvite));
       loadSections();
     }));
+  list.querySelectorAll(".apply-master-list-btn").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const sectionId = b.dataset.section;
+      const select = b.parentElement.querySelector(".master-list-select");
+      const listId = select.value;
+      if (!listId) return;
+      const msg = b.parentElement.querySelector(".apply-master-list-message");
+      b.disabled = true;
+      msg.textContent = "Inviting...";
+      try {
+        const result = await applyMasterListToSection(listId, sectionId, sectionNames.get(sectionId), invitesBySection.get(sectionId) || []);
+        msg.textContent = `Invited ${result.invited}. Skipped ${result.skippedEnrolled} already enrolled, ${result.skippedInvited} already invited.`;
+        loadSections();
+      } catch (err) {
+        msg.textContent = "Couldn't apply list: " + err.message;
+        b.disabled = false;
+      }
+    }));
 }
 
 async function editSectionName(sectionId) {
@@ -707,6 +780,7 @@ el("add-section-form").addEventListener("submit", async (e) => {
 // from view-subject) - same table either way, just a different source query
 // and back-button target.
 let enrolledBackView = "view-subject";
+let enrolledSectionId = null; // set below when this is a single-section view - lets #build-master-list-btn know what to build from
 async function openEnrolled(onlySectionId) {
   let sectionMap, titleText;
   if (onlySectionId) {
@@ -720,6 +794,9 @@ async function openEnrolled(onlySectionId) {
     titleText = el("subject-view-name").textContent;
     enrolledBackView = "view-subject";
   }
+  enrolledSectionId = onlySectionId || null;
+  el("build-master-list-btn").classList.toggle("hidden", !onlySectionId);
+  el("build-master-list-message").textContent = "";
   el("enrolled-view-name").textContent = titleText;
   const sectionIds = [...sectionMap.keys()];
 
@@ -796,6 +873,43 @@ async function openEnrolled(onlySectionId) {
 el("open-enrolled").addEventListener("click", () => openEnrolled());
 el("open-enrolled-section").addEventListener("click", () => openEnrolled(state.sectionId));
 el("back-to-subject-from-enrolled").addEventListener("click", () => show(enrolledBackView));
+el("build-master-list-btn").addEventListener("click", () => {
+  if (enrolledSectionId) buildMasterListFromSection(enrolledSectionId);
+});
+
+// Pulls real name+email pairs from an already-enrolled section's
+// enrollments (self-reported at sign-in, so these are verified emails,
+// not retyped by the teacher) into a new reusable masterLists doc - the
+// "sync this section's roster to my other subject" entry point.
+async function buildMasterListFromSection(sectionId) {
+  const msg = el("build-master-list-message");
+  const enrollSnap = await getDocs(ownerScopedQuery("enrollments", where("sectionId", "==", sectionId)));
+  const owned = enrollSnap.docs.filter((d) => ownedByViewAs(d.data())).map((d) => d.data());
+  const candidates = owned.filter((e) => e.studentEmail);
+  const skippedNoEmail = owned.length - candidates.length;
+  if (candidates.length === 0) {
+    msg.textContent = "No enrolled students with an email on file.";
+    return;
+  }
+  const name = prompt('Name this student list (e.g. "Grade 12 TVL-ICT"):', el("enrolled-view-name").textContent);
+  if (name === null) return;
+  const trimmed = name.trim();
+  if (!trimmed) return;
+
+  msg.textContent = "Saving...";
+  try {
+    await addDoc(collection(db, "masterLists"), {
+      ownerEmail: state.viewAsEmail,
+      name: trimmed,
+      students: candidates.map((e) => ({ name: e.studentName, email: e.studentEmail.toLowerCase(), gender: "" })),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    msg.textContent = `Saved ${candidates.length} students to "${trimmed}"${skippedNoEmail ? ` (skipped ${skippedNoEmail} with no email on file)` : ""}. Find it under Student Lists in the header.`;
+  } catch (err) {
+    msg.textContent = "Couldn't save: " + err.message;
+  }
+}
 
 // ---------- assignments ----------
 async function openSection(sectionId) {
@@ -1816,6 +1930,187 @@ function renderDuplicateReview() {
     }));
 }
 
+// ---------- master lists management (Student Lists header view) ----------
+async function openMasterLists() {
+  show("view-master-lists");
+  loadMasterLists();
+}
+el("toggle-master-lists").addEventListener("click", openMasterLists);
+el("back-from-master-lists").addEventListener("click", () => { show("view-subjects"); loadSubjects(); });
+
+// Accepts either "Name, email" (one comma-separated line) or a
+// tab-separated paste straight from a spreadsheet's Name/Email columns -
+// matches the two ways a teacher realistically has this data on hand.
+function parseMasterListPaste(text) {
+  const EMAIL_RE = /[^\s,]+@[^\s,]+\.[^\s,]+/;
+  const out = [];
+  for (const rawLine of text.split(/\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (line.includes("\t")) {
+      const [name, email] = line.split("\t").map((s) => s.trim());
+      if (name && email) out.push({ name: name.toUpperCase(), email: email.toLowerCase() });
+      continue;
+    }
+    const match = line.match(EMAIL_RE);
+    if (!match) continue;
+    const email = match[0].toLowerCase();
+    const name = line.slice(0, match.index).replace(/,\s*$/, "").trim();
+    if (name) out.push({ name: name.toUpperCase(), email });
+  }
+  return out;
+}
+
+let masterListPreviewStudents = [];
+el("master-list-add-manual").addEventListener("click", () => {
+  const textarea = el("master-list-manual-paste");
+  const parsed = parseMasterListPaste(textarea.value);
+  const seen = new Set(masterListPreviewStudents.map((s) => s.email));
+  for (const p of parsed) {
+    if (seen.has(p.email)) continue;
+    seen.add(p.email);
+    masterListPreviewStudents.push({ ...p, gender: "" });
+  }
+  textarea.value = "";
+  renderMasterListPreview();
+});
+
+function renderMasterListPreview() {
+  const container = el("master-list-preview");
+  if (masterListPreviewStudents.length === 0) {
+    container.innerHTML = "";
+    return;
+  }
+  const rows = masterListPreviewStudents.map((s, i) => `
+    <tr><td>${i + 1}</td><td>${s.name}</td><td>${s.email}</td><td>
+      <button type="button" class="secondary" data-remove-master-preview="${i}">Remove</button>
+    </td></tr>`).join("");
+  container.innerHTML = `
+    <p class="muted">${masterListPreviewStudents.length} student(s) parsed. Remove any that aren't actual students, then save.</p>
+    <table class="records-grid"><thead><tr><th>#</th><th>Name</th><th>Email</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+    <button id="master-list-save" style="margin-top:0.75rem;">Save List (${masterListPreviewStudents.length})</button>`;
+
+  container.querySelectorAll("[data-remove-master-preview]").forEach((b) =>
+    b.addEventListener("click", () => {
+      masterListPreviewStudents.splice(Number(b.dataset.removeMasterPreview), 1);
+      renderMasterListPreview();
+    }));
+
+  el("master-list-save").addEventListener("click", async () => {
+    const name = el("new-master-list-name").value.trim();
+    if (!name) {
+      el("master-list-message").textContent = "Name this list first.";
+      return;
+    }
+    await addDoc(collection(db, "masterLists"), {
+      ownerEmail: state.viewAsEmail,
+      name,
+      students: masterListPreviewStudents,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    el("master-list-message").textContent = `Saved "${name}" with ${masterListPreviewStudents.length} students.`;
+    masterListPreviewStudents = [];
+    el("master-list-preview").innerHTML = "";
+    el("new-master-list-name").value = "";
+    loadMasterLists();
+  });
+}
+
+async function loadMasterLists() {
+  const lists = await getMasterLists();
+  const container = el("master-lists-list");
+  container.innerHTML = lists.length
+    ? lists.map((l) => `
+      <div class="card">
+        <strong id="master-list-name-${l.id}">${l.name}</strong>
+        <span class="muted"> — ${l.students.length} student${l.students.length === 1 ? "" : "s"}</span>
+        <div id="master-list-name-edit-${l.id}"></div>
+        <div style="margin-top:0.5rem;">
+          <button class="secondary" data-edit-master-list-name="${l.id}">Rename</button>
+          <button class="secondary" data-toggle-master-list-students="${l.id}">View / Edit students</button>
+          <button class="danger icon" data-delete-master-list="${l.id}" title="Delete list" aria-label="Delete list">×</button>
+        </div>
+        <div id="master-list-students-${l.id}"></div>
+      </div>`).join("")
+    : '<p class="muted">No saved lists yet.</p>';
+
+  container.querySelectorAll("[data-edit-master-list-name]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const listId = b.dataset.editMasterListName;
+      const list = lists.find((l) => l.id === listId);
+      const holder = el(`master-list-name-edit-${listId}`);
+      holder.innerHTML = `<input id="master-list-name-input-${listId}" value="${list.name}" style="width:auto; display:inline-block;" /><button data-save-master-list-name>Save</button>`;
+      holder.querySelector("[data-save-master-list-name]").addEventListener("click", async () => {
+        const name = el(`master-list-name-input-${listId}`).value.trim();
+        if (!name) return;
+        await updateDoc(doc(db, "masterLists", listId), { name, updatedAt: serverTimestamp() });
+        loadMasterLists();
+      });
+    }));
+
+  container.querySelectorAll("[data-toggle-master-list-students]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const listId = b.dataset.toggleMasterListStudents;
+      const list = lists.find((l) => l.id === listId);
+      renderMasterListStudentsEditor(listId, list.students);
+    }));
+
+  container.querySelectorAll("[data-delete-master-list]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const listId = b.dataset.deleteMasterList;
+      const list = lists.find((l) => l.id === listId);
+      const ok = confirm(`Delete the student list "${list.name}"? This only deletes the saved list — it doesn't affect anyone already enrolled or invited.`);
+      if (!ok) return;
+      await deleteDoc(doc(db, "masterLists", listId));
+      loadMasterLists();
+    }));
+}
+
+// Toggles an inline editable table for one list's students - a fresh
+// in-memory draft each time it's opened, discarded (not saved) if the
+// panel is collapsed again without hitting Save.
+function renderMasterListStudentsEditor(listId, students) {
+  const container = el(`master-list-students-${listId}`);
+  if (container.dataset.open === "true") {
+    container.innerHTML = "";
+    container.dataset.open = "false";
+    return;
+  }
+  container.dataset.open = "true";
+  const draft = students.map((s) => ({ ...s }));
+
+  const render = () => {
+    container.innerHTML = `
+      <table class="records-grid"><thead><tr><th>#</th><th>Name</th><th>Email</th><th></th></tr></thead><tbody>
+        ${draft.map((s, i) => `<tr><td>${i + 1}</td><td>${s.name}</td><td>${s.email}</td><td>
+          <button type="button" class="secondary" data-remove-student="${i}">Remove</button>
+        </td></tr>`).join("")}
+      </tbody></table>
+      <div style="margin-top:0.5rem;">
+        <input id="add-student-name-${listId}" placeholder="Name" style="width:auto; display:inline-block;" />
+        <input id="add-student-email-${listId}" placeholder="Email" style="width:auto; display:inline-block;" />
+        <button type="button" id="add-student-btn-${listId}">+ Add</button>
+      </div>
+      <button id="save-master-list-students-${listId}" style="margin-top:0.5rem;">Save changes</button>`;
+
+    el(`add-student-btn-${listId}`).addEventListener("click", () => {
+      const name = el(`add-student-name-${listId}`).value.trim().toUpperCase();
+      const email = el(`add-student-email-${listId}`).value.trim().toLowerCase();
+      if (!name || !email) return;
+      draft.push({ name, email, gender: "" });
+      render();
+    });
+    container.querySelectorAll("[data-remove-student]").forEach((b) =>
+      b.addEventListener("click", () => { draft.splice(Number(b.dataset.removeStudent), 1); render(); }));
+    el(`save-master-list-students-${listId}`).addEventListener("click", async () => {
+      await updateDoc(doc(db, "masterLists", listId), { students: draft, updatedAt: serverTimestamp() });
+      loadMasterLists();
+    });
+  };
+  render();
+}
+
 // ---------- records (gradebook grid, one section at a time) ----------
 async function openRecords() {
   show("view-records");
@@ -1914,7 +2209,7 @@ async function loadRecords() {
 
 // ---------- nav ----------
 function show(viewId) {
-  ["view-subjects", "view-subject", "view-enrolled", "view-section", "view-assignment", "view-records"].forEach((v) => {
+  ["view-subjects", "view-subject", "view-enrolled", "view-section", "view-assignment", "view-records", "view-master-lists"].forEach((v) => {
     el(v).classList.toggle("hidden", v !== viewId);
   });
   // Survives a page refresh - restoreNavState() below replays whichever
@@ -1933,6 +2228,10 @@ function show(viewId) {
 async function restoreNavState() {
   let saved;
   try { saved = JSON.parse(sessionStorage.getItem("teacherNavState") || "null"); } catch { saved = null; }
+  if (saved && saved.view === "view-master-lists") {
+    await openMasterLists();
+    return;
+  }
   if (!saved || saved.view === "view-subjects" || !saved.subjectId) {
     show("view-subjects");
     loadSubjects();
