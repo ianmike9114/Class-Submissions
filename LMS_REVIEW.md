@@ -36,13 +36,12 @@ generic advice.
 
 Ranked roughly by how much they'd actually hurt if they bit:
 
-1. **`README.md` is stale against the current grading model.** It still
-   describes "you run an AI rubric-check that drafts a score + feedback"
-   as the default flow and references a "2-criterion rubric" test step.
-   The real default today is single raw-score grading with AI check
-   hidden (`AI_CHECK_ENABLED = false`). Anyone following the README to
-   onboard a second teacher would be confused by step 6's rubric
-   instructions. **Cheap fix, worth doing soon.**
+1. ~~**`README.md` is stale against the current grading model.**~~
+   **Fixed 2026-08-06.** It described "you run an AI rubric-check that
+   drafts a score + feedback" as the default flow and referenced a
+   "2-criterion rubric" test step. Updated to describe the real default
+   (single raw-score grading, AI check optional/off by default) —
+   intro, setup step 5, test step 6, and the day-to-day section.
 2. **No backup path for grade data.** The Class Record `.xlsx` export was
    deliberately removed (teacher finalizes grades themselves elsewhere —
    a reasonable call), but that also means Firestore is now the *only*
