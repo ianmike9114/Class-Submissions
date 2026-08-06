@@ -6,9 +6,10 @@ import {
 import { getGeminiKey, setGeminiKey, runRubricCheck } from "./gemini.js";
 import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons } from "./embed.js";
 import { loadWorkbook } from "./class-record.js";
-import {
-  Document, Packer, Paragraph, TextRun, ImageRun, HeadingLevel, AlignmentType,
-} from "https://cdn.jsdelivr.net/npm/docx@9.7.1/dist/index.mjs";
+// docx is loaded dynamically (see buildAccomplishmentReportDocx()) instead
+// of a static import here - it's a sizeable ESM bundle only needed by the
+// accomplishment-report feature, not every teacher.html load.
+const DOCX_CDN_URL = "https://cdn.jsdelivr.net/npm/docx@9.7.1/dist/index.mjs";
 
 // AI rubric-check is hidden (not deleted) - per-call Gemini cost isn't
 // worth it right now. Flip this back to true to restore the Run AI Check
@@ -21,6 +22,28 @@ const AI_CHECK_ENABLED = false;
 
 const state = { subjectId: null, sectionId: null, assignmentId: null, subjectName: null, subjectOwnerName: null, viewAsEmail: null };
 let currentUser = null;
+
+// xlsx/qrcodejs/jszip used to be eager <script> tags in teacher.html,
+// blocking every page load with ~950KB+ of code most teachers never touch
+// that session (roster upload, QR expand, ZIP download are each one-off
+// actions). Loaded on demand instead, cached per URL so a second use
+// doesn't re-fetch/re-inject.
+const scriptLoadPromises = new Map();
+function loadScriptOnce(src) {
+  if (!scriptLoadPromises.has(src)) {
+    scriptLoadPromises.set(src, new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = src;
+      script.onload = resolve;
+      script.onerror = () => reject(new Error(`Failed to load ${src}`));
+      document.head.appendChild(script);
+    }));
+  }
+  return scriptLoadPromises.get(src);
+}
+const XLSX_CDN_URL = "https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js";
+const QRCODEJS_CDN_URL = "https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js";
+const JSZIP_CDN_URL = "https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js";
 
 // Legacy (pre-multi-teacher) docs have no ownerEmail field at all - a plain
 // where("ownerEmail","==",...) filter would silently exclude them forever,
@@ -555,30 +578,34 @@ async function getEnrollmentNotRespondingOverview() {
     .map((d) => ({ id: d.id, ...d.data() }))
     .filter((s) => ownedByViewAs(s) && !s.archived);
 
-  const result = [];
-  for (const subject of subjects) {
+  // Every level below runs in parallel (Promise.all) rather than
+  // sequential for-of/await - same total read count as before, but a
+  // teacher with several subjects/sections/assignments waits for the
+  // slowest single round-trip per level instead of the sum of all of them.
+  const subjectResults = await Promise.all(subjects.map(async (subject) => {
     const sectSnap = await getDocs(ownerScopedQuery("sections", where("subjectId", "==", subject.id)));
     const sections = sectSnap.docs.filter((d) => ownedByViewAs(d.data())).map((d) => ({ id: d.id, ...d.data() }));
 
-    const sectionResults = [];
-    for (const section of sections) {
-      const assignSnap = await getDocs(query(collection(db, "assignments"), where("sectionId", "==", section.id)));
+    const sectionResults = await Promise.all(sections.map(async (section) => {
+      const [assignSnap, enrollSnap] = await Promise.all([
+        getDocs(query(collection(db, "assignments"), where("sectionId", "==", section.id))),
+        getDocs(ownerScopedQuery("enrollments", where("sectionId", "==", section.id))),
+      ]);
       const assignments = assignSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      if (assignments.length === 0) continue; // nothing posted yet, nothing to be missing
-
-      const enrollSnap = await getDocs(ownerScopedQuery("enrollments", where("sectionId", "==", section.id)));
+      if (assignments.length === 0) return null; // nothing posted yet, nothing to be missing
       const enrollments = enrollSnap.docs.filter((d) => ownedByViewAs(d.data())).map((d) => d.data());
 
       const submittedByStudent = new Map(); // studentUID -> Set of assignmentIds
-      for (const a of assignments) {
-        const subSnap = await getDocs(ownerScopedQuery("submissions", where("assignmentId", "==", a.id)));
-        subSnap.forEach((d) => {
+      const subSnaps = await Promise.all(assignments.map((a) =>
+        getDocs(ownerScopedQuery("submissions", where("assignmentId", "==", a.id)))));
+      assignments.forEach((a, i) => {
+        subSnaps[i].forEach((d) => {
           const sub = d.data();
           if (!ownedByViewAs(sub)) return;
           if (!submittedByStudent.has(sub.studentUID)) submittedByStudent.set(sub.studentUID, new Set());
           submittedByStudent.get(sub.studentUID).add(a.id);
         });
-      }
+      });
 
       const rows = enrollments
         .map((e) => {
@@ -589,13 +616,14 @@ async function getEnrollmentNotRespondingOverview() {
         .filter((r) => r.missing > 0)
         .sort((a, b) => b.missing - a.missing);
 
-      if (rows.length > 0) sectionResults.push({ sectionId: section.id, sectionName: section.sectionName, rows });
-    }
+      return rows.length > 0 ? { sectionId: section.id, sectionName: section.sectionName, rows } : null;
+    }));
 
-    if (sectionResults.length > 0) result.push({ subjectId: subject.id, subjectName: subject.name, sections: sectionResults });
-  }
+    const filteredSections = sectionResults.filter(Boolean);
+    return filteredSections.length > 0 ? { subjectId: subject.id, subjectName: subject.name, sections: filteredSections } : null;
+  }));
 
-  return result;
+  return subjectResults.filter(Boolean);
 }
 
 function renderNotRespondingOverview(data) {
@@ -828,7 +856,7 @@ async function loadSections() {
         <button class="secondary" data-edit-section="${d.id}">Edit name</button>
         <button class="danger icon" data-delete-section="${d.id}" title="Delete section" aria-label="Delete section">×</button>
       </div>
-      <details style="margin-top:0.5rem;">
+      <details style="margin-top:0.5rem;" data-qr-toggle="${d.id}">
         <summary class="muted" style="cursor:pointer;">Show QR</summary>
         <div style="margin-top:0.5rem;">
           <p class="muted" style="margin:0 0 0.35rem;"><strong>${state.subjectName || "—"}</strong> — ${s.sectionName}</p>
@@ -879,7 +907,16 @@ async function loadSections() {
         </div>
       </details>`;
     list.appendChild(row);
-    renderSectionQR(d.id, s.joinCode, `${state.subjectName || "—"} — ${s.sectionName}`);
+    // QR draw deferred until the "Show QR" <details> is actually opened -
+    // most teachers never open it, so this also skips loading qrcodejs
+    // (see loadScriptOnce()) until it's really needed.
+    let qrRendered = false;
+    row.querySelector("[data-qr-toggle]").addEventListener("toggle", async (e) => {
+      if (!e.target.open || qrRendered) return;
+      qrRendered = true;
+      await loadScriptOnce(QRCODEJS_CDN_URL);
+      renderSectionQR(d.id, s.joinCode, `${state.subjectName || "—"} — ${s.sectionName}`);
+    });
   });
   list.querySelectorAll("[data-open]").forEach((b) =>
     b.addEventListener("click", () => openSection(b.dataset.open)));
@@ -1376,6 +1413,7 @@ async function downloadPhotosZip(withPhotos, filename, buttonEl) {
   const original = buttonEl.textContent;
   buttonEl.textContent = "Zipping...";
   try {
+    await loadScriptOnce(JSZIP_CDN_URL);
     const zip = new JSZip();
     withPhotos.forEach((s) => {
       const safeName = s.name.replace(/[/\\:*?"<>|]/g, "-");
@@ -1634,6 +1672,7 @@ async function renderCollagePreview(withPhotos, context) {
 // teacher will share their real report template later to refine the exact
 // layout.
 async function buildAccomplishmentReportDocx({ title, subjectName, sectionName, dateLabel, description, collageBuffer, collageWidth, collageHeight }) {
+  const { Document, Paragraph, TextRun, ImageRun, HeadingLevel, AlignmentType } = await import(DOCX_CDN_URL);
   const pageContentWidth = 540;
   const imgHeight = Math.round(pageContentWidth * (collageHeight / collageWidth));
 
@@ -1678,6 +1717,7 @@ async function generateAccomplishmentReport(context, canvas, buttonEl) {
       collageWidth: canvas.width,
       collageHeight: canvas.height,
     });
+    const { Packer } = await import(DOCX_CDN_URL);
     const blob = await Packer.toBlob(doc);
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -2147,6 +2187,7 @@ el("roster-config-form").addEventListener("submit", async (e) => {
   try {
     const file = el("roster-file").files[0];
     if (!file) throw new Error("Choose a file first.");
+    await loadScriptOnce(XLSX_CDN_URL);
     const rows = await loadWorkbook(file, {
       sheet: el("roster-sheet").value,
       nameCol: el("roster-name-col").value,

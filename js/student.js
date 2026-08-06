@@ -301,6 +301,19 @@ async function loadEverything() {
     assignmentsById.set(aDoc.id, aDoc.data());
   }
 
+  // Fetch every assignment's own-submission lookup in parallel rather than
+  // one at a time - each assignment card used to wait on the previous
+  // one's round-trip before it could even start rendering.
+  const allADocs = [...assignmentsBySubject.values()].flat();
+  const subDocsByAssignment = new Map(await Promise.all(allADocs.map(async (aDoc) => [
+    aDoc.id,
+    (await getDocs(
+      query(collection(db, "submissions"),
+        where("assignmentId", "==", aDoc.id),
+        where("studentUID", "==", currentUser.uid))
+    )).docs[0],
+  ])));
+
   for (const [subjectName, aDocs] of assignmentsBySubject) {
     if (aDocs.length === 0) continue;
     const heading = document.createElement("h3");
@@ -309,11 +322,7 @@ async function loadEverything() {
 
     for (const aDoc of aDocs) {
       const a = aDoc.data();
-      const subDoc = (await getDocs(
-        query(collection(db, "submissions"),
-          where("assignmentId", "==", aDoc.id),
-          where("studentUID", "==", currentUser.uid))
-      )).docs[0];
+      const subDoc = subDocsByAssignment.get(aDoc.id);
 
       const row = document.createElement("div");
       row.className = "card";

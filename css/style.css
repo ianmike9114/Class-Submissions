@@ -71,7 +71,12 @@ button:disabled { background: #9ca3af; cursor: not-allowed; }
    (sized off the .photo-thumb button "x" precedent below, without its
    absolute-positioning overlay - these sit inline, not layered on a photo). */
 button.danger.icon {
-  padding: 0.25rem 0.55rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
   border-radius: 50%;
   font-size: 0.85rem;
   line-height: 1;
@@ -192,10 +197,15 @@ label { font-weight: 600; font-size: 0.85rem; display: block; margin-bottom: 0.2
   position: absolute;
   top: -6px;
   right: -6px;
-  padding: 0 0.35rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
   border-radius: 50%;
-  font-size: 0.75rem;
-  line-height: 1.4;
+  font-size: 0.8rem;
+  line-height: 1;
 }
 .photo-thumbs a img, .photo-thumbs button img { width: 150px; height: 150px; }
 button.photo-thumb-btn {
@@ -239,7 +249,16 @@ button.photo-thumb-btn {
   padding: 0;
 }
 
+/* display:block turns the table itself into the horizontal-scroll
+   container - every .records-grid table scrolls in its own box on a
+   narrow screen instead of forcing the whole page to scroll sideways,
+   regardless of which card/view it's rendered into (originally only
+   #records-table below had this, but the Records grid isn't the only
+   nowrap table in the app - see Enrolled Students, Master Lists, etc). */
 .records-grid {
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
   width: 100%;
   border-collapse: collapse;
   background: white;
@@ -279,10 +298,6 @@ details.card summary::marker { color: var(--blue); }
   height: auto;
   border: 1px solid var(--gray-border);
   border-radius: var(--radius-sm);
-}
-
-#records-table {
-  overflow-x: auto;
 }
 
 /* Marks the submission card jumped to from the Home dashboard's student
