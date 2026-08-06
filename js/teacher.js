@@ -620,10 +620,6 @@ async function loadSubjects() {
   el("global-student-search").value = "";
   el("global-search-results").innerHTML = "";
   searchRequestSeq++; // invalidate any in-flight search so it can't repopulate this after the fact
-  el("not-responding-overview").innerHTML = '<p class="muted">Checking activity status...</p>';
-  getEnrollmentNotRespondingOverview().then((data) => {
-    el("not-responding-overview").innerHTML = renderNotRespondingOverview(data);
-  });
   const showArchived = el("toggle-archived").checked;
   const [snap, counts, leaveCounts] = await Promise.all([getDocs(ownerScopedQuery("subjects")), getPendingCounts(), getLeaveRequestCounts()]);
   const list = el("subjects-list");
@@ -2324,6 +2320,10 @@ function renderMasterListPreview() {
 }
 
 async function loadMasterLists() {
+  el("not-responding-overview").innerHTML = '<p class="muted">Checking activity status...</p>';
+  getEnrollmentNotRespondingOverview().then((data) => {
+    el("not-responding-overview").innerHTML = renderNotRespondingOverview(data);
+  });
   const lists = await getMasterLists();
   const container = el("master-lists-list");
   container.innerHTML = lists.length
