@@ -325,65 +325,6 @@ async function syncEnrolleesToMasterList(sectionData, enrollments) {
   return { listName: list.name, synced: newStudents.length };
 }
 
-// Powers the Student Lists page's "Not responding" summary - unlike
-// syncEnrolleesToMasterList() (add-only, keyed off one section's live
-// enrollments) this reads across every section linked to the list and
-// reports who's missing at least one submission, without writing
-// anything. A master list student who never enrolled anywhere shows as
-// "not-joined" rather than being silently skipped, same reasoning as
-// the Records grid's "Not joined" cell (loadRecords()).
-async function getMasterListActivityStatus(list) {
-  const sectionsSnap = await getDocs(ownerScopedQuery("sections", where("masterListId", "==", list.id)));
-  const sections = sectionsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  if (sections.length === 0) return { linked: false };
-
-  let totalActivities = 0;
-  const enrollmentsByEmail = new Map();
-  const submissionsByEnrollment = new Map(); // studentUID -> Set of assignmentIds with a submission
-
-  for (const section of sections) {
-    const [assignSnap, enrollSnap] = await Promise.all([
-      getDocs(query(collection(db, "assignments"), where("sectionId", "==", section.id))),
-      getDocs(ownerScopedQuery("enrollments", where("sectionId", "==", section.id))),
-    ]);
-    const assignments = assignSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    const enrollments = enrollSnap.docs.filter((d) => ownedByViewAs(d.data())).map((d) => d.data());
-    totalActivities += assignments.length;
-
-    for (const e of enrollments) {
-      const email = (e.studentEmail || "").toLowerCase();
-      if (email) enrollmentsByEmail.set(email, e);
-      if (!submissionsByEnrollment.has(e.studentUID)) submissionsByEnrollment.set(e.studentUID, new Set());
-    }
-
-    for (const a of assignments) {
-      const subSnap = await getDocs(ownerScopedQuery("submissions", where("assignmentId", "==", a.id)));
-      subSnap.forEach((d) => {
-        const sub = d.data();
-        if (!ownedByViewAs(sub)) return;
-        if (!submissionsByEnrollment.has(sub.studentUID)) submissionsByEnrollment.set(sub.studentUID, new Set());
-        submissionsByEnrollment.get(sub.studentUID).add(a.id);
-      });
-    }
-  }
-
-  const allEnrollments = [...enrollmentsByEmail.values()];
-  const rows = list.students.map((s) => {
-    const email = (s.email || "").toLowerCase();
-    let enrollment = email ? enrollmentsByEmail.get(email) : null;
-    if (!enrollment) {
-      enrollment = allEnrollments.find((en) =>
-        matchesNameSearch(en.studentName, s.name) || matchesNameSearch(s.name, en.studentName));
-    }
-    if (!enrollment) return { name: s.name, email: s.email, status: "not-joined", missing: totalActivities, total: totalActivities };
-    const submitted = submissionsByEnrollment.get(enrollment.studentUID) || new Set();
-    const missing = totalActivities - submitted.size;
-    return { name: s.name, email: s.email, status: missing > 0 ? "missing" : "ok", missing, total: totalActivities };
-  });
-
-  return { linked: true, totalActivities, rows };
-}
-
 let lastNotifications = { submissions: [], leaves: [], totalCount: 0, error: false };
 
 // One combined fetch that resolves ids to display names (unlike
@@ -602,6 +543,76 @@ async function renameStudentEverywhere(studentUID, newName) {
 }
 
 // ---------- subjects ----------
+// Powers the Home dashboard's "Not responding" overview - unlike the
+// Records grid (one section at a time, keyed off a manually-set roster)
+// this scans every non-archived subject/section the teacher owns and
+// flags real enrollments (not a roster or master list) with at least one
+// missing submission, so it works even for sections with no roster or
+// master list set up at all.
+async function getEnrollmentNotRespondingOverview() {
+  const subjSnap = await getDocs(ownerScopedQuery("subjects"));
+  const subjects = subjSnap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((s) => ownedByViewAs(s) && !s.archived);
+
+  const result = [];
+  for (const subject of subjects) {
+    const sectSnap = await getDocs(ownerScopedQuery("sections", where("subjectId", "==", subject.id)));
+    const sections = sectSnap.docs.filter((d) => ownedByViewAs(d.data())).map((d) => ({ id: d.id, ...d.data() }));
+
+    const sectionResults = [];
+    for (const section of sections) {
+      const assignSnap = await getDocs(query(collection(db, "assignments"), where("sectionId", "==", section.id)));
+      const assignments = assignSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      if (assignments.length === 0) continue; // nothing posted yet, nothing to be missing
+
+      const enrollSnap = await getDocs(ownerScopedQuery("enrollments", where("sectionId", "==", section.id)));
+      const enrollments = enrollSnap.docs.filter((d) => ownedByViewAs(d.data())).map((d) => d.data());
+
+      const submittedByStudent = new Map(); // studentUID -> Set of assignmentIds
+      for (const a of assignments) {
+        const subSnap = await getDocs(ownerScopedQuery("submissions", where("assignmentId", "==", a.id)));
+        subSnap.forEach((d) => {
+          const sub = d.data();
+          if (!ownedByViewAs(sub)) return;
+          if (!submittedByStudent.has(sub.studentUID)) submittedByStudent.set(sub.studentUID, new Set());
+          submittedByStudent.get(sub.studentUID).add(a.id);
+        });
+      }
+
+      const rows = enrollments
+        .map((e) => {
+          const submitted = submittedByStudent.get(e.studentUID) || new Set();
+          const missing = assignments.length - submitted.size;
+          return { name: e.studentName, email: e.studentEmail || "", missing, total: assignments.length };
+        })
+        .filter((r) => r.missing > 0)
+        .sort((a, b) => b.missing - a.missing);
+
+      if (rows.length > 0) sectionResults.push({ sectionId: section.id, sectionName: section.sectionName, rows });
+    }
+
+    if (sectionResults.length > 0) result.push({ subjectId: subject.id, subjectName: subject.name, sections: sectionResults });
+  }
+
+  return result;
+}
+
+function renderNotRespondingOverview(data) {
+  if (data.length === 0) return '<p class="muted">No missing activity across your classes.</p>';
+  return data.map((subj) => `
+    <div style="margin-bottom:1rem;">
+      <strong>${subj.subjectName}</strong>
+      ${subj.sections.map((sec) => `
+        <div style="margin-top:0.5rem;">
+          <span class="muted">${sec.sectionName} — ${sec.rows.length} not responding</span>
+          <table class="records-grid"><thead><tr><th>Name</th><th>Email</th><th>Missing</th></tr></thead><tbody>
+            ${sec.rows.map((r) => `<tr><td>${r.name}</td><td>${r.email}</td><td>${r.missing}/${r.total}</td></tr>`).join("")}
+          </tbody></table>
+        </div>`).join("")}
+    </div>`).join("");
+}
+
 async function loadSubjects() {
   // Every path back to the Home view calls this - reset the global search
   // box here too, so a stale query/result list from before navigating away
@@ -609,6 +620,10 @@ async function loadSubjects() {
   el("global-student-search").value = "";
   el("global-search-results").innerHTML = "";
   searchRequestSeq++; // invalidate any in-flight search so it can't repopulate this after the fact
+  el("not-responding-overview").innerHTML = '<p class="muted">Checking activity status...</p>';
+  getEnrollmentNotRespondingOverview().then((data) => {
+    el("not-responding-overview").innerHTML = renderNotRespondingOverview(data);
+  });
   const showArchived = el("toggle-archived").checked;
   const [snap, counts, leaveCounts] = await Promise.all([getDocs(ownerScopedQuery("subjects")), getPendingCounts(), getLeaveRequestCounts()]);
   const list = el("subjects-list");
@@ -2308,20 +2323,6 @@ function renderMasterListPreview() {
   });
 }
 
-function renderNotRespondingBlock(status) {
-  if (!status.linked) return '<p class="muted" style="margin-top:0.75rem;">Not linked to a section - can\'t check activity status.</p>';
-  if (status.totalActivities === 0) return '<p class="muted" style="margin-top:0.75rem;">No activities posted in the linked section(s) yet.</p>';
-  const notResponding = status.rows
-    .filter((r) => r.status !== "ok")
-    .sort((a, b) => (a.status === b.status ? b.missing - a.missing : a.status === "not-joined" ? -1 : 1));
-  if (notResponding.length === 0) return '<p class="muted" style="margin-top:0.75rem;">Everyone\'s submitted everything posted so far.</p>';
-  const rows = notResponding.map((r) => `
-    <tr><td>${r.name}</td><td>${r.email}</td><td>${r.status === "not-joined" ? "Not joined" : `${r.missing}/${r.total}`}</td></tr>`).join("");
-  return `
-    <p style="margin-top:0.75rem;"><strong>Not responding (${notResponding.length} of ${status.rows.length} students)</strong></p>
-    <table class="records-grid"><thead><tr><th>Name</th><th>Email</th><th>Missing</th></tr></thead><tbody>${rows}</tbody></table>`;
-}
-
 async function loadMasterLists() {
   const lists = await getMasterLists();
   const container = el("master-lists-list");
@@ -2337,16 +2338,8 @@ async function loadMasterLists() {
           <button class="danger icon" data-delete-master-list="${l.id}" title="Delete list" aria-label="Delete list">×</button>
         </div>
         <div id="master-list-students-${l.id}"></div>
-        <div id="master-list-status-${l.id}"><p class="muted" style="margin-top:0.75rem;">Checking activity status...</p></div>
       </div>`).join("")
     : '<p class="muted">No saved lists yet.</p>';
-
-  lists.forEach((l) => {
-    getMasterListActivityStatus(l).then((status) => {
-      const holder = el(`master-list-status-${l.id}`);
-      if (holder) holder.innerHTML = renderNotRespondingBlock(status);
-    });
-  });
 
   container.querySelectorAll("[data-edit-master-list-name]").forEach((b) =>
     b.addEventListener("click", () => {
