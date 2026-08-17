@@ -4,6 +4,7 @@ import {
   collection, addDoc, doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, query, where, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getGeminiKey, setGeminiKey, runRubricCheck } from "./gemini.js";
+import { getEmailConfig, saveEmailConfig, notifySection } from "./notify.js";
 import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons } from "./embed.js";
 import { loadWorkbook } from "./class-record.js";
 // docx is loaded dynamically (see buildAccomplishmentReportDocx()) instead
@@ -13,8 +14,9 @@ const DOCX_CDN_URL = "https://cdn.jsdelivr.net/npm/docx@9.7.1/dist/index.mjs";
 
 // AI rubric-check is hidden (not deleted) - per-call Gemini cost isn't
 // worth it right now. Flip this back to true to restore the Run AI Check
-// button, the Settings gear (only the Gemini key box lives there), and
-// the "AI drafted" filter option. Note: runAiCheck() below still expects
+// button and the "AI drafted" filter option (the Settings gear itself
+// stays visible regardless - the EmailJS notify config lives there too
+// now). Note: runAiCheck() below still expects
 // assignment.rubric (per-criterion), which assignments no longer have
 // since grading switched to a single total-points score - re-enabling
 // would need a small adapter first.
@@ -595,6 +597,9 @@ async function getEnrollmentNotRespondingOverview() {
       if (assignments.length === 0) return null; // nothing posted yet, nothing to be missing
       const enrollments = enrollSnap.docs.filter((d) => ownedByViewAs(d.data())).map((d) => d.data());
 
+      const writtenIds = new Set(assignments.filter((a) => a.component === "written").map((a) => a.id));
+      const performanceIds = new Set(assignments.filter((a) => a.component === "performance").map((a) => a.id));
+
       const submittedByStudent = new Map(); // studentUID -> Set of assignmentIds
       const subSnaps = await Promise.all(assignments.map((a) =>
         getDocs(ownerScopedQuery("submissions", where("assignmentId", "==", a.id)))));
@@ -610,11 +615,19 @@ async function getEnrollmentNotRespondingOverview() {
       const rows = enrollments
         .map((e) => {
           const submitted = submittedByStudent.get(e.studentUID) || new Set();
-          const missing = assignments.length - submitted.size;
-          return { name: e.studentName, email: e.studentEmail || "", missing, total: assignments.length };
+          const writtenMissing = [...writtenIds].filter((id) => !submitted.has(id)).length;
+          const performanceMissing = [...performanceIds].filter((id) => !submitted.has(id)).length;
+          return {
+            name: e.studentName,
+            email: e.studentEmail || "",
+            writtenMissing,
+            writtenTotal: writtenIds.size,
+            performanceMissing,
+            performanceTotal: performanceIds.size,
+          };
         })
-        .filter((r) => r.missing > 0)
-        .sort((a, b) => b.missing - a.missing);
+        .filter((r) => r.writtenMissing > 0 || r.performanceMissing > 0)
+        .sort((a, b) => (b.writtenMissing + b.performanceMissing) - (a.writtenMissing + a.performanceMissing));
 
       return rows.length > 0 ? { sectionId: section.id, sectionName: section.sectionName, rows } : null;
     }));
@@ -634,8 +647,8 @@ function renderNotRespondingOverview(data) {
       ${subj.sections.map((sec) => `
         <div style="margin-top:0.5rem;">
           <span class="muted">${sec.sectionName} — ${sec.rows.length} not responding</span>
-          <table class="records-grid"><thead><tr><th>Name</th><th>Email</th><th>Missing</th></tr></thead><tbody>
-            ${sec.rows.map((r) => `<tr><td>${r.name}</td><td>${r.email}</td><td>${r.missing}/${r.total}</td></tr>`).join("")}
+          <table class="records-grid"><thead><tr><th>Name</th><th>Email</th><th>Written</th><th>Performance</th></tr></thead><tbody>
+            ${sec.rows.map((r) => `<tr><td>${r.name}</td><td>${r.email}</td><td>${r.writtenMissing}/${r.writtenTotal}</td><td>${r.performanceMissing}/${r.performanceTotal}</td></tr>`).join("")}
           </tbody></table>
         </div>`).join("")}
     </div>`).join("");
@@ -1302,25 +1315,51 @@ async function loadAssignments() {
 el("add-assignment-form").addEventListener("submit", async (e) => {
   e.preventDefault();
 
+  const title = el("assignment-title").value.trim();
+  const dueDate = el("assignment-due").value;
   await addDoc(collection(db, "assignments"), {
     subjectId: state.subjectId,
     sectionId: state.sectionId,
-    title: el("assignment-title").value.trim(),
+    title,
     instructions: el("assignment-instructions").value.trim(),
     instructionsLink: el("assignment-instructions-link").value.trim(),
     uploadFolderLink: el("assignment-upload-link").value.trim(),
     component: el("assignment-component").value,
-    dueDate: el("assignment-due").value,
+    dueDate,
     allowedFileTypes: el("assignment-filetype").value,
     totalPoints: Number(el("assignment-total-points").value) || 0,
     rubricReferenceLink: el("assignment-rubric-link").value.trim(),
     createdAt: Date.now(),
     ownerEmail: state.viewAsEmail,
   });
-  alert("Assignment added.");
   e.target.reset();
   loadAssignments();
+  await notifyOnAssignmentCreate(title, dueDate);
 });
+
+// Assignments have no separate draft/publish step - creating one *is*
+// releasing it - so this is the release notify point. Silently does
+// nothing if the teacher hasn't saved an EmailJS config in Settings.
+async function notifyOnAssignmentCreate(title, dueDate) {
+  if (!getEmailConfig().serviceId) { alert("Assignment added."); return; }
+
+  const enrollSnap = await getDocs(ownerScopedQuery("enrollments", where("sectionId", "==", state.sectionId)));
+  const students = enrollSnap.docs
+    .filter((d) => ownedByViewAs(d.data()))
+    .map((d) => ({ name: d.data().studentName, email: d.data().studentEmail || "" }));
+
+  if (students.length === 0) { alert("Assignment added."); return; }
+  if (!confirm(`Assignment added. Notify ${students.length} enrolled student(s) by email?`)) return;
+
+  const { sent, failed } = await notifySection({
+    students,
+    subjectName: state.subjectName || "",
+    sectionName: el("section-view-name").textContent || "",
+    assignmentTitle: title,
+    dueDate,
+  });
+  alert(`Notified: ${sent} sent${failed ? `, ${failed} failed` : ""}.`);
+}
 
 // ---------- submissions ----------
 function renderAssignmentContext(a) {
@@ -2672,10 +2711,15 @@ el("back-to-section-from-records").addEventListener("click", () => show("view-se
 el("sign-out").addEventListener("click", signOutUser);
 wireOpenInChromeButtons(el("assignment-context"));
 
-// ---------- settings (Gemini key, kept in localStorage only) ----------
+// ---------- settings (Gemini key + EmailJS config, kept in localStorage only) ----------
 el("settings-form").addEventListener("submit", (e) => {
   e.preventDefault();
-  setGeminiKey(el("gemini-key").value);
+  if (AI_CHECK_ENABLED) setGeminiKey(el("gemini-key").value);
+  saveEmailConfig({
+    serviceId: el("emailjs-service-id").value,
+    templateId: el("emailjs-template-id").value,
+    publicKey: el("emailjs-public-key").value,
+  });
   el("settings-message").textContent = "Saved (kept in this browser only).";
 });
 
@@ -2748,17 +2792,15 @@ guardPage("teacher").then((user) => {
   const isAdmin = user.email === ADMIN_EMAIL;
   if (AI_CHECK_ENABLED) {
     el("gemini-key").value = getGeminiKey();
+    el("gemini-settings-section").classList.remove("hidden");
   } else {
     const aiOption = el("submission-filter").querySelector('option[value="ai-drafted"]');
     if (aiOption) aiOption.hidden = true;
   }
-  // The Settings button used to only gate the (now-hidden) Gemini key box,
-  // so it hid itself whenever AI_CHECK_ENABLED was off. It's also the entry
-  // point to teacher-account management now, so the super admin always
-  // keeps it, regardless of that flag.
-  if (!AI_CHECK_ENABLED && !isAdmin) {
-    el("toggle-settings").classList.add("hidden");
-  }
+  const emailConfig = getEmailConfig();
+  el("emailjs-service-id").value = emailConfig.serviceId;
+  el("emailjs-template-id").value = emailConfig.templateId;
+  el("emailjs-public-key").value = emailConfig.publicKey;
   if (isAdmin) {
     el("admin-teachers-section").classList.remove("hidden");
     loadTeachers();

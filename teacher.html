@@ -36,10 +36,16 @@
     <div class="card hidden" id="settings-panel">
       <h2>General Settings</h2>
       <form id="settings-form">
-        <label>Gemini API key (for AI rubric-check)</label>
-        <input id="gemini-key" type="password" placeholder="Paste your key from aistudio.google.com/apikey" />
-        <p class="muted">Kept in this browser only - never saved to the repo or seen by students.</p>
-        <button type="submit">Save key</button>
+        <div id="gemini-settings-section" class="hidden">
+          <label>Gemini API key (for AI rubric-check)</label>
+          <input id="gemini-key" type="password" placeholder="Paste your key from aistudio.google.com/apikey" />
+        </div>
+        <label>Notify students by email on new assignment (EmailJS)</label>
+        <input id="emailjs-service-id" placeholder="Service ID" />
+        <input id="emailjs-template-id" placeholder="Template ID" />
+        <input id="emailjs-public-key" placeholder="Public key" />
+        <p class="muted">Free account at emailjs.com. Leave blank to skip notify prompts. Kept in this browser only - never saved to the repo or seen by students.</p>
+        <button type="submit">Save settings</button>
       </form>
       <p id="settings-message" class="muted"></p>
 
