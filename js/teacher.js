@@ -127,6 +127,34 @@ function joinLinkFor(joinCode) {
   return new URL(`student.html?code=${joinCode}`, location.href).href;
 }
 
+// Ready-to-paste announcement for a new assignment. The channel students
+// actually reach (Messenger group) - complements the EmailJS notify path,
+// which misses students with no email. Uses state stashed by openSection().
+function buildAssignmentAnnouncement(a) {
+  return [
+    `📌 New assignment: ${a.title}`,
+    `Class: ${state.subjectName || "—"} — ${state.sectionName || "—"}`,
+    `Due: ${a.dueDate || "no deadline"}`,
+    state.joinCode ? `Open/join here: ${joinLinkFor(state.joinCode)}` : "",
+  ].filter(Boolean).join("\n");
+}
+
+// Hand the announcement to the native share sheet (phone -> Messenger
+// group in one tap); fall back to clipboard, then a plain alert - same
+// progressive-fallback pattern as index.html's Copy link button. Never
+// throws (a cancelled share sheet rejects, which we swallow).
+async function shareAnnouncement(text) {
+  if (navigator.share) {
+    try { await navigator.share({ text }); return; } catch { /* cancelled or unsupported - fall through */ }
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    alert("Copied — paste it into your Messenger group.");
+  } catch {
+    alert(text);
+  }
+}
+
 // Renders a QR entirely client-side (qrcodejs CDN global) - the join link
 // never leaves the device, no external QR image API involved. The
 // subject/section label is baked into the same canvas (not just a sibling
@@ -1223,6 +1251,10 @@ async function openSection(sectionId) {
   state.assignmentId = null;
   const section = (await getDoc(doc(db, "sections", sectionId))).data();
   el("section-view-name").textContent = section.sectionName;
+  // Kept on state so loadAssignments() can build a shareable announcement
+  // (title + class + due + join link) without re-fetching the section.
+  state.joinCode = section.joinCode;
+  state.sectionName = section.sectionName;
 
   // Preload the already-saved roster (if any) so it's editable right away,
   // instead of only being visible right after a fresh upload. Older
@@ -1278,9 +1310,11 @@ async function loadAssignments() {
   const list = el("assignments-list");
   list.innerHTML = "";
   const assignmentTitles = new Map(); // id -> title, for the delete-confirm prompt below
+  const assignmentData = new Map();   // id -> full data, for the Share-to-group button
   snap.forEach((d) => {
     const a = d.data();
     assignmentTitles.set(d.id, a.title);
+    assignmentData.set(d.id, a);
     const row = document.createElement("div");
     row.className = "card";
     row.innerHTML = `
@@ -1292,12 +1326,15 @@ async function loadAssignments() {
       <div class="muted">Allowed: ${a.allowedFileTypes} — ${a.totalPoints} points</div>
       <div style="margin-top:0.5rem;">
         <button data-open="${d.id}">Open submissions</button>
+        <button class="secondary" data-share="${d.id}">&#128227; Share to group</button>
         <button class="danger icon" data-delete-assignment="${d.id}" title="Delete assignment" aria-label="Delete assignment">×</button>
       </div>`;
     list.appendChild(row);
   });
   list.querySelectorAll("[data-open]").forEach((b) =>
     b.addEventListener("click", () => openAssignment(b.dataset.open)));
+  list.querySelectorAll("[data-share]").forEach((b) =>
+    b.addEventListener("click", () => shareAnnouncement(buildAssignmentAnnouncement(assignmentData.get(b.dataset.share)))));
   list.querySelectorAll("[data-delete-assignment]").forEach((b) =>
     b.addEventListener("click", async () => {
       const ok = confirmByTyping(

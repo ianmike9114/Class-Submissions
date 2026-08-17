@@ -211,6 +211,20 @@ el("join-form").addEventListener("submit", async (e) => {
 });
 
 // ---------- load classes + assignments + submissions ----------
+// Client-side "New assignment" flagging - a per-section map of the last
+// time this browser saw the section's assignments. Purely localStorage: no
+// Firestore write, no rules change, no quota cost (per-device is fine for a
+// visual nicety). Assignments carry a numeric createdAt (Date.now()), so an
+// assignment newer than the stored timestamp is "New" until the next visit.
+const ASSIGN_SEEN_KEY = "assignmentsSeen";
+function getAssignmentsSeen() {
+  try { return JSON.parse(localStorage.getItem(ASSIGN_SEEN_KEY)) || {}; }
+  catch { return {}; }
+}
+function saveAssignmentsSeen(map) {
+  try { localStorage.setItem(ASSIGN_SEEN_KEY, JSON.stringify(map)); } catch { /* storage full/blocked - badge is optional */ }
+}
+
 async function loadEverything() {
   const enrollSnap = await getDocs(
     query(collection(db, "enrollments"), where("studentUID", "==", currentUser.uid))
@@ -314,6 +328,8 @@ async function loadEverything() {
     )).docs[0],
   ])));
 
+  const seen = getAssignmentsSeen();
+
   for (const [subjectName, aDocs] of assignmentsBySubject) {
     if (aDocs.length === 0) continue;
     const heading = document.createElement("h3");
@@ -323,6 +339,10 @@ async function loadEverything() {
     for (const aDoc of aDocs) {
       const a = aDoc.data();
       const subDoc = subDocsByAssignment.get(aDoc.id);
+      // "New" only when this section has a known last-seen baseline (so a
+      // student's first-ever load doesn't flag every assignment) and the
+      // assignment was created after it.
+      const isNew = a.createdAt && seen[a.sectionId] != null && a.createdAt > seen[a.sectionId];
 
       const row = document.createElement("div");
       row.className = "card";
@@ -339,6 +359,7 @@ async function loadEverything() {
           : "";
         row.innerHTML = `
           <strong>${a.title}</strong> <span class="muted">due ${a.dueDate || "no date"}</span>
+          ${isNew ? '<span class="status-pending"> New</span>' : ""}
           ${a.instructions ? `<p>${a.instructions}</p>` : ""}
           ${instructionsFileBlock}
           ${uploadFolderBlock}
@@ -419,6 +440,16 @@ async function loadEverything() {
       }
     }
   }
+
+  // Mark every section shown this load as seen "now", so this visit's
+  // assignments won't read as New next time (and first-seen sections get a
+  // baseline). Written after the render loop so the isNew checks above still
+  // compare against the previous visit's timestamps.
+  for (const sectionId of new Set(allADocs.map((d) => d.data().sectionId))) {
+    seen[sectionId] = Date.now();
+  }
+  saveAssignmentsSeen(seen);
+
   attachSubmitHandlers();
 }
 
