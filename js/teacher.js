@@ -147,9 +147,16 @@ async function shareAnnouncement(text) {
   if (navigator.share) {
     try { await navigator.share({ text }); return; } catch { /* cancelled or unsupported - fall through */ }
   }
+  copyAnnouncement(text);
+}
+
+// Always copy, never share sheet - the desktop path, where the native share
+// sheet lists only installed desktop apps (no Messenger/Facebook). Teacher
+// pastes into Messenger/Facebook in the browser instead.
+async function copyAnnouncement(text) {
   try {
     await navigator.clipboard.writeText(text);
-    alert("Copied — paste it into your Messenger group.");
+    alert("Copied — paste it into Messenger or Facebook.");
   } catch {
     alert(text);
   }
@@ -1327,6 +1334,7 @@ async function loadAssignments() {
       <div style="margin-top:0.5rem;">
         <button data-open="${d.id}">Open submissions</button>
         <button class="secondary" data-share="${d.id}">&#128227; Share to group</button>
+        <button class="secondary" data-copy="${d.id}">&#10697; Copy</button>
         <button class="danger icon" data-delete-assignment="${d.id}" title="Delete assignment" aria-label="Delete assignment">×</button>
       </div>`;
     list.appendChild(row);
@@ -1335,6 +1343,8 @@ async function loadAssignments() {
     b.addEventListener("click", () => openAssignment(b.dataset.open)));
   list.querySelectorAll("[data-share]").forEach((b) =>
     b.addEventListener("click", () => shareAnnouncement(buildAssignmentAnnouncement(assignmentData.get(b.dataset.share)))));
+  list.querySelectorAll("[data-copy]").forEach((b) =>
+    b.addEventListener("click", () => copyAnnouncement(buildAssignmentAnnouncement(assignmentData.get(b.dataset.copy)))));
   list.querySelectorAll("[data-delete-assignment]").forEach((b) =>
     b.addEventListener("click", async () => {
       const ok = confirmByTyping(
