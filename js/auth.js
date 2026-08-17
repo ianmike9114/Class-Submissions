@@ -4,6 +4,9 @@ import {
   signInWithCredential,
   signOut,
   onAuthStateChanged,
+  sendSignInLinkToEmail,
+  isSignInWithEmailLink,
+  signInWithEmailLink,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -45,6 +48,52 @@ export function initGoogleSignIn(buttonElementId, onSignInError) {
 
 export function signOutUser() {
   return signOut(auth);
+}
+
+// ---------- Passwordless email-link sign-in (in-app-browser fallback) ----------
+// Google's OAuth is deliberately blocked (disallowed_useragent) inside
+// Facebook/Messenger/Instagram/TikTok in-app WebViews, and there's no
+// Android-style "Open in Chrome" escape hatch on iOS. Email-link sign-in
+// isn't OAuth, so it isn't blocked: the request goes out from inside the
+// WebView, and the emailed link opens the phone's REAL browser when tapped,
+// which is what actually escapes the WebView. Shown only for in-app browsers
+// (index.html), not as a replacement for Google's one-tap where it works.
+//
+// Requires "Email link (passwordless sign-in)" enabled in Firebase Console
+// -> Authentication -> Sign-in method (under the Email/Password provider).
+// No firestore.rules change: this populates request.auth.token.email +
+// email_verified just like Google, and the rules key off email/uid only,
+// never sign_in_provider.
+const EMAIL_STORAGE_KEY = "emailForSignIn";
+
+// Sends the sign-in link. Lands the student back on this same index.html to
+// complete sign-in, carrying any join ?code= through so auto-enroll still
+// runs afterwards. Remembers the email for the same-browser completion case.
+export async function sendEmailSignInLink(email, code) {
+  const url = new URL("index.html", location.href);
+  if (code) url.searchParams.set("code", code);
+  await sendSignInLinkToEmail(auth, email, {
+    url: url.href,
+    handleCodeInApp: true,
+  });
+  window.localStorage.setItem(EMAIL_STORAGE_KEY, email);
+}
+
+// True when the current URL is a completed email sign-in link Firebase sent.
+export function isEmailSignInLink(href = window.location.href) {
+  return isSignInWithEmailLink(auth, href);
+}
+
+// Completes an email-link sign-in. emailOverride is required when the link is
+// opened in a different browser than the one that requested it - the norm for
+// the Messenger -> Mail app -> real-browser hop, since localStorage doesn't
+// carry across browsers. Throws Error("NO_EMAIL") in that case so the caller
+// knows to prompt for the email and retry.
+export async function completeEmailLinkSignIn(emailOverride) {
+  const email = emailOverride || window.localStorage.getItem(EMAIL_STORAGE_KEY);
+  if (!email) throw new Error("NO_EMAIL");
+  await signInWithEmailLink(auth, email, window.location.href);
+  window.localStorage.removeItem(EMAIL_STORAGE_KEY);
 }
 
 // Super admin is always a teacher; anyone else needs a granted /teachers/

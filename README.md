@@ -56,6 +56,26 @@ storage blocking). This needs one more value plus one console setting:
    `https://<username>.github.io` (origin only, no path, no trailing
    slash). Save.
 
+### 2c. Enable email-link sign-in (in-app browser fallback)
+
+Google Sign-In can't work inside Messenger/Facebook/Instagram/TikTok's
+built-in browsers — Google itself blocks it (`disallowed_useragent`), and
+iOS has no "Open in Chrome" escape. For those cases the login page offers
+a passwordless **email sign-in link** instead (not OAuth, so not blocked;
+the emailed link opens the phone's real browser to finish signing in).
+Turn it on once:
+
+1. Firebase Console → **Authentication** → **Sign-in method** → **Add new
+   provider** → **Email/Password** → enable it, and also toggle on **Email
+   link (passwordless sign-in)** → Save.
+2. That's the only step — it reuses the same Authorized domains as Google
+   sign-in (2b), needs no key in the app, and works on the free Spark plan.
+
+Note: the link email comes from `noreply@<your-project>.firebaseapp.com`
+and can land in **Spam/Promotions** — tell students to check there. This
+is only a fallback; students in a normal browser still get Google's
+one-tap.
+
 ### 3. Deploy Firestore rules
 ```bash
 npm install -g firebase-tools   # if not already installed

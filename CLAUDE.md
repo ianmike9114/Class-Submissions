@@ -172,6 +172,29 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   Chrome" button) instead of leaving user on dead sign-in screen. UA-sniff
   list best-effort, not exhaustive — add more app signatures if teacher
   reports same blank-screen symptom from different app's share link.
+- **Email-link (passwordless) sign-in as in-app-browser fallback.** Since
+  the escape hatch above is weak on iOS (no `intent://` equivalent), the
+  login page also offers a Firebase **email sign-in link** — shown *only*
+  inside the `isInAppBrowser()` block, never replacing Google's one-tap
+  where it works. Not OAuth, so `disallowed_useragent` never fires:
+  requesting the link works from inside the WebView, and tapping the
+  emailed link opens the phone's real browser (which is what escapes the
+  WebView) to complete sign-in. `js/auth.js`'s `sendEmailSignInLink()` /
+  `isEmailSignInLink()` / `completeEmailLinkSignIn()` back it;
+  `index.html` wires the send form (inside the in-app banner) and the
+  completion handler (`finishEmailLinkSignIn()`), including a "confirm
+  your email" re-prompt (`#email-confirm`) for the normal cross-browser
+  case where the link opens in a *different* browser than it was
+  requested from, so `localStorage` can't supply the email. **No
+  `firestore.rules` change** — email-link populates
+  `request.auth.token.email` + `email_verified` like Google, and rules
+  key off email/uid only, never `sign_in_provider`. Role routing
+  (`isTeacherEmail()`), join `?code=` carry-through, and auto-enroll all
+  work unchanged. Requires **"Email link (passwordless sign-in)" enabled
+  in Firebase Console** (Authentication → Sign-in method → Email/Password)
+  — a one-time console step, not a code toggle; see README 2c. Free on
+  Spark (Firebase Auth email link has no cost — only phone/SMS auth
+  does), so it doesn't break the no-Blaze constraint.
 - Removing single enrollment ("Remove" button in Enrolled Students,
   `js/teacher.js`) still only deletes that one `enrollments` doc —
   narrower, still-deliberate case, not same as subject/section/

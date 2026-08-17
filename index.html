@@ -21,9 +21,27 @@
         <button type="button" id="open-in-chrome" class="hidden" style="margin-bottom:0.5rem;">Open in Chrome</button>
         <button type="button" id="copy-link">Copy link</button>
         <p class="muted">Or tap the &#8942;/&#9776; menu above and choose "Open in Chrome"/"Open in browser".</p>
+
+        <hr style="margin:0.75rem 0; border:none; border-top:1px solid var(--amber);" />
+        <p class="muted">Or stay here — we'll email you a one-tap sign-in link (works without leaving this app):</p>
+        <input type="email" id="email-link-input" placeholder="your-email@gmail.com" />
+        <button type="button" id="email-link-send" style="margin-top:0.5rem;">Email me a sign-in link</button>
+        <p id="email-link-status" class="muted hidden" style="margin-top:0.5rem;"></p>
       </div>
 
       <div id="google-signin-button" style="display:flex; justify-content:center;"></div>
+
+      <!-- Shown only when completing an email sign-in link that was opened in
+           a different browser than it was requested from (the normal Messenger
+           -> Mail app -> real browser hop), so localStorage can't supply the
+           email - see the email-link handling in the module script below. -->
+      <div id="email-confirm" class="hidden" style="text-align:left; margin-top:1rem;">
+        <p><strong>Confirm your email</strong></p>
+        <p class="muted">Enter the email you asked us to send the sign-in link to:</p>
+        <input type="email" id="email-confirm-input" placeholder="your-email@gmail.com" />
+        <button type="button" id="email-confirm-btn" style="margin-top:0.5rem;">Finish signing in</button>
+      </div>
+
       <div id="error" class="hidden" style="text-align:left; border:1px solid #b91c1c; border-radius:6px; padding:0.75rem; margin-top:1rem; color:#b91c1c;"></div>
     </div>
   </main>
@@ -33,7 +51,7 @@
        in document order right before DOMContentLoaded. -->
   <script src="https://accounts.google.com/gsi/client" defer></script>
   <script type="module">
-    import { initGoogleSignIn, isTeacherEmail } from "./js/auth.js";
+    import { initGoogleSignIn, isTeacherEmail, sendEmailSignInLink, isEmailSignInLink, completeEmailLinkSignIn } from "./js/auth.js";
     import { auth } from "./js/firebase-config.js";
     import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
@@ -50,7 +68,15 @@
       "auth/invalid-credential": "Sign-in failed - please try again.",
       "auth/user-disabled": "This account has been disabled.",
       "auth/too-many-requests": "Too many attempts - wait a bit and try again.",
+      "auth/invalid-email": "That doesn't look like a valid email address.",
+      "auth/invalid-action-code": "That sign-in link is invalid or has already been used - request a new one.",
+      "auth/expired-action-code": "That sign-in link has expired - request a new one.",
+      "auth/operation-not-allowed": "Email-link sign-in isn't enabled yet for this app (Firebase Console).",
     };
+
+    // Carry any join ?code= through the whole sign-in hop so a student who
+    // arrives via an invite/QR link still auto-enrolls afterwards.
+    const joinCode = new URLSearchParams(location.search).get("code");
 
     onAuthStateChanged(auth, async (user) => {
       if (user) {
@@ -68,65 +94,123 @@
       return /FBAN|FBAV|FB_IAB|FBIOS|Instagram|Line\/|MicroMessenger|TikTok|musical_ly|BytedanceWebview|Twitter/i.test(navigator.userAgent || "");
     }
 
-    if (isInAppBrowser()) {
-      document.getElementById("in-app-browser-warning").classList.remove("hidden");
-
-      if (/Android/i.test(navigator.userAgent)) {
-        const openBtn = document.getElementById("open-in-chrome");
-        openBtn.classList.remove("hidden");
-        const openInChrome = () => {
-          const bare = location.href.replace(/^https?:\/\//, "");
-          window.location.href = `intent://${bare}#Intent;scheme=https;package=com.android.chrome;end`;
-        };
-        openBtn.addEventListener("click", openInChrome);
-        // Fire immediately too - a student who "only knows how to click"
-        // may never notice the button. Some embedding WebViews block a
-        // script-initiated navigation with no prior tap, so the button
-        // (and Copy link, and the menu instructions below) stay as a
-        // fallback - this is a bonus first attempt, not a replacement.
-        openInChrome();
-      }
-
-      document.getElementById("copy-link").addEventListener("click", async (e) => {
-        try {
-          await navigator.clipboard.writeText(location.href);
-          e.target.textContent = "Copied!";
-        } catch {
-          alert("Copy this link:\n" + location.href);
-        }
-      });
-    }
-
-    // Three distinct "can't sign in" failure modes, each silent before this:
-    // (1) the GIS script itself never loaded (blocked/network issue) - would
-    // otherwise throw an uncaught error the user never sees; (2) the sign-in
-    // button renders but the Firebase credential exchange fails; (3) nothing
-    // ever renders and nothing ever throws (slow network, third-party cookie
-    // issues) - caught by the timeout below. Skip the generic messages when
-    // isInAppBrowser() already explained it, to avoid two conflicting banners.
-    if (typeof window.google === "undefined" || !window.google.accounts) {
-      if (!isInAppBrowser()) {
-        showError("Sign-in couldn't load. Check your internet connection, then try refreshing this page.");
-      }
+    // Tapping the emailed sign-in link opens the phone's REAL browser and
+    // reloads this page with Firebase's sign-in params. Complete the sign-in
+    // here and skip the normal Google-button path entirely - this tap is how
+    // the student escapes the in-app browser, so this branch never runs in one.
+    if (isEmailSignInLink()) {
+      finishEmailLinkSignIn();
     } else {
+      initNormalSignIn();
+    }
+
+    async function finishEmailLinkSignIn() {
       try {
-        initGoogleSignIn("google-signin-button", (e) => {
-          showError(FRIENDLY_ERRORS[e.code] || e.message || "Something went wrong signing in - please try again.");
-        });
+        await completeEmailLinkSignIn();
+        // onAuthStateChanged above redirects once Firebase confirms sign-in.
       } catch (e) {
-        if (!isInAppBrowser()) {
-          showError("Sign-in couldn't load (" + (e.message || "unknown error") + "). Try refreshing the page.");
+        if (e.message === "NO_EMAIL") {
+          // Opened in a different browser than it was requested from (the
+          // normal Messenger -> Mail app -> Safari case), so localStorage
+          // can't supply the email - ask for it and retry.
+          document.getElementById("email-confirm").classList.remove("hidden");
+          document.getElementById("email-confirm-btn").addEventListener("click", async () => {
+            const email = (document.getElementById("email-confirm-input").value || "").trim();
+            if (!email.includes("@")) { showError("Enter the email you requested the link with."); return; }
+            try {
+              await completeEmailLinkSignIn(email);
+            } catch (err) {
+              showError(FRIENDLY_ERRORS[err.code] || err.message || "That link is invalid or has expired - request a new one.");
+            }
+          });
+        } else {
+          showError(FRIENDLY_ERRORS[e.code] || e.message || "That sign-in link is invalid or has expired - request a new one.");
         }
       }
     }
 
-    if (!isInAppBrowser()) {
-      setTimeout(() => {
-        const rendered = document.getElementById("google-signin-button").children.length > 0;
-        if (!rendered && errorEl.classList.contains("hidden")) {
-          showError("Sign-in button is taking too long to load. Check your internet connection and try refreshing the page.");
+    function initNormalSignIn() {
+      if (isInAppBrowser()) {
+        document.getElementById("in-app-browser-warning").classList.remove("hidden");
+
+        if (/Android/i.test(navigator.userAgent)) {
+          const openBtn = document.getElementById("open-in-chrome");
+          openBtn.classList.remove("hidden");
+          const openInChrome = () => {
+            const bare = location.href.replace(/^https?:\/\//, "");
+            window.location.href = `intent://${bare}#Intent;scheme=https;package=com.android.chrome;end`;
+          };
+          openBtn.addEventListener("click", openInChrome);
+          // Fire immediately too - a student who "only knows how to click"
+          // may never notice the button. Some embedding WebViews block a
+          // script-initiated navigation with no prior tap, so the button
+          // (and Copy link, and the menu instructions below) stay as a
+          // fallback - this is a bonus first attempt, not a replacement.
+          openInChrome();
         }
-      }, 6000);
+
+        document.getElementById("copy-link").addEventListener("click", async (e) => {
+          try {
+            await navigator.clipboard.writeText(location.href);
+            e.target.textContent = "Copied!";
+          } catch {
+            alert("Copy this link:\n" + location.href);
+          }
+        });
+
+        // Email-link fallback: not Google OAuth, so the in-app WebView doesn't
+        // block it. Requesting the link works from inside the WebView; the
+        // emailed link opens the real browser to complete sign-in (handled by
+        // finishEmailLinkSignIn above).
+        const statusEl = document.getElementById("email-link-status");
+        document.getElementById("email-link-send").addEventListener("click", async () => {
+          const email = (document.getElementById("email-link-input").value || "").trim();
+          statusEl.classList.remove("hidden");
+          if (!email.includes("@")) {
+            statusEl.textContent = "Enter a valid email address first.";
+            return;
+          }
+          statusEl.textContent = "Sending...";
+          try {
+            await sendEmailSignInLink(email, joinCode);
+            statusEl.textContent = "Link sent to " + email + ". Open your email and tap the link (check Spam/Promotions if it's not in your inbox) - it opens in your normal browser to finish signing in.";
+          } catch (e) {
+            statusEl.textContent = FRIENDLY_ERRORS[e.code] || e.message || "Couldn't send the link - please try again.";
+          }
+        });
+      }
+
+      // Three distinct "can't sign in" failure modes, each silent before this:
+      // (1) the GIS script itself never loaded (blocked/network issue) - would
+      // otherwise throw an uncaught error the user never sees; (2) the sign-in
+      // button renders but the Firebase credential exchange fails; (3) nothing
+      // ever renders and nothing ever throws (slow network, third-party cookie
+      // issues) - caught by the timeout below. Skip the generic messages when
+      // isInAppBrowser() already explained it, to avoid two conflicting banners.
+      if (typeof window.google === "undefined" || !window.google.accounts) {
+        if (!isInAppBrowser()) {
+          showError("Sign-in couldn't load. Check your internet connection, then try refreshing this page.");
+        }
+      } else {
+        try {
+          initGoogleSignIn("google-signin-button", (e) => {
+            showError(FRIENDLY_ERRORS[e.code] || e.message || "Something went wrong signing in - please try again.");
+          });
+        } catch (e) {
+          if (!isInAppBrowser()) {
+            showError("Sign-in couldn't load (" + (e.message || "unknown error") + "). Try refreshing the page.");
+          }
+        }
+      }
+
+      if (!isInAppBrowser()) {
+        setTimeout(() => {
+          const rendered = document.getElementById("google-signin-button").children.length > 0;
+          if (!rendered && errorEl.classList.contains("hidden")) {
+            showError("Sign-in button is taking too long to load. Check your internet connection and try refreshing the page.");
+          }
+        }, 6000);
+      }
     }
   </script>
 </body>
