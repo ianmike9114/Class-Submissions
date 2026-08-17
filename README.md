@@ -100,3 +100,37 @@ Settings box that holds this key is hidden entirely otherwise.
   with the link can view" for non-YouTube links or you can't open it.
 - Grading is one score out of the assignment's total points, plus
   optional feedback — enter it in the Review panel and **Publish**.
+
+## Beta capacity — what to watch (free Spark plan)
+
+Sized against an ~8-teacher / ~200-student beta. Google Sign-In and the
+number of teachers/admins/students do **not** touch any Google Cloud /
+OAuth setting — the authorized-origins list is per *domain*, not per
+user, so onboarding more people needs no console changes. What can bite
+at scale is Firestore's free daily quota:
+
+| Firestore quota (Spark, per day) | Limit | Headroom at beta scale |
+|---|---|---|
+| Document **reads** | 50,000 | Tightest — see below |
+| Document **writes** | 20,000 | Comfortable |
+| Document **deletes** | 20,000 | Comfortable |
+| **Stored data** | 1 GiB total | Watch if photo submissions are heavy |
+
+- **Reads are the pinch point on busy days.** A teacher's Records grid
+  reads *every* submission in the section at once; several teachers
+  reloading it on a deadline day (when all 200 students have just
+  submitted) is what can approach 50k. The app has **no real-time
+  listeners** (deliberate — see `CLAUDE.md`), which is exactly what keeps
+  read counts from exploding otherwise. If a busy day does hit the cap,
+  the fix is app-side (cache/paginate the Records grid), **not** a plan
+  upgrade.
+- **Storage creeps with photos.** Link submissions are tiny; in-app
+  **photo** submissions are stored base64 inside Firestore docs (up to
+  ~1 MiB each). Across 200 students × many photo assignments this can
+  march toward the 1 GiB cap over a full beta — for photo-heavy
+  activities, steer students to the Drive-link path instead.
+- **Writes/deletes** (submissions, grades, enrollments) stay far under
+  their caps at this scale.
+- **Monitor it:** Firebase Console → Firestore → **Usage** tab shows
+  daily reads/writes and stored bytes. That's the early-warning signal —
+  check it during the first busy days of the beta.
