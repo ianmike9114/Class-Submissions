@@ -657,8 +657,10 @@ async function getEnrollmentNotRespondingOverview() {
             email: e.studentEmail || "",
             writtenMissing,
             writtenTotal: writtenIds.size,
+            writtenDone: writtenIds.size - writtenMissing,
             performanceMissing,
             performanceTotal: performanceIds.size,
+            performanceDone: performanceIds.size - performanceMissing,
           };
         })
         .filter((r) => r.writtenMissing > 0 || r.performanceMissing > 0)
@@ -681,9 +683,10 @@ function renderNotRespondingOverview(data) {
       <strong>${subj.subjectName}</strong>
       ${subj.sections.map((sec) => `
         <div style="margin-top:0.5rem;">
-          <span class="muted">${sec.sectionName} — ${sec.rows.length} not responding</span>
+          <span class="muted">${sec.sectionName} — ${sec.rows.length} behind</span>
+          <div class="muted" style="font-size:0.85em;">Numbers show submitted / total.</div>
           <table class="records-grid"><thead><tr><th>Name</th><th>Email</th><th>Written</th><th>Performance</th></tr></thead><tbody>
-            ${sec.rows.map((r) => `<tr><td>${r.name}</td><td>${r.email}</td><td>${r.writtenMissing}/${r.writtenTotal}</td><td>${r.performanceMissing}/${r.performanceTotal}</td></tr>`).join("")}
+            ${sec.rows.map((r) => `<tr><td>${r.name}</td><td>${r.email}</td><td>${r.writtenDone}/${r.writtenTotal}</td><td>${r.performanceDone}/${r.performanceTotal}</td></tr>`).join("")}
           </tbody></table>
         </div>`).join("")}
     </div>`).join("");
