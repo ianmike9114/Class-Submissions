@@ -2516,14 +2516,23 @@ async function loadRecords() {
   const groupHeaderCells = groups.map((g) => `<th colspan="${g.assignments.length}">${g.label}</th>`).join("");
   const titleHeaderCells = orderedAssignments.map((a) => `<th>${a.title}</th>`).join("");
 
+  // Exact string match misses students whose enrollment name is a
+  // reordered/shortened version of the roster name (e.g. enrollment
+  // "Hannah De Leon" vs roster "De Leon, Hannah May O.") - reuse the
+  // same fuzzy word match already used for the Home dashboard search.
+  // Resolved once here (not per-row) so unmatched enrollments/roster
+  // names can be surfaced in the fix-names panel below, instead of the
+  // match result being thrown away after each row renders.
+  roster.forEach((r) => {
+    r.enrollment = enrollments.find((en) =>
+      matchesNameSearch(en.studentName, r.name) || matchesNameSearch(r.name, en.studentName)) || null;
+  });
+  const unmatchedEnrollments = enrollments.filter((en) => !roster.some((r) => r.enrollment === en));
+  const unmatchedRosterNames = roster.filter((r) => !r.enrollment).map((r) => r.name);
+
   function renderStudentRow(r) {
     const name = r.name;
-    // Exact string match misses students whose enrollment name is a
-    // reordered/shortened version of the roster name (e.g. enrollment
-    // "Hannah De Leon" vs roster "De Leon, Hannah May O.") - reuse the
-    // same fuzzy word match already used for the Home dashboard search.
-    const enrollment = enrollments.find((en) =>
-      matchesNameSearch(en.studentName, name) || matchesNameSearch(name, en.studentName));
+    const enrollment = r.enrollment;
     let missing = 0;
     const cells = orderedAssignments.map((a) => {
       if (!enrollment) { missing++; return `<td class="muted">Not joined</td>`; }
@@ -2554,7 +2563,36 @@ async function loadRecords() {
       }).join("")
     : roster.map(renderStudentRow).join("");
 
-  container.innerHTML = `
+  // Students show as "Not joined" in the grid above when their enrollment
+  // name fuzzy-matched nothing on the roster - their submissions are safe
+  // (joined by studentUID, untouched by this), only the display match
+  // failed. Let the teacher fix many at once instead of hunting each one
+  // down in Enrolled Students.
+  const unmatchedPanel = unmatchedEnrollments.length === 0 ? "" : `
+    <div class="card">
+      <p><strong>${unmatchedEnrollments.length} enrolled student${unmatchedEnrollments.length === 1 ? "" : "s"} not matching a roster name.</strong>
+      Their submissions are safe - pick or type their roster name to fix the match.</p>
+      <table class="records-grid">
+        <thead><tr><th>Enrolled as</th><th>Gmail</th><th>Roster name</th><th></th></tr></thead>
+        <tbody>
+          ${unmatchedEnrollments.map((en, i) => `
+            <tr>
+              <td>${displayStudentName(en.studentName)}</td>
+              <td>${en.studentEmail || ""}</td>
+              <td>
+                <select id="unmatched-select-${i}" style="width:auto; display:inline-block;">
+                  <option value="">— pick roster name —</option>
+                  ${unmatchedRosterNames.map((n) => `<option value="${n}">${n}</option>`).join("")}
+                </select>
+                <input id="unmatched-input-${i}" placeholder="or type name" style="width:auto; display:inline-block;" />
+              </td>
+              <td><button class="secondary" data-fix-unmatched="${i}" data-uid="${en.studentUID}">Fix</button></td>
+            </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>`;
+
+  container.innerHTML = unmatchedPanel + `
     <table class="records-grid">
       <thead>
         <tr><th colspan="2"></th>${groupHeaderCells}</tr>
@@ -2562,6 +2600,17 @@ async function loadRecords() {
       </thead>
       <tbody>${bodyRows}</tbody>
     </table>`;
+
+  container.querySelectorAll("[data-fix-unmatched]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const i = b.dataset.fixUnmatched;
+      const select = el(`unmatched-select-${i}`);
+      const input = el(`unmatched-input-${i}`);
+      const name = (input.value.trim() || select.value).trim();
+      if (!name) { alert("Pick or type a roster name first."); return; }
+      await renameStudentEverywhere(b.dataset.uid, name);
+      loadRecords();
+    }));
 }
 
 // ---------- nav ----------
