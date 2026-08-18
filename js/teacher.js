@@ -1430,6 +1430,29 @@ el("add-assignment-form").addEventListener("submit", async (e) => {
   await notifyOnAssignmentCreate(title, dueDate);
 });
 
+// Bulk-set one due date across all Written (or all Performance) assignments
+// in the open section - so a whole batch closes on the same day without
+// editing each assignment. Per-component because sections run written and
+// performance tasks on different deadlines.
+el("bulk-due-apply").addEventListener("click", async () => {
+  const date = el("bulk-due-date").value;
+  const component = el("bulk-due-component").value;
+  const statusEl = el("bulk-due-status");
+  statusEl.classList.remove("hidden");
+  if (!date) { statusEl.textContent = "Pick a due date first."; return; }
+
+  const snap = await getDocs(query(collection(db, "assignments"), where("sectionId", "==", state.sectionId)));
+  const targets = snap.docs.filter((d) => d.data().component === component && ownedByViewAs(d.data()));
+  const label = component === "written" ? "Written" : "Performance Task";
+  if (targets.length === 0) { statusEl.textContent = `No ${label} assignments in this section.`; return; }
+  if (!confirm(`Set due date to ${date} for ${targets.length} ${label} assignment(s) in this section?`)) return;
+
+  statusEl.textContent = "Applying...";
+  await Promise.all(targets.map((d) => updateDoc(doc(db, "assignments", d.id), { dueDate: date })));
+  statusEl.textContent = `Set ${date} on ${targets.length} ${label} assignment(s).`;
+  loadAssignments();
+});
+
 // Assignments have no separate draft/publish step - creating one *is*
 // releasing it - so this is the release notify point. Silently does
 // nothing if the teacher hasn't saved an EmailJS config in Settings.

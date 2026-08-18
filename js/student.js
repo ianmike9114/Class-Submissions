@@ -225,6 +225,15 @@ function saveAssignmentsSeen(map) {
   try { localStorage.setItem(ASSIGN_SEEN_KEY, JSON.stringify(map)); } catch { /* storage full/blocked - badge is optional */ }
 }
 
+// Deadline lock (client-side). dueDate is a "YYYY-MM-DD" string; submissions
+// close at the end of that day, Philippine time (UTC+8). No dueDate = never
+// closes (stays open forever, unchanged from before). Enforcement is only
+// here + the submit-handler guard - a workflow rule, not a security boundary,
+// so no firestore.rules change (see plan).
+function isPastDue(a) {
+  return !!a.dueDate && Date.now() > new Date(a.dueDate + "T23:59:59+08:00").getTime();
+}
+
 async function loadEverything() {
   const enrollSnap = await getDocs(
     query(collection(db, "enrollments"), where("studentUID", "==", currentUser.uid))
@@ -365,7 +374,9 @@ async function loadEverything() {
           ${uploadFolderBlock}
           <div class="muted">Type: ${a.allowedFileTypes}</div>
           <div class="muted">Total points: ${a.totalPoints}</div>
-          ${renderSubmitForm(aDoc.id, a.allowedFileTypes)}`;
+          ${isPastDue(a)
+            ? `<p class="status-pending" style="display:inline-block; margin-top:0.5rem;">Closed — deadline passed (was due ${a.dueDate})</p>`
+            : renderSubmitForm(aDoc.id, a.allowedFileTypes)}`;
       } else {
         const s = subDoc.data();
         const statusLabel = s.status === "published" ? "Graded"
@@ -373,6 +384,8 @@ async function loadEverything() {
           : "Submitted, pending review";
         const actionsBlock = s.status === "published"
           ? renderResult(s, a)
+          : isPastDue(a)
+          ? `<div class="muted" style="margin-top:0.5rem;">Deadline passed — locked, no more changes.</div>`
           : `<div style="margin-top:0.5rem;">
                <button type="button" class="secondary" data-edit-submission="${subDoc.id}">Edit submission</button>
                <button type="button" class="danger" data-remove-submission="${subDoc.id}">Remove submission</button>
@@ -605,6 +618,13 @@ function wireSubmitForm(form) {
     e.preventDefault();
     const assignmentId = form.dataset.assignment;
     const submissionId = form.dataset.submission || null; // present -> editing an existing doc in place
+
+    // Backstop the deadline lock even if a stale form is somehow on screen.
+    if (isPastDue(assignmentsById.get(assignmentId) || {})) {
+      alert("Deadline passed — submissions are closed.");
+      loadEverything();
+      return;
+    }
     const btn = form.querySelector("button");
     const originalLabel = btn.textContent;
     const link = form.querySelector(".submission-link").value.trim();

@@ -222,6 +222,21 @@
           </div>
         </form>
       </details>
+      <details class="card">
+        <summary><strong>Set deadline for many at once</strong></summary>
+        <div style="margin-top:0.5rem;">
+          <p class="muted">After the due date, students can no longer submit or edit that assignment.</p>
+          <label>Due date</label>
+          <input id="bulk-due-date" type="date" />
+          <label>Apply to (this section)</label>
+          <select id="bulk-due-component">
+            <option value="written">All Written</option>
+            <option value="performance">All Performance Task</option>
+          </select>
+          <button type="button" id="bulk-due-apply" style="margin-top:0.5rem;">Apply deadline</button>
+          <p id="bulk-due-status" class="muted hidden" style="margin-top:0.5rem;"></p>
+        </div>
+      </details>
       <div id="activities-summary"></div>
       <div id="assignments-list"></div>
     </section>
@@ -293,6 +308,6 @@
     <button type="button" id="photo-lightbox-close" aria-label="Close preview">&times;</button>
   </div>
 
-  <script type="module" src="js/teacher.js?v=40"></script>
+  <script type="module" src="js/teacher.js?v=41"></script>
 </body>
 </html>
