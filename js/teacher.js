@@ -385,6 +385,49 @@ async function syncEnrolleesToMasterList(sectionData, enrollments) {
   return { listName: list.name, synced: newStudents.length };
 }
 
+// Pulls current names from live enrollments into a saved master list -
+// list entries are snapshots taken when the list was built/synced, so a
+// student who later fixed their name (renameStudentEverywhere updates
+// enrollments + submissions, never the master list) leaves the list stale.
+// Matches by email (the stable key; names change, emails don't); entries
+// with no email or no matching enrollment are left as-is.
+async function refreshMasterListNames(listId) {
+  const enrollSnap = await getDocs(ownerScopedQuery("enrollments"));
+  const nameByEmail = new Map();
+  enrollSnap.docs.filter((d) => ownedByViewAs(d.data())).forEach((d) => {
+    const e = d.data();
+    const email = (e.studentEmail || "").toLowerCase();
+    if (email && e.studentName) nameByEmail.set(email, e.studentName);
+  });
+  const list = (await getDoc(doc(db, "masterLists", listId))).data();
+  let changed = 0;
+  const students = (list.students || []).map((s) => {
+    const fresh = nameByEmail.get((s.email || "").toLowerCase());
+    if (fresh && fresh !== s.name) { changed++; return { ...s, name: fresh }; }
+    return s;
+  });
+  if (changed > 0) await updateDoc(doc(db, "masterLists", listId), { students, updatedAt: serverTimestamp() });
+  return changed;
+}
+
+// Removes repeat entries from a saved master list, keeping the first
+// occurrence. Keyed by lowercased email when present, else by normalized
+// name so blank-email manual entries still dedupe.
+async function dedupeMasterList(listId) {
+  const list = (await getDoc(doc(db, "masterLists", listId))).data();
+  const seen = new Set();
+  const kept = [];
+  for (const s of list.students || []) {
+    const key = (s.email || "").toLowerCase() || `name:${(s.name || "").trim().toUpperCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    kept.push(s);
+  }
+  const removed = (list.students || []).length - kept.length;
+  if (removed > 0) await updateDoc(doc(db, "masterLists", listId), { students: kept, updatedAt: serverTimestamp() });
+  return removed;
+}
+
 let lastNotifications = { submissions: [], leaves: [], totalCount: 0, error: false };
 
 // One combined fetch that resolves ids to display names (unlike
@@ -666,7 +709,7 @@ async function getEnrollmentNotRespondingOverview() {
         .filter((r) => r.writtenMissing > 0 || r.performanceMissing > 0)
         .sort((a, b) => (b.writtenMissing + b.performanceMissing) - (a.writtenMissing + a.performanceMissing));
 
-      return rows.length > 0 ? { sectionId: section.id, sectionName: section.sectionName, rows } : null;
+      return rows.length > 0 ? { sectionId: section.id, sectionName: section.sectionName, rows, enrolledTotal: enrollments.length } : null;
     }));
 
     const filteredSections = sectionResults.filter(Boolean);
@@ -683,7 +726,7 @@ function renderNotRespondingOverview(data) {
       <strong>${subj.subjectName}</strong>
       ${subj.sections.map((sec) => `
         <div style="margin-top:0.5rem;">
-          <span class="muted">${sec.sectionName} — ${sec.rows.length} behind</span>
+          <span class="muted">${sec.sectionName} — ${sec.rows.length} behind of ${sec.enrolledTotal} enrolled</span>
           <div class="muted" style="font-size:0.85em;">Numbers show submitted / total.</div>
           <table class="records-grid"><thead><tr><th>Name</th><th>Email</th><th>Written</th><th>Performance</th></tr></thead><tbody>
             ${sec.rows.map((r) => `<tr><td>${r.name}</td><td>${r.email}</td><td>${r.writtenDone}/${r.writtenTotal}</td><td>${r.performanceDone}/${r.performanceTotal}</td></tr>`).join("")}
@@ -2465,6 +2508,8 @@ async function loadMasterLists() {
         <div style="margin-top:0.5rem;">
           <button class="secondary" data-edit-master-list-name="${l.id}">Rename</button>
           <button class="secondary" data-toggle-master-list-students="${l.id}">View / Edit students</button>
+          <button class="secondary" data-refresh-master-list="${l.id}">Refresh names</button>
+          <button class="secondary" data-dedupe-master-list="${l.id}">Remove duplicates</button>
           <button class="danger icon" data-delete-master-list="${l.id}" title="Delete list" aria-label="Delete list">×</button>
         </div>
         <div id="master-list-students-${l.id}"></div>
@@ -2491,6 +2536,23 @@ async function loadMasterLists() {
       const listId = b.dataset.toggleMasterListStudents;
       const list = lists.find((l) => l.id === listId);
       renderMasterListStudentsEditor(listId, list.students);
+    }));
+
+  container.querySelectorAll("[data-refresh-master-list]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      b.disabled = true;
+      const changed = await refreshMasterListNames(b.dataset.refreshMasterList);
+      alert(changed > 0 ? `Refreshed ${changed} name${changed === 1 ? "" : "s"}.` : "All names already up to date.");
+      loadMasterLists();
+    }));
+
+  container.querySelectorAll("[data-dedupe-master-list]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      if (!confirm("Remove duplicate entries from this list? Keeps the first of each.")) return;
+      b.disabled = true;
+      const removed = await dedupeMasterList(b.dataset.dedupeMasterList);
+      alert(removed > 0 ? `Removed ${removed} duplicate${removed === 1 ? "" : "s"}.` : "No duplicates found.");
+      loadMasterLists();
     }));
 
   container.querySelectorAll("[data-delete-master-list]").forEach((b) =>
