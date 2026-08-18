@@ -1015,6 +1015,7 @@ async function loadSections() {
           <div id="qr-${d.id}" class="qr-code"></div>
           <p class="muted">Scan to join, or share this link:<br>
             <a href="${joinLinkFor(s.joinCode)}" target="_blank" rel="noopener">${joinLinkFor(s.joinCode)}</a></p>
+          <button type="button" class="secondary" data-copy-join="${joinLinkFor(s.joinCode)}">Copy join link</button>
           <p class="muted" style="font-size:0.85em;">Tip for students: after scanning, tap "Open in Safari/Chrome" on the banner that pops up — don't use the in-scanner preview, sign-in won't work there.</p>
         </div>
       </details>
@@ -1072,6 +1073,19 @@ async function loadSections() {
   });
   list.querySelectorAll("[data-open]").forEach((b) =>
     b.addEventListener("click", () => openSection(b.dataset.open)));
+  list.querySelectorAll("[data-copy-join]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(b.dataset.copyJoin);
+        const prev = b.textContent;
+        b.textContent = "Copied!";
+        setTimeout(() => { b.textContent = prev; }, 1500);
+      } catch {
+        // Clipboard API blocked (insecure context / old browser) - hand
+        // the link to a prompt so the teacher can copy it by hand.
+        prompt("Copy this join link:", b.dataset.copyJoin);
+      }
+    }));
   list.querySelectorAll("[data-edit-section]").forEach((b) =>
     b.addEventListener("click", () => editSectionName(b.dataset.editSection)));
   list.querySelectorAll("[data-delete-section]").forEach((b) =>
