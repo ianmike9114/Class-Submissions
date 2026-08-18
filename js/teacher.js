@@ -417,15 +417,40 @@ async function refreshMasterListNames(listId) {
   return changed;
 }
 
-// Removes repeat entries from a saved master list, keeping the first
-// occurrence. Keyed by lowercased email when present, else by normalized
-// name so blank-email manual entries still dedupe.
+// Order/punctuation/case-insensitive name parts: "MERCADO, NATHANIEL G."
+// and "Nathaniel Mercado G" tokenize to the same set. Basis for both dedupe
+// name-matching and look-alike flagging below.
+function nameTokens(name) {
+  return (name || "").replace(/[.,]/g, " ").trim().split(/\s+/).filter(Boolean).map((t) => t.toUpperCase());
+}
+// Strict signature - every token kept (middle initials stay significant),
+// only order/case/punctuation ignored. Two names match only when they carry
+// the exact same set of parts. Used for *auto-removal*.
+function normalizeName(name) {
+  return nameTokens(name).sort().join(" ");
+}
+// Loose signature for *review flagging only*, never auto-removal: drops
+// single-letter tokens (middle initials), so "MERCADO, NATHANIEL G." and
+// "Nathaniel Mercado" collapse to one person key. Safe to be loose here
+// because the teacher confirms every removal by hand.
+function personKey(name) {
+  const full = nameTokens(name);
+  const trimmed = full.filter((t) => t.length > 1);
+  return (trimmed.length ? trimmed : full).sort().join(" ");
+}
+
+// Removes only *certain* duplicates - same email (case/space-insensitive),
+// or, for blank-email manual entries, the same normalized name - keeping the
+// first occurrence. Look-alikes that differ by email or middle initial are
+// deliberately left in place for findMasterListSuspects() to surface for
+// manual review, so a genuinely distinct student is never silently dropped.
 async function dedupeMasterList(listId) {
   const list = (await getDoc(doc(db, "masterLists", listId))).data();
   const seen = new Set();
   const kept = [];
   for (const s of list.students || []) {
-    const key = (s.email || "").toLowerCase() || `name:${(s.name || "").trim().toUpperCase()}`;
+    const email = (s.email || "").trim().toLowerCase();
+    const key = email ? `email:${email}` : `name:${normalizeName(s.name)}`;
     if (seen.has(key)) continue;
     seen.add(key);
     kept.push(s);
@@ -433,6 +458,32 @@ async function dedupeMasterList(listId) {
   const removed = (list.students || []).length - kept.length;
   if (removed > 0) await updateDoc(doc(db, "masterLists", listId), { students: kept, updatedAt: serverTimestamp() });
   return removed;
+}
+
+// Groups the (post-dedupe) list by loose person key and returns every group
+// with 2+ members - suspected same-person entries that differ by email or
+// middle initial, for the teacher to review and prune by hand.
+async function findMasterListSuspects(listId) {
+  const list = (await getDoc(doc(db, "masterLists", listId))).data();
+  const groups = new Map();
+  (list.students || []).forEach((s) => {
+    const key = personKey(s.name);
+    if (!key) return;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(s);
+  });
+  return [...groups.values()].filter((g) => g.length > 1);
+}
+
+// Removes one entry (matched by name + email) from a saved list - backs the
+// per-row Remove buttons in the look-alike review panel.
+async function removeStudentFromMasterList(listId, name, email) {
+  const list = (await getDoc(doc(db, "masterLists", listId))).data();
+  const students = list.students || [];
+  const idx = students.findIndex((s) => s.name === name && (s.email || "") === (email || ""));
+  if (idx === -1) return;
+  students.splice(idx, 1);
+  await updateDoc(doc(db, "masterLists", listId), { students, updatedAt: serverTimestamp() });
 }
 
 let lastNotifications = { submissions: [], leaves: [], totalCount: 0, error: false };
@@ -2578,11 +2629,17 @@ async function loadMasterLists() {
 
   container.querySelectorAll("[data-dedupe-master-list]").forEach((b) =>
     b.addEventListener("click", async () => {
-      if (!confirm("Remove duplicate entries from this list? Keeps the first of each.")) return;
+      if (!confirm("Remove exact duplicates (same email, or same name when no email)? Keeps the first of each. Look-alikes with a different email or middle initial are flagged for you to review, not auto-removed.")) return;
       b.disabled = true;
-      const removed = await dedupeMasterList(b.dataset.dedupeMasterList);
-      alert(removed > 0 ? `Removed ${removed} duplicate${removed === 1 ? "" : "s"}.` : "No duplicates found.");
-      loadMasterLists();
+      const listId = b.dataset.dedupeMasterList;
+      const removed = await dedupeMasterList(listId);
+      const suspects = await findMasterListSuspects(listId);
+      if (suspects.length) {
+        renderMasterListSuspects(listId, suspects, removed);
+      } else {
+        alert(removed > 0 ? `Removed ${removed} duplicate${removed === 1 ? "" : "s"}. No look-alikes to review.` : "No duplicates found.");
+        loadMasterLists();
+      }
     }));
 
   container.querySelectorAll("[data-delete-master-list]").forEach((b) =>
@@ -2640,6 +2697,41 @@ function renderMasterListStudentsEditor(listId, students) {
     });
   };
   render();
+}
+
+// Renders the suspected-duplicate review panel into the list's students
+// container: each look-alike group with a per-row Remove. Re-queries after
+// every removal so groups stay accurate; closes back to the full list once
+// nothing ambiguous remains or the teacher hits Done.
+function renderMasterListSuspects(listId, groups, removedCount) {
+  const container = el(`master-list-students-${listId}`);
+  container.dataset.open = "true";
+  const intro = removedCount > 0 ? `Removed ${removedCount} exact duplicate${removedCount === 1 ? "" : "s"}. ` : "";
+  container.innerHTML = `
+    <p class="muted" style="margin-top:0.5rem;">${intro}Possible same-person entries below (different email or middle initial) — <strong>not</strong> auto-removed. Remove the ones you don't want; keep the rest.</p>
+    ${groups.map((g, gi) => `
+      <table class="records-grid"><thead><tr><th>#</th><th>Name</th><th>Email</th><th></th></tr></thead><tbody>
+        ${g.map((s, i) => `<tr><td>${i + 1}</td><td>${s.name}</td><td>${s.email || '<span class="muted">(no email)</span>'}</td><td>
+          <button type="button" class="secondary" data-remove-suspect="${gi}|${i}">Remove</button></td></tr>`).join("")}
+      </tbody></table>${gi < groups.length - 1 ? '<hr style="margin:0.75rem 0;" />' : ""}`).join("")}
+    <button type="button" id="suspects-done-${listId}" style="margin-top:0.5rem;">Done</button>`;
+
+  container.querySelectorAll("[data-remove-suspect]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const [gi, i] = b.dataset.removeSuspect.split("|").map(Number);
+      const s = groups[gi][i];
+      b.disabled = true;
+      await removeStudentFromMasterList(listId, s.name, s.email);
+      const next = await findMasterListSuspects(listId);
+      if (next.length) renderMasterListSuspects(listId, next, 0);
+      else { container.innerHTML = ""; container.dataset.open = "false"; loadMasterLists(); }
+    }));
+
+  el(`suspects-done-${listId}`).addEventListener("click", () => {
+    container.innerHTML = "";
+    container.dataset.open = "false";
+    loadMasterLists();
+  });
 }
 
 // ---------- records (gradebook grid, one section at a time) ----------
