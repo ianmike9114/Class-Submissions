@@ -123,8 +123,15 @@ function genJoinCode() {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
 }
 
+// Canonical production origin. Join links / QR must point here no matter
+// which host the teacher generated them from (localhost, a Vercel preview
+// URL, or the old github.io copy) - otherwise a link minted off-domain
+// leads students to a stale/dead address. Update if the production domain
+// ever changes.
+const APP_BASE_URL = "https://deped-class-submissions.vercel.app/";
+
 function joinLinkFor(joinCode) {
-  return new URL(`student.html?code=${joinCode}`, location.href).href;
+  return new URL(`student.html?code=${joinCode}`, APP_BASE_URL).href;
 }
 
 // Ready-to-paste announcement for a new assignment. The channel students

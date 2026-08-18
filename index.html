@@ -3,6 +3,19 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script>
+    // Old github.io QR/links were printed before the move to Vercel.
+    // Forward them to the live app, preserving the join ?code=.
+    (function () {
+      if (location.hostname.endsWith("github.io")) {
+        var file = location.pathname.split("/").pop() || "index.html";
+        location.replace(
+          "https://deped-class-submissions.vercel.app/" + file +
+          location.search + location.hash
+        );
+      }
+    })();
+  </script>
   <title>Class Submissions</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
