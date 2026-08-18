@@ -767,7 +767,19 @@ async function getEnrollmentNotRespondingOverview() {
         .filter((r) => r.writtenMissing > 0 || r.performanceMissing > 0)
         .sort((a, b) => (b.writtenMissing + b.performanceMissing) - (a.writtenMissing + a.performanceMissing));
 
-      return rows.length > 0 ? { sectionId: section.id, sectionName: section.sectionName, rows, enrolledTotal: enrollments.length } : null;
+      // Class-wide completion for the progress bar: every submission that's
+      // in, over every submission expected (enrolled students x graded
+      // assignments). Counts the caught-up students too, unlike `rows`
+      // (which lists only those still behind).
+      const expectedCount = enrollments.length * (writtenIds.size + performanceIds.size);
+      let submittedCount = 0;
+      enrollments.forEach((e) => {
+        const submitted = submittedByStudent.get(e.studentUID) || new Set();
+        writtenIds.forEach((id) => { if (submitted.has(id)) submittedCount++; });
+        performanceIds.forEach((id) => { if (submitted.has(id)) submittedCount++; });
+      });
+
+      return rows.length > 0 ? { sectionId: section.id, sectionName: section.sectionName, rows, enrolledTotal: enrollments.length, submittedCount, expectedCount } : null;
     }));
 
     const filteredSections = sectionResults.filter(Boolean);
@@ -782,14 +794,18 @@ function renderNotRespondingOverview(data) {
   return data.map((subj) => `
     <div style="margin-bottom:1rem;">
       <strong>${subj.subjectName}</strong>
-      ${subj.sections.map((sec) => `
+      ${subj.sections.map((sec) => {
+        const pct = sec.expectedCount ? Math.round((sec.submittedCount / sec.expectedCount) * 100) : 0;
+        return `
         <div style="margin-top:0.5rem;">
           <span class="muted">${sec.sectionName} — ${sec.rows.length} behind of ${sec.enrolledTotal} enrolled</span>
-          <div class="muted" style="font-size:0.85em;">Numbers show submitted / total.</div>
+          <div class="progress-track"><div class="progress-fill" style="width:${pct}%;"></div></div>
+          <div class="muted" style="font-size:0.85em;">${sec.submittedCount}/${sec.expectedCount} submissions in — ${pct}% complete. Table numbers show submitted / total per student.</div>
           <table class="records-grid"><thead><tr><th>Name</th><th>Email</th><th>Written</th><th>Performance</th></tr></thead><tbody>
             ${sec.rows.map((r) => `<tr><td>${r.name}</td><td>${r.email}</td><td>${r.writtenDone}/${r.writtenTotal}</td><td>${r.performanceDone}/${r.performanceTotal}</td></tr>`).join("")}
           </tbody></table>
-        </div>`).join("")}
+        </div>`;
+      }).join("")}
     </div>`).join("");
 }
 
