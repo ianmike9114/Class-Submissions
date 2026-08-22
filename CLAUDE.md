@@ -260,20 +260,38 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   fix there (same conclusion as iOS Code Scanner QR issue).
 - **Accomplishment report + photo collage generator, per assignment**
   (`js/teacher.js`'s `renderCollagePreview()`/`drawScatteredCollage()`/
-  `buildAccomplishmentReportDocx()`/`generateAccomplishmentReport()`,
+  `buildOfficialReportDocxBlob()`/`generateOfficialAccomplishmentReport()`,
   called from `renderImagesGallery()`) — for DepEd's work-from-home/
   modular-activity documentation requirement during calamities. Entirely
   client-side, no Storage/Functions: collage is randomized `<canvas>`
   scrapbook layout (varied photo size/rotation/scatter, centered
   title/section/date badge) that reshuffles on every "Regenerate layout"
-  click, and `.docx` built via `docx` library (CDN ESM import,
-  `https://cdn.jsdelivr.net/npm/docx@.../dist/index.mjs` — one CDN-ESM
-  dependency in this file beyond Firebase). Report body is short,
-  teacher-editable narrative (`draftReportDescription()` auto-drafts one
-  sentence from assignment title/section/dates, plus assignment's own
-  `instructions` text if set) — deliberately not student/photo-count
-  table. No "activity date" field on assignments, so teacher fills in
-  date range manually per report.
+  click. The one "Generate Accomplishment Report (.docx)" button clones
+  the real DepEd "Individual Daily Log and Accomplishment Report" form
+  (`assets/accomplishment-report-official.docx` — a tokenized,
+  single-activity copy of the actual government template, prepared
+  once offline) rather than hand-authoring a lookalike: JSZip (already
+  a dependency, see photo-ZIP feature below) opens it, does plain
+  `{{TOKEN}}` string substitution on `word/document.xml`, and swaps one
+  placeholder image's bytes for the generated collage, so every
+  original font/seal/table border survives untouched. No separate
+  generic/ad-hoc report path anymore (there used to be two buttons; user
+  asked to consolidate to just the official one) — no `docx` CDN library
+  dependency as a result. Report body is short, teacher-editable
+  narrative (`draftReportDescription()` auto-drafts one sentence from
+  assignment title/section/dates, plus assignment's own `instructions`
+  text if set) — deliberately not student/photo-count table. No
+  "activity date" field on assignments, so teacher fills in date range
+  manually per report. Employee name, arrangement, and the three
+  signatory name/title pairs are editable fields (collapsed "Report
+  settings" `<details>`) defaulting to the real template's values, not
+  hardcoded — this app is multi-teacher-capable, so a different signed-in
+  teacher shouldn't silently get this user's identity/signatories on
+  their own generated report. See `.claude/Skills/deped-accomplishment-report`
+  for the separate, multi-date, agent-driven version of this same
+  template — that one combines several activity dates into one
+  submission; this in-app button stays single-activity, tied to one
+  assignment's collage.
 - **Invite student by Gmail, auto-join on sign-in — no email-click-to-
   accept step.** New `invites/{inviteId}` collection (`studentEmail`
   lowercased, `studentName`, `subjectId`/`subjectName`, `sectionId`/

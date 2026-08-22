@@ -7,10 +7,6 @@ import { getGeminiKey, setGeminiKey, runRubricCheck } from "./gemini.js";
 import { getEmailConfig, saveEmailConfig, notifySection } from "./notify.js";
 import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons } from "./embed.js";
 import { loadWorkbook } from "./class-record.js";
-// docx is loaded dynamically (see buildAccomplishmentReportDocx()) instead
-// of a static import here - it's a sizeable ESM bundle only needed by the
-// accomplishment-report feature, not every teacher.html load.
-const DOCX_CDN_URL = "https://cdn.jsdelivr.net/npm/docx@9.7.1/dist/index.mjs";
 
 // AI rubric-check is hidden (not deleted) - per-call Gemini cost isn't
 // worth it right now. Flip this back to true to restore the Run AI Check
@@ -1976,80 +1972,13 @@ async function renderCollagePreview(withPhotos, context) {
   });
 
   el("generate-report-docx").addEventListener("click", (e) =>
-    generateAccomplishmentReport(context, canvas, e.target));
-  el("generate-official-report-docx").addEventListener("click", (e) =>
     generateOfficialAccomplishmentReport(context, canvas, e.target));
-}
-
-// DepEd accomplishment-report .docx structure - kept deliberately simple and
-// adjustable (header fields, collage, brief activity narrative) since the
-// teacher will share their real report template later to refine the exact
-// layout.
-async function buildAccomplishmentReportDocx({ title, subjectName, sectionName, dateLabel, description, collageBuffer, collageWidth, collageHeight }) {
-  const { Document, Paragraph, TextRun, ImageRun, HeadingLevel, AlignmentType } = await import(DOCX_CDN_URL);
-  const pageContentWidth = 540;
-  const imgHeight = Math.round(pageContentWidth * (collageHeight / collageWidth));
-
-  return new Document({
-    sections: [{
-      children: [
-        new Paragraph({ text: title, heading: HeadingLevel.HEADING_1 }),
-        new Paragraph({ children: [new TextRun({ text: `Subject: ${subjectName}`, bold: true })] }),
-        new Paragraph({ children: [new TextRun({ text: `Section: ${sectionName}`, bold: true })] }),
-        new Paragraph({ children: [new TextRun({ text: `Date(s) Covered: ${dateLabel || "—"}`, bold: true })] }),
-        new Paragraph({ text: "" }),
-        new Paragraph({
-          alignment: AlignmentType.CENTER,
-          children: [new ImageRun({
-            type: "png",
-            data: collageBuffer,
-            transformation: { width: pageContentWidth, height: imgHeight },
-          })],
-        }),
-        new Paragraph({ text: "" }),
-        new Paragraph({ children: [new TextRun({ text: description || "" })] }),
-      ],
-    }],
-  });
-}
-
-async function generateAccomplishmentReport(context, canvas, buttonEl) {
-  buttonEl.disabled = true;
-  const original = buttonEl.textContent;
-  buttonEl.textContent = "Generating...";
-  try {
-    const title = el("report-title").value || context.assignmentTitle;
-    const collageBlob = await canvasToBlob(canvas);
-    const collageBuffer = new Uint8Array(await collageBlob.arrayBuffer());
-    const doc = await buildAccomplishmentReportDocx({
-      title,
-      subjectName: context.subjectName || "",
-      sectionName: context.sectionName || "",
-      dateLabel: collageDateLabel(),
-      description: el("report-description").value,
-      collageBuffer,
-      collageWidth: canvas.width,
-      collageHeight: canvas.height,
-    });
-    const { Packer } = await import(DOCX_CDN_URL);
-    const blob = await Packer.toBlob(doc);
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `${title.replace(/[/\\:*?"<>|]/g, "-")}-accomplishment-report.docx`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  } catch (err) {
-    alert("Couldn't build the report: " + err.message);
-  }
-  buttonEl.disabled = false;
-  buttonEl.textContent = original;
 }
 
 // ---------- official DepEd template report ----------
 // Clones the real "Individual Daily Log and Accomplishment Report" template
 // (assets/accomplishment-report-official.docx - a tokenized, single-activity
-// copy of the actual government form the teacher submits) instead of hand-
-// authoring a lookalike with the docx library above: patches its raw
+// copy of the actual government form the teacher submits) - patches its raw
 // word/document.xml text and swaps one placeholder image's bytes, so every
 // original font/seal/table border survives untouched. See
 // .claude/Skills/deped-accomplishment-report for the separate, multi-date,
@@ -2191,7 +2120,7 @@ function renderImagesGallery(submissions, assignmentTitle, context) {
           <button type="button" id="generate-report-docx">Generate Accomplishment Report (.docx)</button>
         </div>
         <details style="margin-top:0.75rem;">
-          <summary class="muted" style="cursor:pointer;">Official DepEd report settings</summary>
+          <summary class="muted" style="cursor:pointer;">Report settings</summary>
           <div style="margin-top:0.5rem;">
             <label>Employee name</label>
             <input id="report-employee-name" value="IAN JOSEPH F. GALUTIRA" />
@@ -2216,9 +2145,6 @@ function renderImagesGallery(submissions, assignmentTitle, context) {
             </div>
           </div>
         </details>
-        <div style="margin-top:0.5rem;">
-          <button type="button" id="generate-official-report-docx">Generate Official DepEd Report (.docx)</button>
-        </div>
       </div>
     </details>`;
   el("download-all-photos").addEventListener("click", (e) =>
