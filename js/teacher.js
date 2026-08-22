@@ -1977,6 +1977,8 @@ async function renderCollagePreview(withPhotos, context) {
 
   el("generate-report-docx").addEventListener("click", (e) =>
     generateAccomplishmentReport(context, canvas, e.target));
+  el("generate-official-report-docx").addEventListener("click", (e) =>
+    generateOfficialAccomplishmentReport(context, canvas, e.target));
 }
 
 // DepEd accomplishment-report .docx structure - kept deliberately simple and
@@ -2043,6 +2045,101 @@ async function generateAccomplishmentReport(context, canvas, buttonEl) {
   buttonEl.textContent = original;
 }
 
+// ---------- official DepEd template report ----------
+// Clones the real "Individual Daily Log and Accomplishment Report" template
+// (assets/accomplishment-report-official.docx - a tokenized, single-activity
+// copy of the actual government form the teacher submits) instead of hand-
+// authoring a lookalike with the docx library above: patches its raw
+// word/document.xml text and swaps one placeholder image's bytes, so every
+// original font/seal/table border survives untouched. See
+// .claude/Skills/deped-accomplishment-report for the separate, multi-date,
+// agent-driven version of this same template - that one is for combining
+// several activity dates into one submission; this one is the single-
+// activity, in-app equivalent tied to one assignment's collage.
+const OFFICIAL_REPORT_TEMPLATE_URL = "assets/accomplishment-report-official.docx";
+
+function escapeXmlText(s) {
+  return String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+}
+
+function formatLongDate(iso) {
+  if (!iso) return "";
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+}
+
+function formatLongDateWithWeekday(iso) {
+  if (!iso) return "";
+  const [y, m, d] = iso.split("-").map(Number);
+  const withWeekday = new Date(y, m - 1, d).toLocaleDateString("en-US", {
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+  });
+  return withWeekday.replace(/^(\w+), (.*)$/, "$2 ($1)");
+}
+
+async function buildOfficialReportDocxBlob(tokens, collageArrayBuffer, collageWidth, collageHeight) {
+  await loadScriptOnce(JSZIP_CDN_URL);
+  const templateBuffer = await (await fetch(OFFICIAL_REPORT_TEMPLATE_URL)).arrayBuffer();
+  const zip = await JSZip.loadAsync(templateBuffer);
+
+  const EMU_PER_INCH = 914400;
+  const imgCx = Math.round(5 * EMU_PER_INCH);
+  const imgCy = Math.round(imgCx * (collageHeight / collageWidth));
+
+  let xml = await zip.file("word/document.xml").async("string");
+  for (const [key, value] of Object.entries({ ...tokens, IMG_CX: imgCx, IMG_CY: imgCy })) {
+    xml = xml.split(`{{${key}}}`).join(escapeXmlText(value));
+  }
+  zip.file("word/document.xml", xml);
+  zip.file("word/media/image4.png", collageArrayBuffer); // the template's one placeholder photo slot
+
+  return zip.generateAsync({ type: "blob" });
+}
+
+async function generateOfficialAccomplishmentReport(context, canvas, buttonEl) {
+  buttonEl.disabled = true;
+  const original = buttonEl.textContent;
+  buttonEl.textContent = "Generating...";
+  try {
+    const fromDate = el("report-date-from").value;
+    const toDate = el("report-date-to").value;
+    const dateCovered = fromDate && toDate && fromDate !== toDate
+      ? `${formatLongDate(fromDate)} to ${formatLongDate(toDate)}`
+      : formatLongDate(fromDate || toDate);
+    const rowDate = formatLongDateWithWeekday(fromDate || toDate);
+
+    const collageBlob = await canvasToBlob(canvas);
+    const collageArrayBuffer = await collageBlob.arrayBuffer();
+    const blob = await buildOfficialReportDocxBlob({
+      EMPLOYEE_NAME: el("report-employee-name").value,
+      DATE_COVERED: dateCovered,
+      ARRANGEMENT: el("report-arrangement").value,
+      ROW_DATE: rowDate,
+      ROW_TIME: `Time: ${el("report-time").value}`,
+      ROW_ACCOMPLISHMENTS: el("report-description").value,
+      MOV_DATE: dateCovered,
+      SUBMITTED_BY_NAME: el("report-submitted-name").value,
+      SUBMITTED_BY_TITLE: el("report-submitted-title").value,
+      VERIFIED_BY_NAME: el("report-verified-name").value,
+      VERIFIED_BY_TITLE: el("report-verified-title").value,
+      APPROVED_BY_NAME: el("report-approved-name").value,
+      APPROVED_BY_TITLE: el("report-approved-title").value,
+      SUBMITTED_DATE: formatLongDate(new Date().toISOString().slice(0, 10)),
+    }, collageArrayBuffer, canvas.width, canvas.height);
+
+    const title = el("report-title").value || context.assignmentTitle;
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${title.replace(/[/\\:*?"<>|]/g, "-")}-DepEd-report.docx`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (err) {
+    alert("Couldn't build the official report: " + err.message);
+  }
+  buttonEl.disabled = false;
+  buttonEl.textContent = original;
+}
+
 // A per-assignment gallery of every submitted photo (photoPages, or the
 // legacy single photoData), with a one-click "download everything as one
 // ZIP" button. Easy to miss if this assignment has no other open card
@@ -2092,6 +2189,35 @@ function renderImagesGallery(submissions, assignmentTitle, context) {
           <button type="button" class="secondary" id="regenerate-collage">Regenerate layout</button>
           <button type="button" class="secondary" id="download-collage-png">Download Collage (PNG)</button>
           <button type="button" id="generate-report-docx">Generate Accomplishment Report (.docx)</button>
+        </div>
+        <details style="margin-top:0.75rem;">
+          <summary class="muted" style="cursor:pointer;">Official DepEd report settings</summary>
+          <div style="margin-top:0.5rem;">
+            <label>Employee name</label>
+            <input id="report-employee-name" value="IAN JOSEPH F. GALUTIRA" />
+            <label>Arrangement</label>
+            <input id="report-arrangement" value="Work-from-Home" />
+            <label>Time</label>
+            <input id="report-time" value="7:30 AM - 4:30 PM" />
+            <label>Submitted by (name / title)</label>
+            <div style="display:flex; gap:0.5rem;">
+              <input id="report-submitted-name" value="IAN JOSEPH F. GALUTIRA" />
+              <input id="report-submitted-title" value="Teacher II" />
+            </div>
+            <label>Verified by (name / title)</label>
+            <div style="display:flex; gap:0.5rem;">
+              <input id="report-verified-name" value="MIGUEL V. CACHO, PhD" />
+              <input id="report-verified-title" value="Head Teacher III/OIC, SHS" />
+            </div>
+            <label>Approved by (name / title)</label>
+            <div style="display:flex; gap:0.5rem;">
+              <input id="report-approved-name" value="HAZEL O. MARIANO, PhD" />
+              <input id="report-approved-title" value="Principal IV" />
+            </div>
+          </div>
+        </details>
+        <div style="margin-top:0.5rem;">
+          <button type="button" id="generate-official-report-docx">Generate Official DepEd Report (.docx)</button>
         </div>
       </div>
     </details>`;
