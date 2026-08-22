@@ -815,6 +815,7 @@ async function loadSubjects() {
   // doesn't linger on screen until the teacher notices and clears it by hand.
   el("global-student-search").value = "";
   el("global-search-results").innerHTML = "";
+  el("global-search-results").classList.add("hidden");
   searchRequestSeq++; // invalidate any in-flight search so it can't repopulate this after the fact
   const showArchived = el("toggle-archived").checked;
   const [snap, counts, leaveCounts] = await Promise.all([getDocs(ownerScopedQuery("subjects")), getPendingCounts(), getLeaveRequestCounts()]);
@@ -926,8 +927,10 @@ async function searchStudentGlobally() {
   const requestId = ++searchRequestSeq;
   if (!queryText.trim()) {
     results.innerHTML = "";
+    results.classList.add("hidden");
     return;
   }
+  results.classList.remove("hidden");
 
   const snap = await getDocs(ownerScopedQuery("submissions"));
   if (requestId !== searchRequestSeq) return;
@@ -1767,7 +1770,51 @@ function drawScatteredCollage(ctx, canvas, { images, title, sectionName, dateLab
   });
 
   // Centered circular badge, drawn last so it always reads clearly on top.
-  const radius = Math.min(W, H) * 0.20;
+  // Text is sized first exactly as before (fit against a fixed baseline
+  // radius, shrinking if too long); the badge is then shrunk to the
+  // smallest radius that still fits that already-sized text, so a short
+  // title/section/date no longer sits inside a badge padded out to the old
+  // fixed size - long text still gets the full-size badge it always did.
+  const CHORD_FACTOR = 0.85;
+  const chordAt = (r, dy) => 2 * Math.sqrt(Math.max(r * r - dy * dy, 0)) * CHORD_FACTOR;
+  const fitText = (text, maxWidth, startSize, weight) => {
+    let size = startSize;
+    ctx.font = `${weight} ${size}px 'Source Serif 4', Georgia, serif`;
+    while (ctx.measureText(text).width > maxWidth && size > 10) {
+      size -= 1;
+      ctx.font = `${weight} ${size}px 'Source Serif 4', Georgia, serif`;
+    }
+    return size;
+  };
+
+  const scale = Math.min(W, H);
+  const maxRadius = scale * 0.20; // baseline used to size text, same as the old fixed radius
+  const minRadius = scale * 0.09; // floor so the badge never collapses for near-empty text
+
+  const titleSize = fitText(title || "", chordAt(maxRadius, -maxRadius * 0.35), Math.round(maxRadius * 0.22), "bold");
+  ctx.font = `bold ${titleSize}px 'Source Serif 4', Georgia, serif`;
+  const titleW = ctx.measureText(title || "").width;
+
+  const sectionSize = fitText(sectionName || "", chordAt(maxRadius, 0), Math.round(maxRadius * 0.14), "normal");
+  ctx.font = `${sectionSize}px 'Source Serif 4', Georgia, serif`;
+  const sectionW = ctx.measureText(sectionName || "").width;
+
+  const dateSize = fitText(dateLabel || "", chordAt(maxRadius, maxRadius * 0.35), Math.round(maxRadius * 0.11), "normal");
+  ctx.font = `${dateSize}px 'Source Serif 4', Georgia, serif`;
+  const dateW = ctx.measureText(dateLabel || "").width;
+
+  // Solves the chord-width formula (width <= 2*sqrt(r^2 - dy^2)*factor, with
+  // dy expressed as a fraction of r) for the smallest radius that fits `w`.
+  const radiusForWidth = (w, dyFrac) =>
+    w <= 0 ? 0 : w / (2 * CHORD_FACTOR * Math.sqrt(Math.max(1 - dyFrac * dyFrac, 0.01)));
+  const stackedHeight = (titleSize + sectionSize + dateSize) * 1.1;
+  const radius = Math.min(Math.max(Math.max(
+    radiusForWidth(titleW, 0.35),
+    radiusForWidth(sectionW, 0),
+    radiusForWidth(dateW, 0.35),
+    stackedHeight / 1.3
+  ), minRadius), maxRadius);
+
   const bcx = W / 2, bcy = H / 2;
   ctx.save();
   ctx.beginPath();
@@ -1788,28 +1835,15 @@ function drawScatteredCollage(ctx, canvas, { images, title, sectionName, dateLab
 
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  const chordAt = (dy) => 2 * Math.sqrt(Math.max(radius * radius - dy * dy, 0)) * 0.85;
-  const fitText = (text, maxWidth, startSize, weight) => {
-    let size = startSize;
-    ctx.font = `${weight} ${size}px 'Source Serif 4', Georgia, serif`;
-    while (ctx.measureText(text).width > maxWidth && size > 10) {
-      size -= 1;
-      ctx.font = `${weight} ${size}px 'Source Serif 4', Georgia, serif`;
-    }
-    return size;
-  };
 
   ctx.fillStyle = "#002045";
-  const titleSize = fitText(title || "", chordAt(-radius * 0.35), Math.round(radius * 0.22), "bold");
   ctx.font = `bold ${titleSize}px 'Source Serif 4', Georgia, serif`;
   ctx.fillText(title || "", bcx, bcy - radius * 0.28);
 
-  const sectionSize = fitText(sectionName || "", chordAt(0), Math.round(radius * 0.14), "normal");
   ctx.font = `${sectionSize}px 'Source Serif 4', Georgia, serif`;
   ctx.fillText(sectionName || "", bcx, bcy + 2);
 
   ctx.fillStyle = "#4a5568";
-  const dateSize = fitText(dateLabel || "", chordAt(radius * 0.35), Math.round(radius * 0.11), "normal");
   ctx.font = `${dateSize}px 'Source Serif 4', Georgia, serif`;
   ctx.fillText(dateLabel || "", bcx, bcy + radius * 0.32);
   ctx.restore();

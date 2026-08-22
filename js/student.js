@@ -343,6 +343,7 @@ async function loadEverything() {
     if (aDocs.length === 0) continue;
     const heading = document.createElement("h3");
     heading.textContent = subjectName;
+    heading.dataset.subjectHeading = subjectName;
     list.appendChild(heading);
 
     for (const aDoc of aDocs) {
@@ -355,6 +356,8 @@ async function loadEverything() {
 
       const row = document.createElement("div");
       row.className = "card";
+      row.dataset.title = a.title;
+      row.dataset.subject = subjectName;
 
       if (!subDoc) {
         const instructionsEmbed = a.instructionsLink ? toEmbedUrl(a.instructionsLink) : null;
@@ -464,7 +467,26 @@ async function loadEverything() {
   saveAssignmentsSeen(seen);
 
   attachSubmitHandlers();
+  filterAssignments();
 }
+
+// Client-side only - list is already fully loaded by loadEverything(), no
+// need for a new Firestore query just to narrow what's shown.
+function filterAssignments() {
+  const q = el("assignment-search").value.trim().toLowerCase();
+  const list = el("assignments-list");
+  const visibleSubjects = new Set();
+  list.querySelectorAll("[data-title]").forEach((row) => {
+    const match = !q || row.dataset.title.toLowerCase().includes(q)
+      || row.dataset.subject.toLowerCase().includes(q);
+    row.style.display = match ? "" : "none";
+    if (match) visibleSubjects.add(row.dataset.subject);
+  });
+  list.querySelectorAll("[data-subject-heading]").forEach((h) => {
+    h.style.display = visibleSubjects.has(h.dataset.subjectHeading) ? "" : "none";
+  });
+}
+el("assignment-search").addEventListener("input", filterAssignments);
 
 // Submissions graded before this session's switch to single-score grading
 // have the old finalGrade.scorePerCriterion shape (no .score), and their
