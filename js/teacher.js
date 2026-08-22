@@ -912,16 +912,17 @@ el("add-subject-form").addEventListener("submit", async (e) => {
 });
 el("toggle-archived").addEventListener("change", loadSubjects);
 
-// Finds a student's work across every subject/section/assignment the
-// teacher owns, from the Home dashboard - submissions only store
-// assignmentId (no subjectId/sectionId), so matches are resolved up the
-// assignment -> section -> subject chain to build the "Open" jump link.
-// Each keystroke fires its own async lookup, and a slower older request can
+// Finds anything the teacher owns matching the typed text - subjects,
+// sections, assignments, and student activity (submissions) - from the
+// Home dashboard, grouped into suggestion-style rows (same look as the
+// notification bell's dropdown, see renderNotifDropdown() above). Each
+// keystroke fires its own async lookup, and a slower older request can
 // resolve after a faster newer one - searchRequestSeq lets a stale response
 // recognize it's been superseded and skip rendering instead of clobbering
 // the current query's results.
 let searchRequestSeq = 0;
-async function searchStudentGlobally() {
+const SEARCH_GROUP_LIMIT = 8; // suggestion-style - not a full results page
+async function searchGlobally() {
   const queryText = el("global-student-search").value;
   const results = el("global-search-results");
   const requestId = ++searchRequestSeq;
@@ -932,62 +933,96 @@ async function searchStudentGlobally() {
   }
   results.classList.remove("hidden");
 
-  const snap = await getDocs(ownerScopedQuery("submissions"));
+  const [subjectsSnap, sectionsSnap, assignmentsSnap, submissionsSnap] = await Promise.all([
+    getDocs(ownerScopedQuery("subjects")),
+    getDocs(ownerScopedQuery("sections")),
+    getDocs(ownerScopedQuery("assignments")),
+    getDocs(ownerScopedQuery("submissions")),
+  ]);
   if (requestId !== searchRequestSeq) return;
-  const matches = snap.docs
-    .map((d) => ({ id: d.id, ...d.data() }))
-    .filter((s) => ownedByViewAs(s) && matchesNameSearch(s.studentName, queryText));
 
-  if (matches.length === 0) {
-    results.innerHTML = `<p class="muted">No matching student activity.</p>`;
+  const subjects = subjectsSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter(ownedByViewAs);
+  const sections = sectionsSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter(ownedByViewAs);
+  const assignments = assignmentsSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter(ownedByViewAs);
+  const submissions = submissionsSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter(ownedByViewAs);
+
+  const subjectsById = new Map(subjects.map((s) => [s.id, s]));
+  const sectionsById = new Map(sections.map((s) => [s.id, s]));
+  const assignmentsById = new Map(assignments.map((a) => [a.id, a]));
+
+  const matchedSubjects = subjects.filter((s) => matchesNameSearch(s.name, queryText)).slice(0, SEARCH_GROUP_LIMIT);
+  const matchedSections = sections.filter((s) => matchesNameSearch(s.sectionName, queryText)).slice(0, SEARCH_GROUP_LIMIT);
+  const matchedAssignments = assignments.filter((a) => matchesNameSearch(a.title, queryText)).slice(0, SEARCH_GROUP_LIMIT);
+  const matchedStudents = submissions.filter((s) => matchesNameSearch(s.studentName, queryText)).slice(0, SEARCH_GROUP_LIMIT);
+
+  if (!matchedSubjects.length && !matchedSections.length && !matchedAssignments.length && !matchedStudents.length) {
+    results.innerHTML = `<p class="muted" style="padding:0.5rem 0.75rem;">No matches.</p>`;
     return;
   }
 
-  const assignmentIds = [...new Set(matches.map((m) => m.assignmentId))];
-  const assignments = new Map(
-    (await Promise.all(assignmentIds.map((id) => getDoc(doc(db, "assignments", id)))))
-      .map((d) => [d.id, d.data()])
-  );
-
-  const sectionIds = [...new Set([...assignments.values()].map((a) => a.sectionId).filter(Boolean))];
-  const sections = new Map(
-    (await Promise.all(sectionIds.map((id) => getDoc(doc(db, "sections", id)))))
-      .map((d) => [d.id, d.data()])
-  );
-
-  const subjectIds = [...new Set([...sections.values()].map((s) => s.subjectId).filter(Boolean))];
-  const subjects = new Map(
-    (await Promise.all(subjectIds.map((id) => getDoc(doc(db, "subjects", id)))))
-      .map((d) => [d.id, d.data()])
-  );
-
-  if (requestId !== searchRequestSeq) return;
-  results.innerHTML = matches.map((m) => {
-    const a = assignments.get(m.assignmentId) || {};
-    const sec = sections.get(a.sectionId) || {};
-    const subj = subjects.get(sec.subjectId) || {};
+  const subjectRows = matchedSubjects.map((s) => `
+    <button class="notif-item" data-jump-subject="${s.id}">${s.name}</button>`).join("");
+  const sectionRows = matchedSections.map((sec) => {
+    const subj = subjectsById.get(sec.subjectId) || {};
     return `
-      <div class="card">
-        <strong>${displayStudentName(m.studentName)}</strong>
-        <span class="status-${m.status}"> — ${m.status}</span>
+      <button class="notif-item" data-jump-section="${sec.subjectId || ""}|${sec.id}">
+        ${sec.sectionName} <span class="muted">(${subj.name || "—"})</span>
+      </button>`;
+  }).join("");
+  const assignmentRows = matchedAssignments.map((a) => {
+    const sec = sectionsById.get(a.sectionId) || {};
+    const subj = subjectsById.get(sec.subjectId) || {};
+    return `
+      <button class="notif-item" data-jump-assignment-only="${sec.subjectId || ""}|${a.sectionId || ""}|${a.id}">
+        ${a.title} <span class="muted">(${subj.name || "—"} &rsaquo; ${sec.sectionName || "—"})</span>
+      </button>`;
+  }).join("");
+  const studentRows = matchedStudents.map((m) => {
+    const a = assignmentsById.get(m.assignmentId) || {};
+    const sec = sectionsById.get(a.sectionId) || {};
+    const subj = subjectsById.get(sec.subjectId) || {};
+    return `
+      <button class="notif-item" data-jump-student="${sec.subjectId || ""}|${a.sectionId || ""}|${m.assignmentId}">
+        ${displayStudentName(m.studentName)} <span class="status-${m.status}">— ${m.status}</span>
         <div class="muted">${subj.name || "—"} &rsaquo; ${sec.sectionName || "—"} &rsaquo; ${a.title || "—"}</div>
-        <button data-jump-subject="${sec.subjectId || ""}" data-jump-section="${a.sectionId || ""}" data-jump-assignment="${m.assignmentId}">Open</button>
-      </div>`;
+      </button>`;
   }).join("");
 
-  results.querySelectorAll("[data-jump-assignment]").forEach((b) =>
+  results.innerHTML =
+    (matchedSubjects.length ? `<div class="notif-group-label">Subjects</div>${subjectRows}` : "") +
+    (matchedSections.length ? `<div class="notif-group-label">Sections</div>${sectionRows}` : "") +
+    (matchedAssignments.length ? `<div class="notif-group-label">Assignments</div>${assignmentRows}` : "") +
+    (matchedStudents.length ? `<div class="notif-group-label">Students</div>${studentRows}` : "");
+
+  results.querySelectorAll("[data-jump-subject]").forEach((b) =>
+    b.addEventListener("click", () => openSubject(b.dataset.jumpSubject)));
+
+  results.querySelectorAll("[data-jump-section]").forEach((b) =>
     b.addEventListener("click", async () => {
-      if (!b.dataset.jumpSubject || !b.dataset.jumpSection) {
-        alert("Can't open this - its section or subject was deleted.");
-        return;
-      }
-      await openSubject(b.dataset.jumpSubject);
-      await openSection(b.dataset.jumpSection);
+      const [subjectId, sectionId] = b.dataset.jumpSection.split("|");
+      if (!subjectId) { alert("Can't open this - its subject was deleted."); return; }
+      await openSubject(subjectId);
+      await openSection(sectionId);
+    }));
+
+  results.querySelectorAll("[data-jump-assignment-only]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const [subjectId, sectionId, assignmentId] = b.dataset.jumpAssignmentOnly.split("|");
+      if (!subjectId || !sectionId) { alert("Can't open this - its section or subject was deleted."); return; }
+      await goToAssignment(subjectId, sectionId, assignmentId);
+    }));
+
+  results.querySelectorAll("[data-jump-student]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const [subjectId, sectionId, assignmentId] = b.dataset.jumpStudent.split("|");
+      if (!subjectId || !sectionId) { alert("Can't open this - its section or subject was deleted."); return; }
+      await openSubject(subjectId);
+      await openSection(sectionId);
       highlightStudentName = queryText;
-      await openAssignment(b.dataset.jumpAssignment);
+      await openAssignment(assignmentId);
     }));
 }
-el("global-student-search").addEventListener("input", searchStudentGlobally);
+el("global-student-search").addEventListener("input", searchGlobally);
 
 // ---------- sections ----------
 async function openSubject(subjectId) {
