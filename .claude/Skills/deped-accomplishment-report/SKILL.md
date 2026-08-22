@@ -58,14 +58,19 @@ person/school setup — same pattern as this repo's
 - **Signature block**:
   - Submitted by: IAN JOSEPH F. GALUTIRA, Teacher II
   - Verified by: MIGUEL V. CACHO, PhD, Head Teacher III/OIC, SHS
-  - Approved by: HAZEL O. MARIANO, PhD — the title on this line has
-    appeared as both "Asst. Principal II" and "Principal IV" across
-    source material. Read the actual title straight out of the bundled
-    template asset when generating (don't guess or hardcode which one
-    is current) — it may reflect a real promotion/reassignment. If you
-    ever regenerate the template asset itself from a newer source and
-    the title differs from what's here, ask the user once to confirm
-    which is correct.
+  - Approved by: HAZEL O. MARIANO, PhD, Principal IV — the template used
+    to carry a stray leftover "Asst. Principal II" concatenated onto the
+    Verified-by title (a copy/paste artifact, not a real alternate
+    value); confirmed removed and title settled as "Principal IV" only.
+    If you ever regenerate the template asset itself from a newer
+    source, check this line hasn't reverted before trusting it blindly.
+  - No "Date: ___" line under any of the three signatures, and no date
+    value after "Date/s Covered:" — both removed from the template by
+    request (redundant with the date already shown per-activity
+    elsewhere). Don't reintroduce either without being asked.
+- **School logo position**: fixed in the template (was overlapping/
+  misaligned, nudged right ~1in via `positionH`/`posOffset`). Don't
+  touch its anchor position unless the user reports it's off again.
 
 ## Generating the document
 
@@ -80,37 +85,46 @@ python-docx (or the `anthropic-skills:docx` skill's tooling) against
 1. Copy the asset to the output path (or open it directly with
    `Document(template_path)`) — never edit the asset file itself; it
    must stay pristine as the clone source for every future run.
-2. Find the "Name of Employee:" and "Date/s Covered:" paragraphs by
-   their label text and replace only the trailing value, preserving the
-   run's existing formatting (bold/font untouched).
+2. Find the "Name of Employee:" paragraph by its label text and replace
+   only the trailing value, preserving the run's existing formatting
+   (bold/font untouched). **Leave "Date/s Covered:" with nothing after
+   it** — the template ships with that value already blank; don't fill
+   it in. Same for the log table's date/weekday line (next step) and
+   the "Means of Verification" date subheading (step 5) — all three
+   date displays were deliberately removed by request as redundant with
+   the activity date already implied elsewhere in the doc/filename.
+   Don't add any of them back without being asked.
 3. The log table is `doc.tables[0]`. Reuse its existing first data row
    for the first activity date (edit the 3 cell texts in place — don't
-   delete/recreate the row, that's how formatting gets lost). For every
+   delete/recreate the row, that's how formatting gets lost). The date
+   column's first paragraph (date + weekday) ships blank — leave it
+   blank, only fill the "Time: ..." paragraph below it. For every
    additional date, `copy.deepcopy(row._tr)` on that row's XML element,
-   append it to the table, then edit the new row's cells. This is the
-   standard python-docx pattern for adding rows that visually match an
-   existing one.
+   append it to the table, then edit the new row's cells (same blank
+   date-line convention). This is the standard python-docx pattern for
+   adding rows that visually match an existing one.
 4. Signature block: locate by "Submitted by:"/"Verified by:"/"Approved
    by:" text. Leave as-is unless the user explicitly gave different
    names for this run.
 5. "Means of Verification" sections: the template has a heading
-   paragraph + date line + inline photos pattern for the first date.
-   Use it as-is for the first date's photos. For each additional date,
-   clone that heading+date-line pattern (insert new paragraph elements
-   right after the anchor, before the next section) and insert that
-   date's photos there — not appended to the end of the document. Keep
-   photos at their natural aspect ratio, scaled to roughly the same
-   width as the real photos in the template (about 4-5 inches) — don't
-   go full-page-width, that's not how the template looks today.
+   paragraph + blank date-line paragraph + inline photos pattern for the
+   first date. Use it as-is for the first date's photos (date line stays
+   blank — see step 2). For each additional date, clone that
+   heading+date-line pattern (insert new paragraph elements right after
+   the anchor, before the next section) and insert that date's photos
+   there — not appended to the end of the document. Keep photos at
+   their natural aspect ratio, scaled to roughly the same width as the
+   real photos in the template (about 4-5 inches) — don't go
+   full-page-width, that's not how the template looks today.
+   **Multi-date caveat**: with the date subheading blanked, nothing in
+   the doc text distinguishes one date's MOV section from another's
+   photos. That was fine for the single-date report this convention
+   came from; if you're generating a report with 2+ dates, flag this to
+   the user before finishing and ask whether the MOV date lines should
+   be filled in for that run specifically, since blank sections would
+   read as ambiguous.
 6. Save to a per-run path, e.g.
    `Accomplishment-Report-<Section-or-Assignment>-<DateRangeSlug>.docx`.
-
-**Multiple dates → repeating structure**: N activity dates = N table
-rows + N Means of Verification sections. The single most common mistake
-is the date reading differently between a table row and its matching MOV
-heading (e.g. "July 10, 2026" in one, "07/10/26" in the other) — do one
-pass before finishing and confirm every date string matches verbatim
-between the table and its MOV section.
 
 ## Related skill
 
