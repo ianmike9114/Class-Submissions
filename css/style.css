@@ -189,6 +189,15 @@ label { font-weight: 600; font-size: 0.85rem; display: block; margin-bottom: 0.2
   margin: 0.5rem 0;
 }
 
+/* Taller reading pane for a teacher's lesson material embedded inline on
+   the student's assignment card - a 400px box is too short to read a PDF
+   or slide deck comfortably. Only the material embed uses this; teacher
+   submission previews keep the default 400px above. */
+.submission-preview.material {
+  height: 640px;
+  max-width: 100%;
+}
+
 .photo-preview {
   max-width: 100%;
   border: 1px solid var(--gray-border);
@@ -320,7 +329,87 @@ details.card summary::marker { color: var(--blue); }
   outline-offset: 2px;
 }
 
+/* Course-outline sidebar (student assignments view). Two-column on desktop:
+   a sticky outline panel beside the scrolling card list. Both columns live
+   inside main's 900px max-width. */
+.outline-layout {
+  display: flex;
+  gap: 1.25rem;
+  align-items: flex-start;
+}
+.outline-layout #assignments-list {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+#course-outline {
+  flex: 0 0 230px;
+  position: sticky;
+  top: 1rem;
+  align-self: flex-start;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid var(--gray-border);
+  border-radius: var(--radius-lg);
+  padding: 0.75rem 1rem;
+}
+#course-outline > summary {
+  font-family: var(--font-headline);
+  font-weight: 600;
+  color: var(--blue);
+  cursor: default;
+  list-style: none;       /* no disclosure triangle on desktop (always open) */
+  margin-bottom: 0.5rem;
+}
+#course-outline > summary::-webkit-details-marker { display: none; }
+.outline-subject { margin-bottom: 0.9rem; }
+.outline-subject-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+.outline-progress {
+  height: 6px;
+  background: var(--gray-border);
+  border-radius: 9999px;
+  overflow: hidden;
+  margin: 0.35rem 0 0.5rem;
+}
+.outline-progress-bar { height: 100%; background: var(--green); }
+.outline-lesson-head { margin: 0.4rem 0 0.15rem; }
+.outline-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  color: var(--blue);
+  border: none;
+  padding: 0.2rem 0;
+  font-size: 0.85rem;
+  line-height: 1.3;
+  cursor: pointer;
+}
+.outline-item:hover { text-decoration: underline; background: none; }
+.outline-item-status { color: var(--green); }
+.card.jump-highlight {
+  box-shadow: 0 0 0 2px var(--blue);
+  transition: box-shadow 0.3s ease;
+}
+
 @media (max-width: 640px) {
+  /* Outline stacks above the list and becomes a real collapsible panel
+     ("Jump to lesson") instead of a sticky sidebar. */
+  .outline-layout { display: block; }
+  #course-outline {
+    position: static;
+    flex: none;
+    max-height: none;
+    margin-bottom: 1rem;
+  }
+  #course-outline > summary { cursor: pointer; list-style: revert; }
+  #course-outline > summary::-webkit-details-marker { display: revert; }
+
   header {
     flex-direction: column;
     align-items: stretch;

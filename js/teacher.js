@@ -1536,6 +1536,7 @@ el("add-assignment-form").addEventListener("submit", async (e) => {
     subjectId: state.subjectId,
     sectionId: state.sectionId,
     title,
+    lesson: el("assignment-lesson").value.trim(),
     instructions: el("assignment-instructions").value.trim(),
     instructionsLink: el("assignment-instructions-link").value.trim(),
     uploadFolderLink: el("assignment-upload-link").value.trim(),
@@ -1631,6 +1632,7 @@ async function openAssignment(assignmentId) {
   const data = (await getDoc(doc(db, "assignments", assignmentId))).data();
   el("assignment-view-title").textContent = data.title;
   el("edit-assignment-title").value = data.title || "";
+  el("edit-assignment-lesson").value = data.lesson || "";
   el("edit-assignment-instructions").value = data.instructions || "";
   el("edit-assignment-instructions-link").value = data.instructionsLink || "";
   el("edit-assignment-upload-link").value = data.uploadFolderLink || "";
@@ -1649,6 +1651,7 @@ el("edit-assignment-form").addEventListener("submit", async (e) => {
   const assignmentId = state.assignmentId;
   await updateDoc(doc(db, "assignments", assignmentId), {
     title: el("edit-assignment-title").value.trim(),
+    lesson: el("edit-assignment-lesson").value.trim(),
     instructions: el("edit-assignment-instructions").value.trim(),
     instructionsLink: el("edit-assignment-instructions-link").value.trim(),
     uploadFolderLink: el("edit-assignment-upload-link").value.trim(),
