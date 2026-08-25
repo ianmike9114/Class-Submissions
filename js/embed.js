@@ -35,6 +35,38 @@ export function toEmbedUrl(link) {
   return null;
 }
 
+// Scan a free-text string for the first URL that toEmbedUrl() can embed.
+// Teachers routinely paste a Drive/Docs/Slides/YouTube link straight into
+// an assignment's instructions text (not the dedicated "Instructions file"
+// field), where it would otherwise render as plain, click-through text -
+// this pulls it out so the caller can show the material inline instead.
+export function extractFirstEmbeddableUrl(text) {
+  if (!text) return null;
+  const urls = text.match(/https?:\/\/[^\s<>"')]+/g);
+  if (!urls) return null;
+  for (const url of urls) {
+    if (toEmbedUrl(url)) return url;
+  }
+  return null;
+}
+
+// Standard inline-preview block for a link: an <iframe> when the link
+// embeds (toEmbedUrl() != null), otherwise a plain <a href> plus the
+// Android "Open in Chrome" escape hatch. Centralizes the iframe-or-link
+// fallback each call site used to hand-write. `variant` adds an extra
+// sizing class on the iframe ("material" => the taller reading pane used
+// for lesson material, "" => the default 400px box); `label` names the
+// plain-link fallback.
+export function embedBlockFor(link, { variant = "", label = "Open file" } = {}) {
+  if (!link) return "";
+  const embed = toEmbedUrl(link);
+  if (embed) {
+    const cls = variant ? `submission-preview ${variant}` : "submission-preview";
+    return `<iframe src="${embed}" class="${cls}"></iframe>`;
+  }
+  return `<div class="muted"><a href="${link}" target="_blank" rel="noopener">${label}</a>${openInChromeButton(link)}</div>`;
+}
+
 // Android-only escape hatch for links that don't embed (toEmbedUrl() above
 // returned null, so the caller fell back to a plain <a target="_blank">) -
 // on some Android phones the OS hands that tap to whatever app claims the

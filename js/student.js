@@ -3,7 +3,7 @@ import { guardPage, signOutUser } from "./auth.js";
 import {
   collection, addDoc, setDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons } from "./embed.js";
+import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js";
 
 let currentUser = null;
 function el(id) { return document.getElementById(id); }
@@ -305,6 +305,8 @@ async function loadEverything() {
   const sectionIds = enrollments.map((en) => en.sectionId);
   const list = el("assignments-list");
   list.innerHTML = "";
+  el("course-outline-body").innerHTML = "";
+  el("course-outline").classList.add("hidden");
   if (sectionIds.length === 0) return;
 
   // Firestore 'in' queries cap at 30 - fine for a solo class-load use case.
@@ -358,14 +360,10 @@ async function loadEverything() {
       row.className = "card";
       row.dataset.title = a.title;
       row.dataset.subject = subjectName;
+      row.dataset.assignmentId = aDoc.id;
 
       if (!subDoc) {
-        const instructionsEmbed = a.instructionsLink ? toEmbedUrl(a.instructionsLink) : null;
-        const instructionsFileBlock = a.instructionsLink
-          ? (instructionsEmbed
-            ? `<iframe src="${instructionsEmbed}" class="submission-preview"></iframe>`
-            : `<div class="muted"><a href="${a.instructionsLink}" target="_blank" rel="noopener">Instructions file</a>${openInChromeButton(a.instructionsLink)}</div>`)
-          : "";
+        const instructionsFileBlock = materialBlock(a);
         const uploadFolderBlock = a.uploadFolderLink
           ? `<div class="muted"><a href="${a.uploadFolderLink}" target="_blank" rel="noopener">Upload here (large files, e.g. video)</a>${openInChromeButton(a.uploadFolderLink)}</div>`
           : "";
@@ -398,6 +396,7 @@ async function loadEverything() {
           <strong>${a.title}</strong>
           <span class="status-${s.status}"> — ${statusLabel}</span>
           ${s.status === "returned" && s.finalGrade?.feedback ? `<p class="muted">Teacher note: ${s.finalGrade.feedback}</p>` : ""}
+          ${materialBlock(a)}
           ${actionsBlock}`;
       }
       list.appendChild(row);
@@ -466,9 +465,74 @@ async function loadEverything() {
   }
   saveAssignmentsSeen(seen);
 
+  renderOutline(assignmentsBySubject, subDocsByAssignment);
   attachSubmitHandlers();
   filterAssignments();
 }
+
+// Course-outline sidebar: Subject -> Lesson -> assignment, with a progress
+// bar per subject (assignments the student has already submitted / total).
+// Built entirely from data loadEverything() already fetched - no extra
+// Firestore reads. Each leaf jumps to (and briefly highlights) its card.
+function renderOutline(assignmentsBySubject, subDocsByAssignment) {
+  const body = el("course-outline-body");
+  const outline = el("course-outline");
+  let html = "";
+  let anyAssignments = false;
+
+  for (const [subjectName, aDocs] of assignmentsBySubject) {
+    if (aDocs.length === 0) continue;
+    anyAssignments = true;
+
+    const done = aDocs.filter((d) => subDocsByAssignment.get(d.id)).length;
+    const pct = Math.round((done / aDocs.length) * 100);
+
+    // Group this subject's assignments by lesson, preserving first-seen order.
+    const byLesson = new Map();
+    for (const d of aDocs) {
+      const lesson = (d.data().lesson || "").trim() || "General";
+      if (!byLesson.has(lesson)) byLesson.set(lesson, []);
+      byLesson.get(lesson).push(d);
+    }
+
+    html += `<div class="outline-subject">
+      <div class="outline-subject-head"><strong>${esc(subjectName)}</strong><span class="muted">${done}/${aDocs.length}</span></div>
+      <div class="outline-progress"><div class="outline-progress-bar" style="width:${pct}%"></div></div>`;
+    for (const [lesson, docs] of byLesson) {
+      // Only label the lesson when the teacher actually set one - a lone
+      // "General" group would just be noise.
+      if (byLesson.size > 1 || lesson !== "General") {
+        html += `<div class="outline-lesson-head muted">${esc(lesson)}</div>`;
+      }
+      for (const d of docs) {
+        const submitted = !!subDocsByAssignment.get(d.id);
+        html += `<button type="button" class="outline-item" data-jump="${d.id}">${esc(d.data().title)}${submitted ? ' <span class="outline-item-status">✓</span>' : ""}</button>`;
+      }
+    }
+    html += `</div>`;
+  }
+
+  body.innerHTML = html;
+  outline.classList.toggle("hidden", !anyAssignments);
+}
+
+// Minimal HTML-escape for text interpolated into the outline markup
+// (subject/lesson/title come from teacher input).
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"]/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+// One delegated click handler: jump to the assignment card and flash it.
+el("course-outline").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-jump]");
+  if (!btn) return;
+  const card = el("assignments-list").querySelector(`[data-assignment-id="${btn.dataset.jump}"]`);
+  if (!card) return;
+  card.scrollIntoView({ behavior: "smooth", block: "start" });
+  card.classList.add("jump-highlight");
+  setTimeout(() => card.classList.remove("jump-highlight"), 1500);
+});
 
 // Client-side only - list is already fully loaded by loadEverything(), no
 // need for a new Firestore query just to narrow what's shown.
@@ -487,6 +551,29 @@ function filterAssignments() {
   });
 }
 el("assignment-search").addEventListener("input", filterAssignments);
+
+// Show the teacher's lesson material inline on the assignment card.
+// Teachers attach it either in the dedicated "Instructions file" field
+// (a.instructionsLink) OR by pasting a link straight into the instructions
+// text (a.instructions) - handle both, in the taller "material" reading
+// pane, and never render the same file twice (dedupe by embed URL so a link
+// present in both places shows once).
+function materialBlock(a) {
+  const sources = [
+    [a.instructionsLink || null, "Instructions file"],
+    [extractFirstEmbeddableUrl(a.instructions), "Lesson material"],
+  ];
+  const seen = new Set();
+  let html = "";
+  for (const [url, label] of sources) {
+    if (!url) continue;
+    const key = toEmbedUrl(url) || url;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    html += embedBlockFor(url, { variant: "material", label });
+  }
+  return html;
+}
 
 // Submissions graded before this session's switch to single-score grading
 // have the old finalGrade.scorePerCriterion shape (no .score), and their
