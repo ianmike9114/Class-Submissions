@@ -32,9 +32,26 @@ header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  /* Wrap instead of overflowing: the left group (nav buttons + title + 260px
+     search) plus the right group (bells + email + Sign out) exceed a normal
+     laptop width once the signed-in email is long, and with no wrap the right
+     group ran off the right edge and clipped "Sign out". Wrapping drops the
+     right group to a second line instead. The 640px block below still forces
+     the full column stack on phones. */
+  flex-wrap: wrap;
+  gap: 0.75rem;
 }
 
 header h1 { font-size: 1.15rem; margin: 0; }
+/* Let the email shrink/ellipsis rather than force the right group wider than
+   the viewport (it can't shrink below its content otherwise). */
+#teacher-email {
+  min-width: 0;
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 main {
   max-width: 900px;
