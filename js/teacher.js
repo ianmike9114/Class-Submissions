@@ -490,13 +490,14 @@ let lastNotifications = { submissions: [], leaves: [], totalCount: 0, error: fal
 // - this powers the header-wide notification dropdown, which has no
 // surrounding context of its own.
 async function getNotifications() {
-  const [subjectsSnap, sectionsSnap, assignSnap, pendingSnap, leaveSnap, joinSnap] = await Promise.all([
+  const [subjectsSnap, sectionsSnap, assignSnap, pendingSnap, leaveSnap, joinSnap, redoSnap] = await Promise.all([
     getDocs(ownerScopedQuery("subjects")),
     getDocs(ownerScopedQuery("sections")),
     getDocs(ownerScopedQuery("assignments")),
     getDocs(ownerScopedQuery("submissions", where("status", "==", "pending"))),
     getDocs(ownerScopedQuery("enrollments", where("leaveRequested", "==", true))),
     getDocs(ownerScopedQuery("enrollments", where("seen", "==", false))),
+    getDocs(ownerScopedQuery("submissions", where("resubmitRequested", "==", true))),
   ]);
 
   const subjectNames = new Map(subjectsSnap.docs.map((d) => [d.id, d.data().name]));
@@ -564,12 +565,36 @@ async function getNotifications() {
     };
   });
 
+  // Redo requests - a student asked to reopen a graded submission (see
+  // js/student.js's "Request to redo"). Grouped by assignment, same shape as
+  // pending submissions above.
+  const redoCounts = new Map();
+  redoSnap.forEach((d) => {
+    if (!ownedByViewAs(d.data())) return; // admin's unfiltered submissions query includes every teacher's - narrow to mine/legacy
+    const assignmentId = d.data().assignmentId;
+    redoCounts.set(assignmentId, (redoCounts.get(assignmentId) || 0) + 1);
+  });
+  const redos = [...redoCounts.entries()].map(([assignmentId, count]) => {
+    const a = assignments.get(assignmentId) || {};
+    const section = sections.get(a.sectionId) || {};
+    return {
+      assignmentId,
+      sectionId: a.sectionId,
+      subjectId: section.subjectId,
+      title: a.title || "(deleted assignment)",
+      sectionName: section.sectionName || "(deleted section)",
+      subjectName: subjectNames.get(section.subjectId) || "(deleted subject)",
+      count,
+    };
+  });
+
   const totalCount =
     submissions.reduce((sum, s) => sum + s.count, 0) +
     leaves.reduce((sum, l) => sum + l.count, 0) +
-    joins.reduce((sum, j) => sum + j.students.length, 0);
+    joins.reduce((sum, j) => sum + j.students.length, 0) +
+    redos.reduce((sum, r) => sum + r.count, 0);
 
-  return { submissions, leaves, joins, totalCount };
+  return { submissions, leaves, joins, redos, totalCount };
 }
 
 async function refreshNotifications() {
@@ -589,14 +614,14 @@ function closeNotifDropdown() {
 }
 
 function renderNotifDropdown() {
-  const { submissions, leaves, joins, error } = lastNotifications;
+  const { submissions, leaves, joins, redos = [], error } = lastNotifications;
   const dropdown = el("notif-dropdown");
 
   if (error) {
     dropdown.innerHTML = '<p class="muted" style="padding:0.5rem 0.75rem;">Couldn\'t load notifications.</p>';
     return;
   }
-  if (submissions.length === 0 && leaves.length === 0 && joins.length === 0) {
+  if (submissions.length === 0 && leaves.length === 0 && joins.length === 0 && redos.length === 0) {
     dropdown.innerHTML = '<p class="muted" style="padding:0.5rem 0.75rem;">You\'re all caught up.</p>';
     return;
   }
@@ -613,9 +638,14 @@ function renderNotifDropdown() {
     <button class="notif-item" data-goto-join="${j.subjectId}|${j.sectionId}">
       ${j.students.map((s) => displayStudentName(s.studentName)).join(", ")} joined <span class="muted">(${j.subjectName} &rsaquo; ${j.sectionName})</span>
     </button>`).join("");
+  const redoRows = redos.map((r) => `
+    <button class="notif-item" data-goto-assignment="${r.subjectId}|${r.sectionId}|${r.assignmentId}">
+      ${r.title} <span class="muted">(${r.subjectName} &rsaquo; ${r.sectionName})</span> — ${r.count} redo request${r.count > 1 ? "s" : ""}
+    </button>`).join("");
 
   dropdown.innerHTML =
     (joins.length ? `<div class="notif-group-label">New joins</div>${joinRows}` : "") +
+    (redos.length ? `<div class="notif-group-label">Redo requests</div>${redoRows}` : "") +
     (submissions.length ? `<div class="notif-group-label">Pending submissions</div>${submissionRows}` : "") +
     (leaves.length ? `<div class="notif-group-label">Leave requests</div>${leaveRows}` : "");
 
@@ -2280,10 +2310,12 @@ async function loadSubmissions() {
       <strong id="sub-name-${d.id}">${displayStudentName(s.studentName)}</strong>
       <button type="button" class="secondary" data-edit-sub-name="${d.id}" data-uid="${s.studentUID}" data-raw="${s.studentName}" style="margin-left:0.4rem;">Edit name</button>
       <span class="status-${s.status}"> — ${s.status}</span>
+      ${s.resubmitRequested ? ' <span class="status-pending">redo requested</span>' : ""}
       ${linkBlock}
       <div id="detail-${d.id}"></div>
       <div style="margin-top:0.5rem;">
         ${AI_CHECK_ENABLED ? `<button data-ai="${d.id}">Run AI Check</button>` : ""}
+        ${s.resubmitRequested ? `<button data-allow-redo="${d.id}">Allow redo</button>` : ""}
         <button class="secondary" data-review="${d.id}">Review / Grade</button>
         <button class="danger" data-delete-sub="${d.id}">Delete</button>
       </div>`;
@@ -2297,6 +2329,24 @@ async function loadSubmissions() {
   }
   list.querySelectorAll("[data-review]").forEach((b) =>
     b.addEventListener("click", () => openReview(b.dataset.review)));
+  // Grant a student's redo request: reopen the graded submission for editing
+  // (status -> "returned", the same reopened state as "Return for revision")
+  // and clear the request flag. The old finalGrade is deliberately kept - it
+  // stays the student's current grade until the redone work is re-graded.
+  list.querySelectorAll("[data-allow-redo]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const ok = confirm("Reopen this graded assignment so the student can redo it? Their current grade stays until you re-grade the new work.");
+      if (!ok) return;
+      b.disabled = true;
+      await updateDoc(doc(db, "submissions", b.dataset.allowRedo), {
+        status: "returned",
+        resubmitRequested: false,
+        returnedAt: Date.now(),
+      });
+      alert("Reopened — the student can now edit and resubmit.");
+      loadSubmissions();
+      refreshNotifications();
+    }));
   list.querySelectorAll("[data-delete-sub]").forEach((b) =>
     b.addEventListener("click", async () => {
       const s = ownedDocs.find((d) => d.id === b.dataset.deleteSub)?.data();

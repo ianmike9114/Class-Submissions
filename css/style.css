@@ -392,10 +392,37 @@ details.card summary::marker { color: var(--blue); }
 }
 .outline-item:hover { text-decoration: underline; background: none; }
 .outline-item-status { color: var(--green); }
-.card.jump-highlight {
-  box-shadow: 0 0 0 2px var(--blue);
-  transition: box-shadow 0.3s ease;
+/* The outline item whose assignment is currently open in the detail panel. */
+.outline-item.active {
+  font-weight: 700;
+  border-left: 3px solid var(--blue);
+  padding-left: 0.5rem;
+  margin-left: -0.5rem;
+  text-decoration: none;
 }
+
+/* Detail-panel mode: the outline is the navigation, and only the one
+   assignment opened from it shows on the right. Every other child of the
+   list (cards, subject headings) is hidden until its outline item is
+   clicked (js/student.js toggles .is-open). */
+#assignments-list.outline-mode > * { display: none; }
+#assignments-list.outline-mode > .card.is-open,
+#assignments-list.outline-mode > #assignment-empty { display: block; }
+#assignment-empty { padding: 1rem 0; }
+
+/* Short "how this page works" panel above the outline. */
+.student-guide { margin-bottom: 1rem; }
+.student-guide-steps { margin: 0.75rem 0 0; padding-left: 1.25rem; }
+.student-guide-steps li { margin-bottom: 0.35rem; }
+
+/* Read-only view of what the student themselves turned in, shown on their
+   own assignment card in every state (pending / returned / graded). */
+.submitted-work {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--gray-border);
+}
+.submitted-work .photo-thumbs a img { width: 120px; height: 120px; }
 
 @media (max-width: 640px) {
   /* Outline stacks above the list and becomes a real collapsible panel
