@@ -85,7 +85,18 @@ function cachedOwnerDocs(key, collectionName, ...wheres) {
   const now = Date.now();
   const hit = readCache.get(fullKey);
   if (hit && now - hit.t < READ_CACHE_TTL_MS) return hit.promise;
-  const promise = getDocs(ownerScopedQuery(collectionName, ...wheres));
+  // Always filter by the viewed owner - even for the super admin. These are
+  // notification/count/overview rollups, which the UI already narrows to the
+  // viewed owner via ownedByViewAs(); the admin-unfiltered ownerScopedQuery
+  // would otherwise READ every teacher's whole account deployment-wide on the
+  // admin's own landing (a huge, pointless read-quota drain) only to throw all
+  // but their own away. Write-path reads still use ownerScopedQuery directly.
+  // Edge: pre-migration docs lacking ownerEmail (isLegacyUnowned) won't match
+  // this filter, so they no longer surface in the admin's rollups - acceptable
+  // on this long-migrated system; a one-time ownerEmail backfill is the fix if
+  // any remain.
+  const scoped = query(collection(db, collectionName), where("ownerEmail", "==", state.viewAsEmail), ...wheres);
+  const promise = getDocs(scoped);
   readCache.set(fullKey, { t: now, promise });
   return promise;
 }
@@ -770,42 +781,73 @@ async function renameStudentEverywhere(studentUID, newName) {
 // missing submission, so it works even for sections with no roster or
 // master list set up at all.
 async function getEnrollmentNotRespondingOverview() {
-  const subjSnap = await getDocs(ownerScopedQuery("subjects"));
+  // Fetch each collection ONCE and compute the overview in memory, instead of
+  // the previous per-subject/per-section/per-assignment query fan-out (which
+  // fired a submissions query per assignment - an N+1 that ran on every
+  // Master-Lists open). subjects/sections/assignments come warm from the
+  // landing's read cache; only the two "all" scans (enrollments, submissions)
+  // are new. cachedOwnerDocs already scopes every fetch to the viewed owner.
+  const [subjSnap, sectSnapAll, assignSnapAll, enrollSnapAll, subSnapAll] = await Promise.all([
+    cachedOwnerDocs("subjects", "subjects"),
+    cachedOwnerDocs("sections", "sections"),
+    cachedOwnerDocs("assignments", "assignments"),
+    cachedOwnerDocs("enr:all", "enrollments"),
+    cachedOwnerDocs("subs:all", "submissions"),
+  ]);
+
   const subjects = subjSnap.docs
     .map((d) => ({ id: d.id, ...d.data() }))
     .filter((s) => ownedByViewAs(s) && !s.archived);
 
-  // Every level below runs in parallel (Promise.all) rather than
-  // sequential for-of/await - same total read count as before, but a
-  // teacher with several subjects/sections/assignments waits for the
-  // slowest single round-trip per level instead of the sum of all of them.
-  const subjectResults = await Promise.all(subjects.map(async (subject) => {
-    const sectSnap = await getDocs(ownerScopedQuery("sections", where("subjectId", "==", subject.id)));
-    const sections = sectSnap.docs.filter((d) => ownedByViewAs(d.data())).map((d) => ({ id: d.id, ...d.data() }));
+  // sectionId -> [section], subjectId keyed; assignmentId/section maps; and
+  // assignmentId -> Set<studentUID> of who has submitted it (owned subs only).
+  const sectionsBySubject = new Map();
+  sectSnapAll.docs.filter((d) => ownedByViewAs(d.data())).forEach((d) => {
+    const s = { id: d.id, ...d.data() };
+    if (!sectionsBySubject.has(s.subjectId)) sectionsBySubject.set(s.subjectId, []);
+    sectionsBySubject.get(s.subjectId).push(s);
+  });
+  const assignmentsBySection = new Map();
+  assignSnapAll.docs.filter((d) => ownedByViewAs(d.data())).forEach((d) => {
+    const a = { id: d.id, ...d.data() };
+    if (!assignmentsBySection.has(a.sectionId)) assignmentsBySection.set(a.sectionId, []);
+    assignmentsBySection.get(a.sectionId).push(a);
+  });
+  const enrollmentsBySection = new Map();
+  enrollSnapAll.docs.filter((d) => ownedByViewAs(d.data())).forEach((d) => {
+    const e = d.data();
+    if (!enrollmentsBySection.has(e.sectionId)) enrollmentsBySection.set(e.sectionId, []);
+    enrollmentsBySection.get(e.sectionId).push(e);
+  });
+  const subUIDsByAssignment = new Map();
+  subSnapAll.docs.forEach((d) => {
+    const sub = d.data();
+    if (!ownedByViewAs(sub)) return;
+    if (!subUIDsByAssignment.has(sub.assignmentId)) subUIDsByAssignment.set(sub.assignmentId, new Set());
+    subUIDsByAssignment.get(sub.assignmentId).add(sub.studentUID);
+  });
 
-    const sectionResults = await Promise.all(sections.map(async (section) => {
-      const [assignSnap, enrollSnap] = await Promise.all([
-        getDocs(query(collection(db, "assignments"), where("sectionId", "==", section.id))),
-        getDocs(ownerScopedQuery("enrollments", where("sectionId", "==", section.id))),
-      ]);
-      const assignments = assignSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const subjectResults = subjects.map((subject) => {
+    const sections = sectionsBySubject.get(subject.id) || [];
+
+    const sectionResults = sections.map((section) => {
+      const assignments = assignmentsBySection.get(section.id) || [];
       if (assignments.length === 0) return null; // nothing posted yet, nothing to be missing
-      const enrollments = enrollSnap.docs.filter((d) => ownedByViewAs(d.data())).map((d) => d.data());
+      const enrollments = enrollmentsBySection.get(section.id) || [];
 
       const writtenIds = new Set(assignments.filter((a) => a.component === "written").map((a) => a.id));
       const performanceIds = new Set(assignments.filter((a) => a.component === "performance").map((a) => a.id));
 
-      const submittedByStudent = new Map(); // studentUID -> Set of assignmentIds
-      const subSnaps = await Promise.all(assignments.map((a) =>
-        getDocs(ownerScopedQuery("submissions", where("assignmentId", "==", a.id)))));
-      assignments.forEach((a, i) => {
-        subSnaps[i].forEach((d) => {
-          const sub = d.data();
-          if (!ownedByViewAs(sub)) return;
-          if (!submittedByStudent.has(sub.studentUID)) submittedByStudent.set(sub.studentUID, new Set());
-          submittedByStudent.get(sub.studentUID).add(a.id);
+      // studentUID -> Set of assignmentIds they submitted, within this section.
+      const submittedByStudent = new Map();
+      for (const a of assignments) {
+        const uids = subUIDsByAssignment.get(a.id);
+        if (!uids) continue;
+        uids.forEach((uid) => {
+          if (!submittedByStudent.has(uid)) submittedByStudent.set(uid, new Set());
+          submittedByStudent.get(uid).add(a.id);
         });
-      });
+      }
 
       const rows = enrollments
         .map((e) => {
@@ -839,11 +881,11 @@ async function getEnrollmentNotRespondingOverview() {
       });
 
       return rows.length > 0 ? { sectionId: section.id, sectionName: section.sectionName, rows, enrolledTotal: enrollments.length, submittedCount, expectedCount } : null;
-    }));
+    });
 
     const filteredSections = sectionResults.filter(Boolean);
     return filteredSections.length > 0 ? { subjectId: subject.id, subjectName: subject.name, sections: filteredSections } : null;
-  }));
+  });
 
   return subjectResults.filter(Boolean);
 }
