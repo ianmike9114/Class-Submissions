@@ -600,6 +600,15 @@ function openAssignment(assignmentId) {
   const body = el("course-outline-body");
   body.querySelectorAll(".outline-item.active").forEach((b) => b.classList.remove("active"));
   body.querySelector(`[data-jump="${assignmentId}"]`)?.classList.add("active");
+  // On a phone the outline sits above the detail panel (a real collapsible
+  // <details> there), so opening an assignment should take the student
+  // straight to it: collapse the outline and scroll the card to the top so
+  // its instructions are what's on screen. Desktop keeps the sticky sidebar
+  // open (its summary isn't an interactive toggle there), so only touch
+  // .open on mobile.
+  if (window.matchMedia("(max-width: 640px)").matches) {
+    el("course-outline").open = false;
+  }
   card.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -641,13 +650,7 @@ function materialBlock(a) {
     seen.add(key);
     html += embedBlockFor(url, { variant: "material", label });
   }
-  if (!html) return "";
-  // Wrap the material in a tap-to-open panel. On a phone the embed is a tall
-  // pane that buries the instructions and submit form, so it's collapsed by
-  // default there (student taps "View lesson material" to open it); on
-  // desktop CSS keeps it expanded with the summary hidden (see .material-
-  // collapse in css/style.css) - there's room, no reason to hide it.
-  return `<details class="material-collapse"><summary>View lesson material</summary>${html}</details>`;
+  return html;
 }
 
 // Submissions graded before this session's switch to single-score grading
