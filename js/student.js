@@ -656,7 +656,7 @@ function materialBlock(a) {
     // can actually read it. (The non-embeddable fallback already carries its
     // own open <a>, so only add this for the iframe case.)
     if (embedded) {
-      html += `<div class="muted"><a href="${url}" target="_blank" rel="noopener">Open ${label.toLowerCase()} full screen &#8599;</a>${openInChromeButton(url)}</div>`;
+      html += `<div class="material-open muted"><a href="${url}" target="_blank" rel="noopener">Open ${label.toLowerCase()} &#8599;</a>${openInChromeButton(url)}</div>`;
     }
   }
   return html;
