@@ -20,22 +20,22 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=22" />
+  <link rel="stylesheet" href="css/style.css?v=23" />
 </head>
 <body>
   <header>
-    <div style="display:flex; align-items:center; gap:0.75rem;">
+    <div class="hdr-group">
       <button class="secondary" id="go-home">&#8962; Home</button>
       <button class="secondary" id="toggle-master-lists">Student Lists</button>
       <button class="secondary" id="toggle-settings">&#9881; Settings</button>
       <select id="view-as-picker" class="hidden" style="width:auto;"></select>
       <h1>Teacher Dashboard</h1>
-      <div style="position:relative; display:inline-block;">
-        <input id="global-student-search" placeholder="Search subjects, sections, assignments, students..." autocomplete="off" style="width:260px; margin-bottom:0;" />
-        <div id="global-search-results" class="notif-dropdown hidden"></div>
-      </div>
     </div>
-    <div style="display:flex; align-items:center; gap:0.75rem;">
+    <div class="hdr-search">
+      <input id="global-student-search" placeholder="Search subjects, sections, assignments, students..." autocomplete="off" />
+      <div id="global-search-results" class="notif-dropdown hidden"></div>
+    </div>
+    <div class="hdr-group">
       <div style="position:relative; display:inline-block;">
         <button class="secondary" id="notif-bell">&#128276;<span id="notif-count" class="notif-badge hidden">0</span></button>
         <div id="notif-dropdown" class="notif-dropdown hidden"></div>
@@ -44,7 +44,7 @@
         <button class="secondary" id="photos-bell" title="Photo submissions - download as ZIP">&#128248;</button>
         <div id="photos-dropdown" class="notif-dropdown hidden"></div>
       </div>
-      <span id="teacher-email" class="muted" style="color:#dbe4ff;"></span>
+      <span id="teacher-email" title=""></span>
       <button class="secondary" id="sign-out">Sign out</button>
     </div>
   </header>
@@ -324,6 +324,6 @@
     <button type="button" id="photo-lightbox-close" aria-label="Close preview">&times;</button>
   </div>
 
-  <script type="module" src="js/teacher.js?v=52"></script>
+  <script type="module" src="js/teacher.js?v=53"></script>
 </body>
 </html>

@@ -29,28 +29,51 @@ header {
   background: var(--blue);
   color: white;
   padding: 1rem 1.5rem;
+  /* Three flex items: [nav group] [flexible search] [action group]. The
+     search fills the middle and shrinks/wraps instead of overflowing, so the
+     header stays one clean row on desktop and wraps tidily on narrower
+     screens. The 640px block below still forces the full column stack on
+     phones. */
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  /* Wrap instead of overflowing: the left group (nav buttons + title + 260px
-     search) plus the right group (bells + email + Sign out) exceed a normal
-     laptop width once the signed-in email is long, and with no wrap the right
-     group ran off the right edge and clipped "Sign out". Wrapping drops the
-     right group to a second line instead. The 640px block below still forces
-     the full column stack on phones. */
   flex-wrap: wrap;
   gap: 0.75rem;
 }
 
 header h1 { font-size: 1.15rem; margin: 0; }
-/* Let the email shrink/ellipsis rather than force the right group wider than
-   the viewport (it can't shrink below its content otherwise). */
-#teacher-email {
+
+/* A nav/action cluster; may wrap its own buttons before the whole header does. */
+.hdr-group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+/* The middle search: grows to fill leftover width, shrinks to its 220px basis,
+   and drops to its own line when neither group leaves room - never clips. */
+.hdr-search {
+  position: relative;
+  flex: 1 1 220px;
   min-width: 0;
-  max-width: 22ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+.hdr-search input { width: 100%; margin-bottom: 0; }
+
+/* Signed-in account shown as a compact circle (initial), full email on hover -
+   the full address was the main thing forcing the header past the viewport. */
+#teacher-email {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: #1d3a63;
+  color: #dbe4ff;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: default;
 }
 
 main {

@@ -3226,7 +3226,10 @@ guardPage("teacher").then((user) => {
   if (!user) return;
   currentUser = user;
   state.viewAsEmail = user.email;
-  el("teacher-email").textContent = user.email;
+  // Header shows a compact account circle (first initial); full email on hover.
+  const em = el("teacher-email");
+  em.textContent = (user.email[0] || "?").toUpperCase();
+  em.title = user.email;
   const isAdmin = user.email === ADMIN_EMAIL;
   if (AI_CHECK_ENABLED) {
     el("gemini-key").value = getGeminiKey();
