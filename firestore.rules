@@ -72,13 +72,15 @@ service cloud.firestore {
 
     // ---------- sections ----------
     match /sections/{sectionId} {
-      // Read stays open to any signed-in user (unchanged from today):
-      // students must query by joinCode before they know who owns the
-      // section, which can't be simultaneously owner-scoped in a Firestore
-      // list rule. No grades/PII live here (roster names/genders only).
-      // Isolation is enforced on write, and by the dashboard's own
-      // ownerEmail-filtered queries.
-      allow read: if isSignedIn();
+      // Single-doc get stays open (a student resolves their own section by id,
+      // after a joinCodes/{code} pointer lookup gives them that id - see
+      // js/student.js join flow). But list is owner-only, so a student can no
+      // longer enumerate every teacher's sections to harvest join codes and
+      // roster names deployment-wide. Same get-open / list-owner split as
+      // subjects above. Requires the joinCodes pointers to exist first (backfill
+      // migration) - do not deploy this before that runs.
+      allow get: if isSignedIn();
+      allow list: if isSignedIn() && (isSuperAdmin() || resource.data.ownerEmail == request.auth.token.email);
       allow create: if isSuperAdmin()
                     || (isGrantedTeacher() && request.resource.data.ownerEmail == request.auth.token.email);
       allow update, delete: if canActAsOwner(resource.data);
