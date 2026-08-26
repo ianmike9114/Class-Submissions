@@ -645,10 +645,19 @@ function materialBlock(a) {
   let html = "";
   for (const [url, label] of sources) {
     if (!url) continue;
-    const key = toEmbedUrl(url) || url;
+    const embedded = toEmbedUrl(url); // non-null => embedBlockFor renders an iframe
+    const key = embedded || url;
     if (seen.has(key)) continue;
     seen.add(key);
     html += embedBlockFor(url, { variant: "material", label });
+    // An embeddable file (e.g. a Drive PDF) renders as an iframe with NO way
+    // to open it full-screen - inline it's just a small first-page thumbnail,
+    // unreadable on a phone. Add an explicit full-screen link so the student
+    // can actually read it. (The non-embeddable fallback already carries its
+    // own open <a>, so only add this for the iframe case.)
+    if (embedded) {
+      html += `<div class="muted"><a href="${url}" target="_blank" rel="noopener">Open ${label.toLowerCase()} full screen &#8599;</a>${openInChromeButton(url)}</div>`;
+    }
   }
   return html;
 }
