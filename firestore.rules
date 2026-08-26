@@ -94,6 +94,24 @@ service cloud.firestore {
       allow update, delete: if canActAsOwner(resource.data);
     }
 
+    // ---------- joinCodes (code -> section pointer) ----------
+    // Lets a student resolve a join code they already hold WITHOUT listing the
+    // sections collection (which would expose every teacher's codes + roster
+    // names deployment-wide). Doc id IS the join code; the student does a
+    // single get(joinCodes/{code}) then get(sections/{sectionId}). See the
+    // sections read split below and js/student.js's join-form handler.
+    match /joinCodes/{code} {
+      // Resolve one code you already have. No `list` for students, so the full
+      // set of codes/sections stays non-enumerable - the whole point of #5.
+      allow get: if isSignedIn();
+      allow list: if isSignedIn() && (isSuperAdmin() || resource.data.ownerEmail == request.auth.token.email);
+      allow create: if isSuperAdmin()
+                    || (isGrantedTeacher() && request.resource.data.ownerEmail == request.auth.token.email);
+      allow update: if isSuperAdmin()
+                    || (isGrantedTeacher() && request.resource.data.ownerEmail == request.auth.token.email);
+      allow delete: if canActAsOwner(resource.data);
+    }
+
     // ---------- submissions (grades/links - fully owner-scoped on read) ----------
     match /submissions/{submissionId} {
       allow create: if isSignedIn()

@@ -274,10 +274,16 @@ async function cascadeDeleteAssignment(assignmentId) {
 }
 
 async function cascadeDeleteSection(sectionId) {
+  // Read the section's join code first so its joinCodes pointer doc can be
+  // removed too - otherwise the code orphans (a dead pointer to a deleted
+  // section, and the code stays reserved against genUniqueJoinCode()).
+  const secSnap = await getDoc(doc(db, "sections", sectionId));
+  const joinCode = secSnap.exists() ? secSnap.data().joinCode : null;
   const assignSnap = await getDocs(query(collection(db, "assignments"), where("sectionId", "==", sectionId)));
   await Promise.all(assignSnap.docs.map((d) => cascadeDeleteAssignment(d.id)));
   await deleteWhere("enrollments", "sectionId", sectionId);
   await deleteDoc(doc(db, "sections", sectionId));
+  if (joinCode) await deleteDoc(doc(db, "joinCodes", joinCode)).catch(() => {});
 }
 
 async function cascadeDeleteSubject(subjectId) {
@@ -1341,17 +1347,73 @@ async function editSectionName(sectionId) {
   });
 }
 
+// Pick a join code not already taken by an existing joinCodes pointer doc.
+// genJoinCode() has no uniqueness guarantee on its own, and the code is the
+// joinCodes doc id, so a collision would make one section un-joinable.
+async function genUniqueJoinCode() {
+  for (let i = 0; i < 8; i++) {
+    const code = genJoinCode();
+    if (!(await getDoc(doc(db, "joinCodes", code))).exists()) return code;
+  }
+  // Astronomically unlikely after 8 tries; fall through with a longer code.
+  return genJoinCode() + genJoinCode().slice(0, 2);
+}
+
 el("add-section-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  await addDoc(collection(db, "sections"), {
+  const joinCode = await genUniqueJoinCode();
+  const ref = await addDoc(collection(db, "sections"), {
     subjectId: state.subjectId,
     sectionName: el("section-name").value.trim(),
-    joinCode: genJoinCode(),
+    joinCode,
     ownerEmail: state.viewAsEmail,
   });
+  // Pointer doc so students resolve this code by get() instead of listing the
+  // whole sections collection (see firestore.rules joinCodes + sections split).
+  // Best-effort: if the joinCodes rules aren't deployed yet (or a transient
+  // error), the section is still created and the admin backfill / student
+  // fallback query cover it - don't fail section creation over the pointer.
+  try {
+    await setDoc(doc(db, "joinCodes", joinCode), { sectionId: ref.id, ownerEmail: state.viewAsEmail });
+  } catch (_) { /* pointer is best-effort; backfill + join fallback cover it */ }
   alert("Section added.");
   e.target.reset();
   loadSections();
+});
+
+// One-time admin migration: create a joinCodes pointer for every EXISTING
+// section (new sections self-register above). Run once after deploy, before
+// locking sections read. Idempotent - safe to re-run. Admin only (button is in
+// the admin-only Settings block); relies on isSuperAdmin reading all sections.
+el("migrate-joincodes-btn").addEventListener("click", async () => {
+  const btn = el("migrate-joincodes-btn");
+  const msg = el("migrate-joincodes-message");
+  btn.disabled = true;
+  msg.textContent = "Migrating...";
+  try {
+    const snap = await getDocs(collection(db, "sections"));
+    let created = 0, noCode = 0;
+    const seen = new Map(); // joinCode -> sectionId, to catch shared-code collisions
+    const collisions = [];
+    for (const d of snap.docs) {
+      const s = d.data();
+      const code = s.joinCode;
+      if (!code) { noCode++; continue; }
+      if (seen.has(code) && seen.get(code) !== d.id) { collisions.push(code); continue; }
+      seen.set(code, d.id);
+      await setDoc(doc(db, "joinCodes", code), { sectionId: d.id, ownerEmail: s.ownerEmail || ADMIN_EMAIL });
+      created++;
+    }
+    msg.textContent = `Done. ${created} join code(s) migrated`
+      + (noCode ? `, ${noCode} section(s) had no code` : "")
+      + (collisions.length
+          ? `. COLLISIONS - these codes are shared by 2+ sections and need a manual code change: ${collisions.join(", ")}`
+          : ". No collisions.");
+  } catch (err) {
+    msg.textContent = "Migration failed: " + err.message;
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 // ---------- enrolled students (subject-wide, all its sections) ----------

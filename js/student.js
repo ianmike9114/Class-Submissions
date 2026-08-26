@@ -165,14 +165,30 @@ el("join-form").addEventListener("submit", async (e) => {
   try {
     await withTimeout((async () => {
       msg.textContent = "Looking up class code...";
-      const q = query(collection(db, "sections"), where("joinCode", "==", code));
-      const snap = await getDocs(q);
-      if (snap.empty) {
+      // Resolve the code via the joinCodes pointer (a single get by the code
+      // itself) then fetch the section by id - this avoids listing the whole
+      // sections collection, which is what lets sections read be locked to
+      // owners (see firestore.rules). Fallback to the old list query for any
+      // section not yet migrated (pre-backfill); once sections list is locked,
+      // that fallback simply returns nothing and the pointer path is the path.
+      let sectionDoc = null;
+      let section = null;
+      const pointerSnap = await getDoc(doc(db, "joinCodes", code));
+      if (pointerSnap.exists()) {
+        const secId = pointerSnap.data().sectionId;
+        const secSnap = await getDoc(doc(db, "sections", secId));
+        if (secSnap.exists()) { sectionDoc = secSnap; section = secSnap.data(); }
+      }
+      if (!section) {
+        try {
+          const snap = await getDocs(query(collection(db, "sections"), where("joinCode", "==", code)));
+          if (!snap.empty) { sectionDoc = snap.docs[0]; section = sectionDoc.data(); }
+        } catch (_) { /* sections list locked - rely on the pointer path */ }
+      }
+      if (!section) {
         msg.textContent = "No class found with that code.";
         return;
       }
-      const sectionDoc = snap.docs[0];
-      const section = sectionDoc.data();
 
       msg.textContent = "Checking your enrollment...";
       const already = await getDocs(query(

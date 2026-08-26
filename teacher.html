@@ -75,6 +75,11 @@
           <button type="submit">Add teacher</button>
         </form>
         <div id="teachers-list"></div>
+
+        <h2>Join-code migration</h2>
+        <p class="muted">One-time: create a lookup pointer for every existing section's join code so students can join without the app listing all sections. Run this once after deploying, before locking section reads. Safe to re-run.</p>
+        <button type="button" id="migrate-joincodes-btn" class="secondary">Migrate join codes</button>
+        <p id="migrate-joincodes-message" class="muted"></p>
       </div>
     </div>
 
@@ -324,6 +329,6 @@
     <button type="button" id="photo-lightbox-close" aria-label="Close preview">&times;</button>
   </div>
 
-  <script type="module" src="js/teacher.js?v=55"></script>
+  <script type="module" src="js/teacher.js?v=56"></script>
 </body>
 </html>
