@@ -437,6 +437,14 @@ details.card summary::marker { color: var(--blue); }
   #course-outline > summary { cursor: pointer; list-style: revert; }
   #course-outline > summary::-webkit-details-marker { display: revert; }
 
+  /* On a phone the fixed 640px material pane (and 400px submission preview)
+     is a wall of mostly-blank iframe - a Drive PDF preview renders one small
+     page thumbnail and leaves the rest grey, pushing the submit form far off
+     screen. Size both to the viewport height instead so the reading pane
+     fits the phone and the submit form stays reachable. */
+  .submission-preview { height: 45vh; }
+  .submission-preview.material { height: 60vh; }
+
   header {
     flex-direction: column;
     align-items: stretch;
