@@ -329,18 +329,25 @@ async function loadEverything() {
     assignmentsById.set(aDoc.id, aDoc.data());
   }
 
-  // Fetch every assignment's own-submission lookup in parallel rather than
-  // one at a time - each assignment card used to wait on the previous
-  // one's round-trip before it could even start rendering.
   const allADocs = [...assignmentsBySubject.values()].flat();
-  const subDocsByAssignment = new Map(await Promise.all(allADocs.map(async (aDoc) => [
-    aDoc.id,
-    (await getDocs(
-      query(collection(db, "submissions"),
-        where("assignmentId", "==", aDoc.id),
-        where("studentUID", "==", currentUser.uid))
-    )).docs[0],
-  ])));
+
+  // One query for ALL of this student's own submissions, then index by
+  // assignment. This replaced an N+1 that fired a separate submissions query
+  // per assignment - Firestore bills per doc returned, so that multiplied a
+  // student's page-load reads by their assignment count. This is a single
+  // query (reads = their own submission count) and needs no composite index
+  // (studentUID-only equality). Rules already allow a student to read their
+  // own submissions (studentUID == request.auth.uid).
+  const mySubsSnap = await getDocs(
+    query(collection(db, "submissions"), where("studentUID", "==", currentUser.uid))
+  );
+  const subDocsByAssignment = new Map();
+  mySubsSnap.forEach((d) => {
+    const assignmentId = d.data().assignmentId;
+    // Keep the first seen per assignment - matches the old per-assignment
+    // query's .docs[0] (a student has at most one submission per assignment).
+    if (!subDocsByAssignment.has(assignmentId)) subDocsByAssignment.set(assignmentId, d);
+  });
 
   const seen = getAssignmentsSeen();
 
@@ -903,11 +910,39 @@ el("sign-out").addEventListener("click", signOutUser);
 wireOpenInChromeButtons(el("assignments-list"));
 
 // ---------- init ----------
+// Turn a failed initial load (most importantly a Firestore free-tier quota
+// hit, which returns code "resource-exhausted") into a plain message instead
+// of a silent blank page that reads as "I lost my work". Reassures rather than
+// alarms - the data is untouched, the read just couldn't complete right now.
+function showConnectionError(err) {
+  const code = err && err.code;
+  const friendly = code === "resource-exhausted"
+    ? "The system is very busy right now. Please try again in a few minutes — your work is safe."
+    : code === "unavailable"
+    ? "Can't reach the server. Check your internet connection, then refresh this page."
+    : "Something went wrong loading your classes. Please refresh this page and try again.";
+  let banner = document.getElementById("conn-error");
+  if (!banner) {
+    banner = document.createElement("div");
+    banner.id = "conn-error";
+    banner.className = "card";
+    banner.style.cssText = "background:#fee2e2; border-color:#b91c1c; color:#7f1d1d;";
+    const host = document.querySelector("main") || document.body;
+    host.insertBefore(banner, host.firstChild);
+  }
+  banner.textContent = friendly;
+  console.error("Initial load failed:", err);
+}
+
 guardPage("student").then(async (user) => {
   if (!user) return;
   currentUser = user;
   el("student-email").textContent = user.email;
-  await applyPendingInvites();
-  loadEverything();
-  applyPendingJoinCode();
+  try {
+    await applyPendingInvites();
+    await loadEverything();
+    applyPendingJoinCode();
+  } catch (err) {
+    showConnectionError(err);
+  }
 });

@@ -61,6 +61,35 @@ function ownerScopedQuery(collectionName, ...wheres) {
     : query(collection(db, collectionName), where("ownerEmail", "==", state.viewAsEmail), ...wheres);
 }
 
+// Short-lived read coalescing. A teacher landing fires getNotifications()
+// immediately followed by loadSubjects() (which calls getPendingCounts() +
+// getLeaveRequestCounts()); those independently re-scan the same owner-scoped
+// collections (sections 3x, assignments/pending-submissions/leave-enrollments
+// 2x each on one page load). Firestore bills per doc returned, so those
+// duplicate whole-account scans multiplied the reads for a single load. This
+// memoizes identical owner-scoped fetches for a brief window so the siblings in
+// one burst share one query instead of repeating it. The cache is cleared at
+// the start of every refreshNotifications() - which runs after every mutation -
+// so a badge never reflects data older than the last refresh; the TTL only
+// bounds reuse for back-to-back navigation with no refresh in between (counts
+// don't change without a mutation in this session, matching the app's existing
+// no-live-listener behaviour). Callers pass a stable key; the same key across
+// functions is what lets them share a fetch.
+const READ_CACHE_TTL_MS = 3000;
+let readCache = new Map(); // key -> { t, promise }
+function invalidateReadCache() { readCache = new Map(); }
+function cachedOwnerDocs(key, collectionName, ...wheres) {
+  // Scope the key to who we're viewing as: admin "view as" swaps whose data
+  // ownerScopedQuery returns, and must never serve another teacher's cache.
+  const fullKey = state.viewAsEmail + "|" + key;
+  const now = Date.now();
+  const hit = readCache.get(fullKey);
+  if (hit && now - hit.t < READ_CACHE_TTL_MS) return hit.promise;
+  const promise = getDocs(ownerScopedQuery(collectionName, ...wheres));
+  readCache.set(fullKey, { t: now, promise });
+  return promise;
+}
+
 function el(id) { return document.getElementById(id); }
 
 // Names arrive with inconsistent casing depending on source (roster
@@ -253,9 +282,9 @@ async function cascadeDeleteSubject(subjectId) {
 // separate nested queries per card.
 async function getPendingCounts() {
   const [sectionsSnap, assignSnap, subSnap] = await Promise.all([
-    getDocs(ownerScopedQuery("sections")),
-    getDocs(ownerScopedQuery("assignments")),
-    getDocs(ownerScopedQuery("submissions", where("status", "==", "pending"))),
+    cachedOwnerDocs("sections", "sections"),
+    cachedOwnerDocs("assignments", "assignments"),
+    cachedOwnerDocs("subs:pending", "submissions", where("status", "==", "pending")),
   ]);
   const sectionToSubject = new Map(sectionsSnap.docs.map((d) => [d.id, d.data().subjectId]));
   const assignmentToSection = new Map(assignSnap.docs.map((d) => [d.id, d.data().sectionId]));
@@ -282,8 +311,8 @@ function pendingBadge(count) {
 // ---------- leave-request counts (mirrors getPendingCounts()/pendingBadge() above) ----------
 async function getLeaveRequestCounts() {
   const [sectionsSnap, enrollSnap] = await Promise.all([
-    getDocs(ownerScopedQuery("sections")),
-    getDocs(ownerScopedQuery("enrollments", where("leaveRequested", "==", true))),
+    cachedOwnerDocs("sections", "sections"),
+    cachedOwnerDocs("enr:leave", "enrollments", where("leaveRequested", "==", true)),
   ]);
   const sectionToSubject = new Map(sectionsSnap.docs.map((d) => [d.id, d.data().subjectId]));
 
@@ -490,14 +519,18 @@ let lastNotifications = { submissions: [], leaves: [], totalCount: 0, error: fal
 // - this powers the header-wide notification dropdown, which has no
 // surrounding context of its own.
 async function getNotifications() {
+  // Landing entry point: start each refresh with a clean read cache so badges
+  // reflect current data, then let the loadSubjects() rollups that follow reuse
+  // these same fetches instead of re-scanning the account (see cachedOwnerDocs).
+  invalidateReadCache();
   const [subjectsSnap, sectionsSnap, assignSnap, pendingSnap, leaveSnap, joinSnap, redoSnap] = await Promise.all([
-    getDocs(ownerScopedQuery("subjects")),
-    getDocs(ownerScopedQuery("sections")),
-    getDocs(ownerScopedQuery("assignments")),
-    getDocs(ownerScopedQuery("submissions", where("status", "==", "pending"))),
-    getDocs(ownerScopedQuery("enrollments", where("leaveRequested", "==", true))),
-    getDocs(ownerScopedQuery("enrollments", where("seen", "==", false))),
-    getDocs(ownerScopedQuery("submissions", where("resubmitRequested", "==", true))),
+    cachedOwnerDocs("subjects", "subjects"),
+    cachedOwnerDocs("sections", "sections"),
+    cachedOwnerDocs("assignments", "assignments"),
+    cachedOwnerDocs("subs:pending", "submissions", where("status", "==", "pending")),
+    cachedOwnerDocs("enr:leave", "enrollments", where("leaveRequested", "==", true)),
+    cachedOwnerDocs("enr:seen", "enrollments", where("seen", "==", false)),
+    cachedOwnerDocs("subs:resubmit", "submissions", where("resubmitRequested", "==", true)),
   ]);
 
   const subjectNames = new Map(subjectsSnap.docs.map((d) => [d.id, d.data().name]));
@@ -3222,7 +3255,31 @@ el("view-as-picker").addEventListener("change", (e) => {
 });
 
 // ---------- init ----------
-guardPage("teacher").then((user) => {
+// Turn a failed initial load (most importantly a Firestore free-tier quota
+// hit, code "resource-exhausted") into a plain message instead of a silent
+// blank dashboard that reads as broken/lost data. The data is untouched - the
+// read just couldn't complete right now.
+function showConnectionError(err) {
+  const code = err && err.code;
+  const friendly = code === "resource-exhausted"
+    ? "The system is very busy right now. Please try again in a few minutes — your data is safe."
+    : code === "unavailable"
+    ? "Can't reach the server. Check your internet connection, then refresh this page."
+    : "Something went wrong loading your dashboard. Please refresh this page and try again.";
+  let banner = document.getElementById("conn-error");
+  if (!banner) {
+    banner = document.createElement("div");
+    banner.id = "conn-error";
+    banner.className = "card";
+    banner.style.cssText = "background:#fee2e2; border-color:#b91c1c; color:#7f1d1d;";
+    const host = document.querySelector("main") || document.body;
+    host.insertBefore(banner, host.firstChild);
+  }
+  banner.textContent = friendly;
+  console.error("Initial load failed:", err);
+}
+
+guardPage("teacher").then(async (user) => {
   if (!user) return;
   currentUser = user;
   state.viewAsEmail = user.email;
@@ -3247,6 +3304,10 @@ guardPage("teacher").then((user) => {
     loadTeachers();
     renderViewAsPicker();
   }
-  refreshNotifications();
-  restoreNavState();
+  try {
+    await refreshNotifications();
+    await restoreNavState();
+  } catch (err) {
+    showConnectionError(err);
+  }
 });
