@@ -304,7 +304,10 @@ async function loadEverything() {
 
   const sectionIds = enrollments.map((en) => en.sectionId);
   const list = el("assignments-list");
-  list.innerHTML = "";
+  // Detail-panel mode: start every render with nothing open and the
+  // empty-state prompt showing. Cards are appended after this and stay
+  // hidden (CSS .outline-mode) until an outline item opens one.
+  list.innerHTML = '<p id="assignment-empty" class="muted">Pick an assignment from the course outline to open it.</p>';
   el("course-outline-body").innerHTML = "";
   el("course-outline").classList.add("hidden");
   if (sectionIds.length === 0) return;
@@ -383,8 +386,18 @@ async function loadEverything() {
         const statusLabel = s.status === "published" ? "Graded"
           : s.status === "returned" ? "Returned — please revise and resubmit"
           : "Submitted, pending review";
+        // Graded work stays locked, but the student can ask the teacher to
+        // reopen it for a redo (mirrors the leave-request flag flow): send a
+        // request, or cancel one already sent. The teacher's "Allow redo"
+        // flips this back to "returned" - see js/teacher.js.
+        const redoBlock = s.status !== "published" ? "" : s.resubmitRequested
+          ? `<div class="muted" style="margin-top:0.5rem;">Redo request sent — waiting for your teacher.
+               <button type="button" class="secondary" data-cancel-redo="${subDoc.id}">Cancel request</button></div>`
+          : `<div style="margin-top:0.5rem;">
+               <button type="button" class="secondary" data-request-redo="${subDoc.id}">Request to redo</button>
+               <span class="muted"> Ask your teacher to reopen this so you can improve it.</span></div>`;
         const actionsBlock = s.status === "published"
-          ? renderResult(s, a)
+          ? renderResult(s, a) + redoBlock
           : isPastDue(a)
           ? `<div class="muted" style="margin-top:0.5rem;">Deadline passed — locked, no more changes.</div>`
           : `<div style="margin-top:0.5rem;">
@@ -392,14 +405,57 @@ async function loadEverything() {
                <button type="button" class="danger" data-remove-submission="${subDoc.id}">Remove submission</button>
              </div>
              <div data-edit-container="${subDoc.id}"></div>`;
+        // A returned submission may still carry the previous grade (a redo the
+        // teacher allowed keeps the old score until the new work is re-graded)
+        // - show it so the student isn't left thinking the grade vanished.
+        const hasOldGrade = s.finalGrade?.score !== undefined && a.totalPoints !== undefined;
+        const oldGradeLine = s.status === "returned" && hasOldGrade
+          ? `<p class="muted">Current grade (updates when re-graded): ${s.finalGrade.score} / ${a.totalPoints}</p>`
+          : "";
         row.innerHTML = `
           <strong>${a.title}</strong>
           <span class="status-${s.status}"> — ${statusLabel}</span>
           ${s.status === "returned" && s.finalGrade?.feedback ? `<p class="muted">Teacher note: ${s.finalGrade.feedback}</p>` : ""}
+          ${oldGradeLine}
           ${materialBlock(a)}
+          ${renderSubmittedWork(s)}
           ${actionsBlock}`;
       }
       list.appendChild(row);
+
+      // Graded-work redo request / cancel (published cards only). Flag-only
+      // write - firestore.rules lets a student toggle just resubmitRequested
+      // on their own doc, never the score or status. The teacher's "Allow
+      // redo" is what actually reopens it (sets status back to "returned").
+      const requestRedoBtn = row.querySelector("[data-request-redo]");
+      if (requestRedoBtn) {
+        requestRedoBtn.addEventListener("click", async () => {
+          const ok = confirm("Ask your teacher to reopen this graded assignment so you can redo it? They'll see your request.");
+          if (!ok) return;
+          requestRedoBtn.disabled = true;
+          try {
+            await updateDoc(doc(db, "submissions", subDoc.id), { resubmitRequested: true });
+            alert("Request sent — your teacher will decide whether to reopen it.");
+            loadEverything();
+          } catch (err) {
+            alert("Couldn't send request: " + err.message);
+            requestRedoBtn.disabled = false;
+          }
+        });
+      }
+      const cancelRedoBtn = row.querySelector("[data-cancel-redo]");
+      if (cancelRedoBtn) {
+        cancelRedoBtn.addEventListener("click", async () => {
+          cancelRedoBtn.disabled = true;
+          try {
+            await updateDoc(doc(db, "submissions", subDoc.id), { resubmitRequested: false });
+            loadEverything();
+          } catch (err) {
+            alert("Couldn't cancel request: " + err.message);
+            cancelRedoBtn.disabled = false;
+          }
+        });
+      }
 
       // Only while pending/returned - once graded (published), the
       // submission is immutable from the student's side (firestore.rules
@@ -523,31 +579,44 @@ function esc(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 }
 
-// One delegated click handler: jump to the assignment card and flash it.
+// One delegated click handler: open the clicked assignment in the detail
+// panel (the outline is the page's primary navigation now - cards stay
+// hidden until opened from here).
 el("course-outline").addEventListener("click", (e) => {
   const btn = e.target.closest("[data-jump]");
   if (!btn) return;
-  const card = el("assignments-list").querySelector(`[data-assignment-id="${btn.dataset.jump}"]`);
-  if (!card) return;
-  card.scrollIntoView({ behavior: "smooth", block: "start" });
-  card.classList.add("jump-highlight");
-  setTimeout(() => card.classList.remove("jump-highlight"), 1500);
+  openAssignment(btn.dataset.jump);
 });
 
-// Client-side only - list is already fully loaded by loadEverything(), no
-// need for a new Firestore query just to narrow what's shown.
+// Reveal only the chosen assignment's card, hide the rest and the
+// empty-state prompt, and mark its outline item active.
+function openAssignment(assignmentId) {
+  const list = el("assignments-list");
+  const card = list.querySelector(`[data-assignment-id="${assignmentId}"]`);
+  if (!card) return;
+  list.querySelectorAll(".card.is-open").forEach((c) => c.classList.remove("is-open"));
+  card.classList.add("is-open");
+  el("assignment-empty")?.classList.add("hidden");
+  const body = el("course-outline-body");
+  body.querySelectorAll(".outline-item.active").forEach((b) => b.classList.remove("active"));
+  body.querySelector(`[data-jump="${assignmentId}"]`)?.classList.add("active");
+  card.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// Client-side only - the outline is the navigation now, so search narrows the
+// outline items (not the hidden cards). Hides non-matching items and any
+// subject group left with nothing to show.
 function filterAssignments() {
   const q = el("assignment-search").value.trim().toLowerCase();
-  const list = el("assignments-list");
-  const visibleSubjects = new Set();
-  list.querySelectorAll("[data-title]").forEach((row) => {
-    const match = !q || row.dataset.title.toLowerCase().includes(q)
-      || row.dataset.subject.toLowerCase().includes(q);
-    row.style.display = match ? "" : "none";
-    if (match) visibleSubjects.add(row.dataset.subject);
-  });
-  list.querySelectorAll("[data-subject-heading]").forEach((h) => {
-    h.style.display = visibleSubjects.has(h.dataset.subjectHeading) ? "" : "none";
+  el("course-outline-body").querySelectorAll(".outline-subject").forEach((group) => {
+    const subjectName = (group.querySelector(".outline-subject-head strong")?.textContent || "").toLowerCase();
+    let anyVisible = false;
+    group.querySelectorAll(".outline-item").forEach((item) => {
+      const match = !q || item.textContent.trim().toLowerCase().includes(q) || subjectName.includes(q);
+      item.classList.toggle("hidden", !match);
+      if (match) anyVisible = true;
+    });
+    group.classList.toggle("hidden", !anyVisible);
   });
 }
 el("assignment-search").addEventListener("input", filterAssignments);
@@ -583,6 +652,26 @@ function renderResult(s, a) {
   const hasScore = s.finalGrade?.score !== undefined && a?.totalPoints !== undefined;
   const scoreLine = hasScore ? `${s.finalGrade.score} / ${a.totalPoints}` : "Graded";
   return `<div class="card"><p><strong>${scoreLine}</strong></p><p>${s.finalGrade?.feedback || ""}</p></div>`;
+}
+
+// Read-only recap of what the student turned in (link and/or photo pages),
+// shown on their own card in every state so they can see/verify their
+// submitted work - previously the card showed status only, never the content.
+// Reuses embedBlockFor() (same iframe-or-link fallback as the lesson
+// material); photos link out full-size, no remove control (that's the
+// separate editable submit form).
+function renderSubmittedWork(s) {
+  const parts = [];
+  if (s.link) parts.push(embedBlockFor(s.link, { label: "Open your submission" }));
+  const photos = (s.photoPages && s.photoPages.length > 0)
+    ? s.photoPages
+    : (s.photoData ? [s.photoData] : []); // legacy single-photo submissions
+  if (photos.length > 0) {
+    parts.push(`<div class="photo-thumbs">${photos.map((p, i) =>
+      `<a href="${p}" target="_blank" rel="noopener" title="page ${i + 1}"><img src="${p}" /></a>`).join("")}</div>`);
+  }
+  if (parts.length === 0) return "";
+  return `<div class="submitted-work"><div class="muted">Your submission</div>${parts.join("")}</div>`;
 }
 
 const LINK_HINTS = {

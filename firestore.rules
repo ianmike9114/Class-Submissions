@@ -107,12 +107,21 @@ service cloud.firestore {
       // touching any other field. An edit always re-queues it for review:
       // the written status must be "pending", which also clears the
       // "returned" teacher-note state on the student's own dashboard.
+      // A student may also flag a request to redo their own submission
+      // (resubmitRequested) - even once published, since the whole point is
+      // asking the teacher to reopen a graded one. This clause allows ONLY
+      // that flag to change (never the score, status, or link); the teacher's
+      // "Allow redo" is what actually reopens it. Mirrors the enrollment
+      // leaveRequested flag flow.
       allow update: if canActAsOwner(resource.data)
                     || (isSignedIn()
                         && resource.data.studentUID == request.auth.uid
                         && (resource.data.status == "pending" || resource.data.status == "returned")
                         && request.resource.data.status == "pending"
-                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['link', 'photoPages', 'status', 'submittedAt']));
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['link', 'photoPages', 'status', 'submittedAt']))
+                    || (isSignedIn()
+                        && resource.data.studentUID == request.auth.uid
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['resubmitRequested']));
       // A student may retract their own submission, but only while it's
       // still pending - once published (graded), it's owner-only, same
       // as any other change to a graded submission.

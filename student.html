@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=15" />
+  <link rel="stylesheet" href="css/style.css?v=16" />
 </head>
 <body>
   <header>
@@ -47,16 +47,28 @@
     <div id="classes-list"></div>
 
     <h2>Assignments</h2>
+    <details class="student-guide card">
+      <summary><strong>How this page works</strong></summary>
+      <ol class="student-guide-steps">
+        <li>Pick a subject and lesson in the <strong>Course outline</strong>, then tap an assignment to open it.</li>
+        <li>Read the lesson material that opens on the right — it stays on this page, just scroll inside it.</li>
+        <li>Submit your work: paste a share link, or take/upload photos of your pages.</li>
+        <li>Check back later for your <strong>grade</strong> and your teacher's feedback.</li>
+        <li>Already graded but need to fix it? Open it and tap <strong>Request to redo</strong> — your teacher can reopen it.</li>
+      </ol>
+    </details>
     <input id="assignment-search" placeholder="Search assignments..." autocomplete="off" />
     <div class="outline-layout">
       <details id="course-outline" class="hidden" open>
         <summary>Course outline</summary>
         <div id="course-outline-body"></div>
       </details>
-      <div id="assignments-list"></div>
+      <div id="assignments-list" class="outline-mode">
+        <p id="assignment-empty" class="muted">Pick an assignment from the course outline to open it.</p>
+      </div>
     </div>
   </main>
 
-  <script type="module" src="js/student.js?v=23"></script>
+  <script type="module" src="js/student.js?v=24"></script>
 </body>
 </html>
