@@ -641,7 +641,13 @@ function materialBlock(a) {
     seen.add(key);
     html += embedBlockFor(url, { variant: "material", label });
   }
-  return html;
+  if (!html) return "";
+  // Wrap the material in a tap-to-open panel. On a phone the embed is a tall
+  // pane that buries the instructions and submit form, so it's collapsed by
+  // default there (student taps "View lesson material" to open it); on
+  // desktop CSS keeps it expanded with the summary hidden (see .material-
+  // collapse in css/style.css) - there's room, no reason to hide it.
+  return `<details class="material-collapse"><summary>View lesson material</summary>${html}</details>`;
 }
 
 // Submissions graded before this session's switch to single-score grading

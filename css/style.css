@@ -198,6 +198,13 @@ label { font-weight: 600; font-size: 0.85rem; display: block; margin-bottom: 0.2
   max-width: 100%;
 }
 
+/* Lesson material is wrapped in <details class="material-collapse"> so it can
+   collapse to a tap-to-open panel on a phone (see the max-width:640px block).
+   On desktop there's room to keep it always visible: hide the summary and
+   force-show the content even though the <details> stays closed. */
+.material-collapse > summary { display: none; }
+.material-collapse > *:not(summary) { display: block; }
+
 .photo-preview {
   max-width: 100%;
   border: 1px solid var(--gray-border);
@@ -436,6 +443,26 @@ details.card summary::marker { color: var(--blue); }
   }
   #course-outline > summary { cursor: pointer; list-style: revert; }
   #course-outline > summary::-webkit-details-marker { display: revert; }
+
+  /* On a phone the fixed 640px material pane (and 400px submission preview)
+     is a wall of mostly-blank iframe - a Drive PDF preview renders one small
+     page thumbnail and leaves the rest grey, pushing the submit form far off
+     screen. Size both to the viewport height instead so the reading pane
+     fits the phone and the submit form stays reachable. */
+  .submission-preview { height: 45vh; }
+  .submission-preview.material { height: 60vh; }
+
+  /* Phone: collapse the material behind a tap-to-open summary so the
+     instructions and submit form are what the student lands on. */
+  .material-collapse > summary {
+    display: block;
+    cursor: pointer;
+    color: var(--blue);
+    font-family: var(--font-headline);
+    font-weight: 600;
+    padding: 0.5rem 0;
+  }
+  .material-collapse:not([open]) > *:not(summary) { display: none; }
 
   header {
     flex-direction: column;
