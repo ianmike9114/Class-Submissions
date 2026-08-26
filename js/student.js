@@ -649,15 +649,17 @@ function materialBlock(a) {
     const key = embedded || url;
     if (seen.has(key)) continue;
     seen.add(key);
-    html += embedBlockFor(url, { variant: "material", label });
-    // An embeddable file (e.g. a Drive PDF) renders as an iframe with NO way
-    // to open it full-screen - inline it's just a small first-page thumbnail,
-    // unreadable on a phone. Add an explicit full-screen link so the student
-    // can actually read it. (The non-embeddable fallback already carries its
-    // own open <a>, so only add this for the iframe case.)
-    if (embedded) {
-      html += `<div class="material-open muted"><a href="${url}" target="_blank" rel="noopener">Open ${label.toLowerCase()} &#8599;</a>${openInChromeButton(url)}</div>`;
-    }
+    // A titled viewer card: header (label + a full-screen "Open" link) over
+    // the document, rendered open and inline so the student can just read it.
+    // The Open link matters most on a phone, where Google Drive's own inline
+    // viewer is cramped - it's the escape to a full readable view. For a
+    // non-embeddable link, embedBlockFor's own <a> fallback is the body, so
+    // the header stays just the label.
+    const body = embedBlockFor(url, { variant: "material", label });
+    const head = embedded
+      ? `<div class="material-viewer-head"><strong>${label}</strong><a href="${url}" target="_blank" rel="noopener">Open &#8599;</a>${openInChromeButton(url)}</div>`
+      : `<div class="material-viewer-head"><strong>${label}</strong></div>`;
+    html += `<div class="material-viewer">${head}${body}</div>`;
   }
   return html;
 }

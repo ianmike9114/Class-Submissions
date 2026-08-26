@@ -198,6 +198,39 @@ label { font-weight: 600; font-size: 0.85rem; display: block; margin-bottom: 0.2
   max-width: 100%;
 }
 
+/* Titled viewer card around the student's inline lesson material: a header
+   (file label + full-screen "Open" link) over the document, so it reads like
+   a real material viewer and stays open/readable by default. */
+.material-viewer {
+  border: 1px solid var(--gray-border);
+  border-radius: var(--radius-lg);
+  margin: 0.75rem 0;
+  overflow: hidden;
+}
+.material-viewer-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.9rem;
+  background: var(--gray-bg);
+  border-bottom: 1px solid var(--gray-border);
+}
+.material-viewer-head strong { font-family: var(--font-headline); }
+.material-viewer-head a {
+  color: var(--blue);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+/* The embed sits flush inside the card (the card owns the border/radius). */
+.material-viewer .submission-preview {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  display: block;
+}
+
 .photo-preview {
   max-width: 100%;
   border: 1px solid var(--gray-border);
@@ -443,23 +476,10 @@ details.card summary::marker { color: var(--blue); }
      screen. Size both to the viewport height instead so the reading pane
      fits the phone and the submit form stays reachable. */
   .submission-preview { height: 40vh; }
-  /* Phone: the inline Drive preview is just an unreadable thumbnail, so drop
-     it and give the student a full-width "Open ..." button instead (the
-     .material-open link, rendered as a button here). Desktop keeps the
-     preview + a small link. */
-  .submission-preview.material { display: none; }
-  .material-open a {
-    display: block;
-    text-align: center;
-    background: var(--blue);
-    color: #fff;
-    padding: 0.7rem 1rem;
-    border-radius: var(--radius-sm);
-    text-decoration: none;
-    font-family: var(--font-headline);
-    font-weight: 600;
-  }
-  .material-open .open-in-chrome { margin-top: 0.4rem; width: 100%; }
+  /* Phone: keep the material open and inline (readable), just taller than the
+     desktop box so Drive's cramped mobile viewer has room; the header's
+     "Open" link is the escape to a full-screen read when it's still tight. */
+  .submission-preview.material { height: 70vh; }
 
   header {
     flex-direction: column;
