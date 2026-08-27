@@ -1623,11 +1623,24 @@ async function openSection(sectionId) {
   el("roster-duplicate-review").innerHTML = "";
   if (rosterPreviewNames.length > 0) renderRosterPreview();
 
-  const [invitesBySection, masterLists] = await Promise.all([getPendingInvites(), getMasterLists()]);
-  renderAddStudentPanel(el("add-student-panel"), sectionId, section, invitesBySection.get(sectionId) || [], masterLists);
-
   show("view-section");
   loadAssignments();
+
+  // Fired off without blocking the section from opening - invites/master-list
+  // reads are extra round-trips on top of the section doc itself, and
+  // gating show("view-section") on them made "Open" feel frozen on slow
+  // connections. state.sectionId guard drops a stale response if the
+  // teacher already navigated to a different section before this resolves.
+  el("add-student-panel").innerHTML = '<p class="muted">Loading…</p>';
+  Promise.all([getPendingInvites(), getMasterLists()])
+    .then(([invitesBySection, masterLists]) => {
+      if (state.sectionId !== sectionId) return;
+      renderAddStudentPanel(el("add-student-panel"), sectionId, section, invitesBySection.get(sectionId) || [], masterLists);
+    })
+    .catch((err) => {
+      if (state.sectionId !== sectionId) return;
+      el("add-student-panel").innerHTML = `<p class="muted">Couldn't load: ${err.message}</p>`;
+    });
 }
 
 function renderActivitiesSummary(assignments) {
