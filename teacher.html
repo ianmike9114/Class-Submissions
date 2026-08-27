@@ -92,6 +92,9 @@
           <input id="subject-name" required placeholder="e.g. Grade 12 Philosophy" />
           <label>Grade level</label>
           <select id="subject-grade">
+            <option value="Grade 7">Grade 7</option>
+            <option value="Grade 8">Grade 8</option>
+            <option value="Grade 9">Grade 9</option>
             <option value="Grade 10">Grade 10</option>
             <option value="Grade 11">Grade 11</option>
             <option value="Grade 12">Grade 12</option>
@@ -170,6 +173,11 @@
     <section id="view-section" class="hidden">
       <button class="secondary" id="back-to-subject">&larr; Back</button>
       <h2 id="section-view-name"></h2>
+
+      <details class="card" open>
+        <summary><strong>Add student</strong></summary>
+        <div id="add-student-panel" style="margin-top:0.75rem;"></div>
+      </details>
 
       <details class="card">
         <summary><strong>Section Settings</strong></summary>
@@ -329,6 +337,6 @@
     <button type="button" id="photo-lightbox-close" aria-label="Close preview">&times;</button>
   </div>
 
-  <script type="module" src="js/teacher.js?v=56"></script>
+  <script type="module" src="js/teacher.js?v=57"></script>
 </body>
 </html>

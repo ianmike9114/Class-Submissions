@@ -407,6 +407,161 @@ async function applyMasterListToSection(listId, sectionId, sectionName, pendingI
   return { invited: toInvite.length, skippedEnrolled, skippedInvited };
 }
 
+// Add-student panel (Show QR / Invite by email / Apply a saved student
+// list) - lives inside an opened section (#view-section, #add-student-panel)
+// rather than on the section-list card, so it's visible right where a
+// teacher looks for it instead of needing to be found before clicking Open.
+function renderAddStudentPanel(container, sectionId, section, pendingInvites, masterLists) {
+  container.innerHTML = `
+    <details style="margin-top:0.5rem;" data-qr-toggle="${sectionId}">
+      <summary class="muted" style="cursor:pointer;">Show QR</summary>
+      <div style="margin-top:0.5rem;">
+        <p class="muted" style="margin:0 0 0.35rem;"><strong>${state.subjectName || "—"}</strong> — ${section.sectionName}</p>
+        <div id="qr-${sectionId}" class="qr-code"></div>
+        <p class="muted">Scan to join, or share this link:<br>
+          <a href="${joinLinkFor(section.joinCode)}" target="_blank" rel="noopener">${joinLinkFor(section.joinCode)}</a></p>
+        <button type="button" class="secondary" data-copy-join="${joinLinkFor(section.joinCode)}">Copy join link</button>
+        <p class="muted" style="font-size:0.85em;">Tip for students: after scanning, tap "Open in Safari/Chrome" on the banner that pops up — don't use the in-scanner preview, sign-in won't work there.</p>
+      </div>
+    </details>
+    <details style="margin-top:0.5rem;">
+      <summary class="muted" style="cursor:pointer;">Invite by email</summary>
+      <div style="margin-top:0.5rem;">
+        <p class="muted" style="margin:0 0 0.5rem;">Adds a student by their Gmail address — they're enrolled automatically the moment they sign in with that address, no email/click-to-accept step needed. Use this for students who can't reliably use the join code/QR.</p>
+        <form class="invite-form">
+          <label>Student's Gmail address</label>
+          <input class="invite-email" type="email" required placeholder="name@gmail.com" />
+          <label>Student's name (as it should appear on your roster)</label>
+          ${section.roster?.length ? `
+          <select class="invite-name-select">
+            ${section.roster.map((r) => (typeof r === "string" ? r : r.name)).map((name) => `<option value="${name}">${name}</option>`).join("")}
+            <option value="__other__">Other (type a name)</option>
+          </select>
+          <input class="invite-name" placeholder="e.g. Alcaide, Led Jervis J." style="display:none;" />` : `
+          <input class="invite-name" required placeholder="e.g. Alcaide, Led Jervis J." />`}
+          <button type="submit">Send invite</button>
+        </form>
+        <p class="invite-message muted"></p>
+        <div class="invite-pending">
+          ${pendingInvites.length ? pendingInvites.map((inv) => `
+            <div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.35rem;">
+              <span class="muted">Pending: ${displayStudentName(inv.studentName)} (${inv.studentEmail})</span>
+              <button type="button" class="secondary" data-cancel-invite="${inv.id}">Cancel</button>
+            </div>`).join("") : ""}
+        </div>
+      </div>
+    </details>
+    <details style="margin-top:0.5rem;">
+      <summary class="muted" style="cursor:pointer;">Apply a saved student list</summary>
+      <div style="margin-top:0.5rem;">
+        ${masterLists.length ? `
+        <select class="master-list-select">
+          <option value="">Choose a list…</option>
+          ${masterLists.map((l) => `<option value="${l.id}">${l.name} (${l.students.length})</option>`).join("")}
+        </select>
+        <button type="button" class="apply-master-list-btn">Invite everyone in this list</button>` : `
+        <p class="muted">No saved lists yet — build one from an already-enrolled section's Enrolled Students page, or add one from Student Lists in the header.</p>`}
+        <p class="apply-master-list-message muted"></p>
+      </div>
+    </details>`;
+
+  // QR draw deferred until the "Show QR" <details> is actually opened -
+  // most teachers never open it, so this also skips loading qrcodejs
+  // (see loadScriptOnce()) until it's really needed.
+  let qrRendered = false;
+  container.querySelector("[data-qr-toggle]").addEventListener("toggle", async (e) => {
+    if (!e.target.open || qrRendered) return;
+    qrRendered = true;
+    await loadScriptOnce(QRCODEJS_CDN_URL);
+    renderSectionQR(sectionId, section.joinCode, `${state.subjectName || "—"} — ${section.sectionName}`);
+  });
+  container.querySelectorAll("[data-copy-join]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(b.dataset.copyJoin);
+        const prev = b.textContent;
+        b.textContent = "Copied!";
+        setTimeout(() => { b.textContent = prev; }, 1500);
+      } catch {
+        // Clipboard API blocked (insecure context / old browser) - hand
+        // the link to a prompt so the teacher can copy it by hand.
+        prompt("Copy this join link:", b.dataset.copyJoin);
+      }
+    }));
+  const nameSelect = container.querySelector(".invite-name-select");
+  if (nameSelect) {
+    const textInput = nameSelect.parentElement.querySelector(".invite-name");
+    const sync = () => {
+      const isOther = nameSelect.value === "__other__";
+      textInput.style.display = isOther ? "" : "none";
+      textInput.required = isOther;
+      if (isOther) textInput.focus();
+    };
+    nameSelect.addEventListener("change", sync);
+    sync();
+  }
+  container.querySelector(".invite-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const email = form.querySelector(".invite-email").value.trim().toLowerCase();
+    const select = form.querySelector(".invite-name-select");
+    const studentName = (select && select.value !== "__other__"
+      ? select.value
+      : form.querySelector(".invite-name").value).trim();
+    const msg = container.querySelector(".invite-message");
+    const btn = form.querySelector("button");
+    btn.disabled = true;
+    try {
+      await addDoc(collection(db, "invites"), {
+        studentEmail: email,
+        studentName,
+        subjectId: state.subjectId,
+        subjectName: state.subjectName,
+        sectionId,
+        sectionName: section.sectionName,
+        teacherName: state.subjectOwnerName,
+        ownerEmail: state.viewAsEmail,
+        createdAt: serverTimestamp(),
+      });
+      msg.textContent = `Invited ${studentName} — they'll join automatically once they sign in with ${email}.`;
+      await refreshAddStudentPanel(sectionId, container);
+    } catch (err) {
+      msg.textContent = "Invite failed: " + err.message;
+      btn.disabled = false;
+    }
+  });
+  container.querySelectorAll("[data-cancel-invite]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      await deleteDoc(doc(db, "invites", b.dataset.cancelInvite));
+      await refreshAddStudentPanel(sectionId, container);
+    }));
+  const applyBtn = container.querySelector(".apply-master-list-btn");
+  if (applyBtn) {
+    applyBtn.addEventListener("click", async () => {
+      const select = applyBtn.parentElement.querySelector(".master-list-select");
+      const listId = select.value;
+      if (!listId) return;
+      const msg = container.querySelector(".apply-master-list-message");
+      applyBtn.disabled = true;
+      msg.textContent = "Inviting...";
+      try {
+        const result = await applyMasterListToSection(listId, sectionId, section.sectionName, pendingInvites);
+        msg.textContent = `Invited ${result.invited}. Skipped ${result.skippedEnrolled} already enrolled, ${result.skippedInvited} already invited.`;
+        await refreshAddStudentPanel(sectionId, container);
+      } catch (err) {
+        msg.textContent = "Couldn't apply list: " + err.message;
+        applyBtn.disabled = false;
+      }
+    });
+  }
+}
+
+async function refreshAddStudentPanel(sectionId, container) {
+  const section = (await getDoc(doc(db, "sections", sectionId))).data();
+  const [invitesBySection, masterLists] = await Promise.all([getPendingInvites(), getMasterLists()]);
+  renderAddStudentPanel(container, sectionId, section, invitesBySection.get(sectionId) || [], masterLists);
+}
+
 // Keeps a section's linked master list caught up with newly enrolled
 // students, so "Build list from section" doesn't need re-running by hand
 // every time someone new joins. Never touches an existing list entry -
@@ -1146,8 +1301,8 @@ async function openSubject(subjectId) {
 
 async function loadSections() {
   const q = query(collection(db, "sections"), where("subjectId", "==", state.subjectId));
-  const [snap, counts, leaveCounts, invitesBySection, masterLists] = await Promise.all([
-    getDocs(q), getPendingCounts(), getLeaveRequestCounts(), getPendingInvites(), getMasterLists(),
+  const [snap, counts, leaveCounts] = await Promise.all([
+    getDocs(q), getPendingCounts(), getLeaveRequestCounts(),
   ]);
   const list = el("sections-list");
   list.innerHTML = "";
@@ -1155,7 +1310,6 @@ async function loadSections() {
   snap.forEach((d) => {
     const s = d.data();
     sectionNames.set(d.id, s.sectionName);
-    const pendingInvites = invitesBySection.get(d.id) || [];
     const row = document.createElement("div");
     row.className = "card";
     row.innerHTML = `
@@ -1168,85 +1322,11 @@ async function loadSections() {
         <button data-open="${d.id}">Open</button>
         <button class="secondary" data-edit-section="${d.id}">Edit name</button>
         <button class="danger icon" data-delete-section="${d.id}" title="Delete section" aria-label="Delete section">×</button>
-      </div>
-      <details style="margin-top:0.5rem;" data-qr-toggle="${d.id}">
-        <summary class="muted" style="cursor:pointer;">Show QR</summary>
-        <div style="margin-top:0.5rem;">
-          <p class="muted" style="margin:0 0 0.35rem;"><strong>${state.subjectName || "—"}</strong> — ${s.sectionName}</p>
-          <div id="qr-${d.id}" class="qr-code"></div>
-          <p class="muted">Scan to join, or share this link:<br>
-            <a href="${joinLinkFor(s.joinCode)}" target="_blank" rel="noopener">${joinLinkFor(s.joinCode)}</a></p>
-          <button type="button" class="secondary" data-copy-join="${joinLinkFor(s.joinCode)}">Copy join link</button>
-          <p class="muted" style="font-size:0.85em;">Tip for students: after scanning, tap "Open in Safari/Chrome" on the banner that pops up — don't use the in-scanner preview, sign-in won't work there.</p>
-        </div>
-      </details>
-      <details style="margin-top:0.5rem;">
-        <summary class="muted" style="cursor:pointer;">Invite by email</summary>
-        <div style="margin-top:0.5rem;">
-          <p class="muted" style="margin:0 0 0.5rem;">Adds a student by their Gmail address — they're enrolled automatically the moment they sign in with that address, no email/click-to-accept step needed. Use this for students who can't reliably use the join code/QR.</p>
-          <form class="invite-form" data-section="${d.id}">
-            <label>Student's Gmail address</label>
-            <input class="invite-email" type="email" required placeholder="name@gmail.com" />
-            <label>Student's name (as it should appear on your roster)</label>
-            ${s.roster?.length ? `
-            <select class="invite-name-select">
-              ${s.roster.map((r) => (typeof r === "string" ? r : r.name)).map((name) => `<option value="${name}">${name}</option>`).join("")}
-              <option value="__other__">Other (type a name)</option>
-            </select>
-            <input class="invite-name" placeholder="e.g. Alcaide, Led Jervis J." style="display:none;" />` : `
-            <input class="invite-name" required placeholder="e.g. Alcaide, Led Jervis J." />`}
-            <button type="submit">Send invite</button>
-          </form>
-          <p class="invite-message muted"></p>
-          <div class="invite-pending">
-            ${pendingInvites.length ? pendingInvites.map((inv) => `
-              <div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.35rem;">
-                <span class="muted">Pending: ${displayStudentName(inv.studentName)} (${inv.studentEmail})</span>
-                <button type="button" class="secondary" data-cancel-invite="${inv.id}">Cancel</button>
-              </div>`).join("") : ""}
-          </div>
-        </div>
-      </details>
-      <details style="margin-top:0.5rem;">
-        <summary class="muted" style="cursor:pointer;">Apply a saved student list</summary>
-        <div style="margin-top:0.5rem;">
-          ${masterLists.length ? `
-          <select class="master-list-select">
-            <option value="">Choose a list…</option>
-            ${masterLists.map((l) => `<option value="${l.id}">${l.name} (${l.students.length})</option>`).join("")}
-          </select>
-          <button type="button" class="apply-master-list-btn" data-section="${d.id}">Invite everyone in this list</button>` : `
-          <p class="muted">No saved lists yet — build one from an already-enrolled section's Enrolled Students page, or add one from Student Lists in the header.</p>`}
-          <p class="apply-master-list-message muted"></p>
-        </div>
-      </details>`;
+      </div>`;
     list.appendChild(row);
-    // QR draw deferred until the "Show QR" <details> is actually opened -
-    // most teachers never open it, so this also skips loading qrcodejs
-    // (see loadScriptOnce()) until it's really needed.
-    let qrRendered = false;
-    row.querySelector("[data-qr-toggle]").addEventListener("toggle", async (e) => {
-      if (!e.target.open || qrRendered) return;
-      qrRendered = true;
-      await loadScriptOnce(QRCODEJS_CDN_URL);
-      renderSectionQR(d.id, s.joinCode, `${state.subjectName || "—"} — ${s.sectionName}`);
-    });
   });
   list.querySelectorAll("[data-open]").forEach((b) =>
     b.addEventListener("click", () => openSection(b.dataset.open)));
-  list.querySelectorAll("[data-copy-join]").forEach((b) =>
-    b.addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText(b.dataset.copyJoin);
-        const prev = b.textContent;
-        b.textContent = "Copied!";
-        setTimeout(() => { b.textContent = prev; }, 1500);
-      } catch {
-        // Clipboard API blocked (insecure context / old browser) - hand
-        // the link to a prompt so the teacher can copy it by hand.
-        prompt("Copy this join link:", b.dataset.copyJoin);
-      }
-    }));
   list.querySelectorAll("[data-edit-section]").forEach((b) =>
     b.addEventListener("click", () => editSectionName(b.dataset.editSection)));
   list.querySelectorAll("[data-delete-section]").forEach((b) =>
@@ -1260,73 +1340,6 @@ async function loadSections() {
       await cascadeDeleteSection(b.dataset.deleteSection);
       alert("Deleted.");
       loadSections();
-    }));
-  list.querySelectorAll(".invite-name-select").forEach((select) => {
-    const textInput = select.parentElement.querySelector(".invite-name");
-    const sync = () => {
-      const isOther = select.value === "__other__";
-      textInput.style.display = isOther ? "" : "none";
-      textInput.required = isOther;
-      if (isOther) textInput.focus();
-    };
-    select.addEventListener("change", sync);
-    sync();
-  });
-  list.querySelectorAll(".invite-form").forEach((form) =>
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const sectionId = form.dataset.section;
-      const email = form.querySelector(".invite-email").value.trim().toLowerCase();
-      const select = form.querySelector(".invite-name-select");
-      const studentName = (select && select.value !== "__other__"
-        ? select.value
-        : form.querySelector(".invite-name").value).trim();
-      const msg = form.parentElement.querySelector(".invite-message");
-      const btn = form.querySelector("button");
-      btn.disabled = true;
-      try {
-        await addDoc(collection(db, "invites"), {
-          studentEmail: email,
-          studentName,
-          subjectId: state.subjectId,
-          subjectName: state.subjectName,
-          sectionId,
-          sectionName: sectionNames.get(sectionId),
-          teacherName: state.subjectOwnerName,
-          ownerEmail: state.viewAsEmail,
-          createdAt: serverTimestamp(),
-        });
-        msg.textContent = `Invited ${studentName} — they'll join automatically once they sign in with ${email}.`;
-        form.reset();
-        loadSections();
-      } catch (err) {
-        msg.textContent = "Invite failed: " + err.message;
-        btn.disabled = false;
-      }
-    }));
-  list.querySelectorAll("[data-cancel-invite]").forEach((b) =>
-    b.addEventListener("click", async () => {
-      await deleteDoc(doc(db, "invites", b.dataset.cancelInvite));
-      alert("Invite cancelled.");
-      loadSections();
-    }));
-  list.querySelectorAll(".apply-master-list-btn").forEach((b) =>
-    b.addEventListener("click", async () => {
-      const sectionId = b.dataset.section;
-      const select = b.parentElement.querySelector(".master-list-select");
-      const listId = select.value;
-      if (!listId) return;
-      const msg = b.parentElement.querySelector(".apply-master-list-message");
-      b.disabled = true;
-      msg.textContent = "Inviting...";
-      try {
-        const result = await applyMasterListToSection(listId, sectionId, sectionNames.get(sectionId), invitesBySection.get(sectionId) || []);
-        msg.textContent = `Invited ${result.invited}. Skipped ${result.skippedEnrolled} already enrolled, ${result.skippedInvited} already invited.`;
-        loadSections();
-      } catch (err) {
-        msg.textContent = "Couldn't apply list: " + err.message;
-        b.disabled = false;
-      }
     }));
 }
 
@@ -1609,6 +1622,9 @@ async function openSection(sectionId) {
   el("roster-preview").innerHTML = "";
   el("roster-duplicate-review").innerHTML = "";
   if (rosterPreviewNames.length > 0) renderRosterPreview();
+
+  const [invitesBySection, masterLists] = await Promise.all([getPendingInvites(), getMasterLists()]);
+  renderAddStudentPanel(el("add-student-panel"), sectionId, section, invitesBySection.get(sectionId) || [], masterLists);
 
   show("view-section");
   loadAssignments();
