@@ -3421,6 +3421,12 @@ guardPage("teacher").then(async (user) => {
   em.textContent = (user.email[0] || "?").toUpperCase();
   em.title = user.email;
   const isAdmin = user.email === ADMIN_EMAIL;
+  // Small role pill next to the account circle - same page serves both
+  // regular teachers and the super admin, so it's otherwise not obvious
+  // at a glance which one a given signed-in session is.
+  const roleBadge = el("role-badge");
+  roleBadge.textContent = isAdmin ? "Admin" : "Teacher";
+  roleBadge.className = isAdmin ? "status-returned" : "status-published";
   if (AI_CHECK_ENABLED) {
     el("gemini-key").value = getGeminiKey();
     el("gemini-settings-section").classList.remove("hidden");
