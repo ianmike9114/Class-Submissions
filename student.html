@@ -20,20 +20,21 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=23" />
+  <link rel="stylesheet" href="css/style.css?v=24" />
 </head>
 <body>
   <header>
     <h1>My Submissions</h1>
     <div>
       <span class="status-ai-drafted">Student</span>
-      <span id="student-email" class="muted" style="color:#dbe4ff;"></span>
+      <span id="student-avatar" class="hdr-avatar" title=""></span>
+      <span id="student-email" class="hdr-account"></span>
       <button class="secondary" id="sign-out">Sign out</button>
     </div>
   </header>
 
   <main>
-    <div class="card">
+    <div class="card" id="join-card">
       <h2>Join a class</h2>
       <form id="join-form">
         <label>Join code (given by your teacher)</label>
@@ -70,6 +71,6 @@
     </div>
   </main>
 
-  <script type="module" src="js/student.js?v=31"></script>
+  <script type="module" src="js/student.js?v=32"></script>
 </body>
 </html>

@@ -8,6 +8,35 @@ import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEm
 let currentUser = null;
 function el(id) { return document.getElementById(id); }
 
+// Admin-only, READ-ONLY "view as student". When the super admin opens
+// student.html?asStudentUID=...&asStudentEmail=...&asStudentName=..., this page
+// renders THAT student's dashboard (their enrollments + submissions) so the
+// admin can see exactly what a student sees. Activated below only when the
+// signed-in email is ADMIN_EMAIL; ignored for anyone else. Firestore lets the
+// super admin read any student's docs (isSuperAdmin), and every mutation
+// handler early-returns via readOnlyBlocked() so the admin cannot alter the
+// student's data while previewing. Data reads use dataUID() instead of the
+// signed-in uid so they hit the target student's rows.
+let viewCtx = null; // { uid, email, name, readOnly } when active
+function dataUID() { return viewCtx ? viewCtx.uid : currentUser.uid; }
+function readOnlyBlocked() {
+  if (viewCtx && viewCtx.readOnly) {
+    alert("Read-only preview — you're viewing this student's page as admin. Actions are disabled.");
+    return true;
+  }
+  return false;
+}
+function showViewAsBanner() {
+  const main = document.querySelector("main");
+  const b = document.createElement("div");
+  b.className = "card";
+  b.style.cssText = "background:#dbe4ef; border-color:#1d3a63; color:#111c2c;";
+  const who = esc(viewCtx.name || viewCtx.email || viewCtx.uid);
+  b.innerHTML = `<strong>Admin preview (read-only)</strong> — viewing as <strong>${who}</strong>` +
+    `${viewCtx.email ? ` (${esc(viewCtx.email)})` : ""}. Submitting, joining, and editing are disabled.`;
+  main.insertBefore(b, main.firstChild);
+}
+
 // Names arrive with inconsistent casing depending on source (roster
 // upload already uppercases on save, but the Google-account-name
 // fallback doesn't) - normalize how they *display*, without touching
@@ -55,6 +84,7 @@ function withTimeout(promise, ms = 12000) {
 }
 
 async function enroll(sectionId, section, subject, studentName) {
+  if (readOnlyBlocked()) return;
   // Deterministic ID (one section + one student = one doc, always) instead
   // of addDoc's random ID - the "already enrolled?" checks above this call
   // are a query-then-write race (two tabs, a double-click before the button
@@ -252,7 +282,7 @@ function isPastDue(a) {
 
 async function loadEverything() {
   const enrollSnap = await getDocs(
-    query(collection(db, "enrollments"), where("studentUID", "==", currentUser.uid))
+    query(collection(db, "enrollments"), where("studentUID", "==", dataUID()))
   );
   const enrollments = enrollSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
@@ -280,6 +310,7 @@ async function loadEverything() {
       let saved = false;
       const save = async () => {
         if (saved) return;
+        if (readOnlyBlocked()) { loadEverything(); return; }
         saved = true;
         const name = input.value.trim();
         try {
@@ -302,6 +333,7 @@ async function loadEverything() {
   // undoing a flag shouldn't be harder than setting it.
   classesList.querySelectorAll("[data-toggle-leave]").forEach((b) =>
     b.addEventListener("click", async () => {
+      if (readOnlyBlocked()) return;
       const enrollmentId = b.dataset.toggleLeave;
       const next = b.dataset.current !== "true";
       if (next) {
@@ -355,7 +387,7 @@ async function loadEverything() {
   // (studentUID-only equality). Rules already allow a student to read their
   // own submissions (studentUID == request.auth.uid).
   const mySubsSnap = await getDocs(
-    query(collection(db, "submissions"), where("studentUID", "==", currentUser.uid))
+    query(collection(db, "submissions"), where("studentUID", "==", dataUID()))
   );
   const subDocsByAssignment = new Map();
   mySubsSnap.forEach((d) => {
@@ -453,6 +485,7 @@ async function loadEverything() {
       const requestRedoBtn = row.querySelector("[data-request-redo]");
       if (requestRedoBtn) {
         requestRedoBtn.addEventListener("click", async () => {
+          if (readOnlyBlocked()) return;
           const ok = confirm("Ask your teacher to reopen this graded assignment so you can redo it? They'll see your request.");
           if (!ok) return;
           requestRedoBtn.disabled = true;
@@ -469,6 +502,7 @@ async function loadEverything() {
       const cancelRedoBtn = row.querySelector("[data-cancel-redo]");
       if (cancelRedoBtn) {
         cancelRedoBtn.addEventListener("click", async () => {
+          if (readOnlyBlocked()) return;
           cancelRedoBtn.disabled = true;
           try {
             await updateDoc(doc(db, "submissions", subDoc.id), { resubmitRequested: false });
@@ -487,6 +521,7 @@ async function loadEverything() {
         const removeBtn = row.querySelector("[data-remove-submission]");
         if (removeBtn) {
           removeBtn.addEventListener("click", async () => {
+            if (readOnlyBlocked()) return;
             const ok = confirm("Remove this submission? You'll be able to resubmit afterward. This can't be undone.");
             if (!ok) return;
             removeBtn.disabled = true;
@@ -857,6 +892,7 @@ function wirePhotoInput(input) {
 function wireSubmitForm(form) {
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (readOnlyBlocked()) return;
     const assignmentId = form.dataset.assignment;
     const submissionId = form.dataset.submission || null; // present -> editing an existing doc in place
 
@@ -953,11 +989,41 @@ function showConnectionError(err) {
 guardPage("student").then(async (user) => {
   if (!user) return;
   currentUser = user;
-  el("student-email").textContent = user.email;
+  // Header account: Google profile photo when available, else a circle with the
+  // email initial; real display name beside it, full email on hover.
+  const av = el("student-avatar");
+  if (user.photoURL) {
+    av.innerHTML = `<img src="${user.photoURL}" alt="" referrerpolicy="no-referrer" />`;
+    av.classList.add("has-photo");
+  } else {
+    av.textContent = (user.email[0] || "?").toUpperCase();
+  }
+  av.title = user.email;
+  el("student-email").textContent = user.displayName || user.email;
+
+  // Admin-only read-only preview of a specific student (see viewCtx notes up top).
+  const params = new URLSearchParams(location.search);
+  const asUID = params.get("asStudentUID");
+  if (asUID && user.email === ADMIN_EMAIL) {
+    viewCtx = {
+      uid: asUID,
+      email: params.get("asStudentEmail") || "",
+      name: params.get("asStudentName") || "",
+      readOnly: true,
+    };
+    document.body.classList.add("view-as-readonly");
+    showViewAsBanner();
+  }
+
   try {
-    await applyPendingInvites();
-    await loadEverything();
-    applyPendingJoinCode();
+    if (viewCtx) {
+      // Read-only preview: never consume the real student's invites/join code.
+      await loadEverything();
+    } else {
+      await applyPendingInvites();
+      await loadEverything();
+      applyPendingJoinCode();
+    }
   } catch (err) {
     showConnectionError(err);
   }

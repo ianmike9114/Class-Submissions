@@ -818,6 +818,29 @@ function closeNotifDropdown() {
   el("notif-dropdown").classList.add("hidden");
 }
 
+// Header dropdowns (notifications, photo ZIPs, global search) are position:fixed
+// and placed from the trigger's rect on open, so they stay fully on-screen no
+// matter where the wrapping flex header pushes the trigger. Fixes the old bug
+// where a `right:0` panel grew off the left edge once the header wrapped.
+// matchWidth: search suggestions span the (wide) search box; bell panels keep
+// their natural width, right-aligned to the trigger then clamped to the viewport.
+function positionDropdown(anchorEl, dropdownEl, matchWidth = false) {
+  const r = anchorEl.getBoundingClientRect();
+  const margin = 8;
+  dropdownEl.style.position = "fixed";
+  dropdownEl.style.top = `${r.bottom + 6}px`;
+  dropdownEl.style.right = "auto";
+  if (matchWidth) {
+    const width = Math.min(r.width, window.innerWidth - 2 * margin);
+    dropdownEl.style.width = `${width}px`;
+    dropdownEl.style.left = `${Math.max(margin, Math.min(r.left, window.innerWidth - width - margin))}px`;
+  } else {
+    const width = Math.min(dropdownEl.offsetWidth || 280, window.innerWidth - 2 * margin);
+    const left = Math.max(margin, Math.min(r.right - width, window.innerWidth - width - margin));
+    dropdownEl.style.left = `${left}px`;
+  }
+}
+
 function renderNotifDropdown() {
   const { submissions, leaves, joins, redos = [], error } = lastNotifications;
   const dropdown = el("notif-dropdown");
@@ -882,6 +905,7 @@ el("notif-bell").addEventListener("click", async (e) => {
   await refreshNotifications();
   renderNotifDropdown();
   dropdown.classList.remove("hidden");
+  positionDropdown(el("notif-bell"), dropdown);
 });
 
 document.addEventListener("click", (e) => {
@@ -1194,6 +1218,7 @@ async function searchGlobally() {
     return;
   }
   results.classList.remove("hidden");
+  positionDropdown(el("global-student-search"), results, true);
 
   const [subjectsSnap, sectionsSnap, assignmentsSnap, submissionsSnap] = await Promise.all([
     getDocs(ownerScopedQuery("subjects")),
@@ -1493,14 +1518,27 @@ async function openEnrolled(onlySectionId) {
       </div>`;
   }
 
+  // Super admin only: open a read-only preview of what this student sees on
+  // their own dashboard (js/student.js's ?asStudentUID= view). Regular teachers
+  // never see this control.
+  const canViewAsStudent = currentUser && currentUser.email === ADMIN_EMAIL;
   list.innerHTML = masterListLinkControl + (rows.length
     ? `<table class="records-grid"><thead><tr><th>#</th><th>Name</th><th>Gmail</th><th>Section</th><th></th></tr></thead><tbody>
         ${rows.map((r, i) => `<tr><td>${i + 1}</td><td id="enroll-name-${r.id}">${displayStudentName(r.studentName)}${r.leaveRequested ? ' <span class="status-pending">(leave requested)</span>' : ""}</td><td>${r.studentEmail || ""}</td><td>${sectionMap.get(r.sectionId) || ""}</td><td>
           <button class="secondary" data-edit-enrollment="${r.id}" data-uid="${r.studentUID}" data-raw="${r.studentName}">Edit name</button>
+          ${canViewAsStudent ? `<button class="secondary" data-view-as="${r.studentUID}" data-vemail="${r.studentEmail || ""}" data-vname="${r.studentName || ""}" title="Open this student's page (read-only)">View as</button>` : ""}
           <button class="danger icon" data-remove-enrollment="${r.id}" data-leave-requested="${!!r.leaveRequested}" title="Remove" aria-label="Remove enrollment">×</button>
         </td></tr>`).join("")}
       </tbody></table>`
     : '<p class="muted">No students enrolled yet.</p>');
+
+  list.querySelectorAll("[data-view-as]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const url = `student.html?asStudentUID=${encodeURIComponent(b.dataset.viewAs)}` +
+        `&asStudentEmail=${encodeURIComponent(b.dataset.vemail)}` +
+        `&asStudentName=${encodeURIComponent(b.dataset.vname)}`;
+      window.open(url, "_blank", "noopener");
+    }));
 
   const linkSelect = el("master-list-link-select");
   if (linkSelect) {
@@ -2419,6 +2457,7 @@ el("photos-bell").addEventListener("click", async (e) => {
   }
   dropdown.innerHTML = '<p class="muted" style="padding:0.5rem 0.75rem;">Loading...</p>';
   dropdown.classList.remove("hidden");
+  positionDropdown(el("photos-bell"), dropdown);
   try {
     renderPhotosDropdown(await getPhotoAssignments());
   } catch (err) {
@@ -3416,10 +3455,17 @@ guardPage("teacher").then(async (user) => {
   if (!user) return;
   currentUser = user;
   state.viewAsEmail = user.email;
-  // Header shows a compact account circle (first initial); full email on hover.
+  // Header account: Google profile photo when available, else a circle with
+  // the email initial; real display name beside it; full email on hover.
   const em = el("teacher-email");
-  em.textContent = (user.email[0] || "?").toUpperCase();
+  if (user.photoURL) {
+    em.innerHTML = `<img src="${user.photoURL}" alt="" referrerpolicy="no-referrer" />`;
+    em.classList.add("has-photo");
+  } else {
+    em.textContent = (user.email[0] || "?").toUpperCase();
+  }
   em.title = user.email;
+  el("account-name").textContent = user.displayName || user.email;
   const isAdmin = user.email === ADMIN_EMAIL;
   // Small role pill next to the account circle - same page serves both
   // regular teachers and the super admin, so it's otherwise not obvious
