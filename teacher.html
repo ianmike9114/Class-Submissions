@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=27" />
+  <link rel="stylesheet" href="css/style.css?v=28" />
 </head>
 <body>
   <div class="app-shell">
@@ -253,6 +253,17 @@
       <button class="secondary" id="open-enrolled-section">View Enrolled Students</button>
 
       <details class="card">
+        <summary><strong>Topics (order the course outline)</strong></summary>
+        <div style="margin-top:0.75rem;">
+          <p class="muted">Topics group your posts in the student's course outline, in the order below. Use the arrows to reorder.</p>
+          <div id="topics-panel"></div>
+          <form id="add-topic-form" style="display:flex; gap:0.5rem; margin-top:0.5rem;">
+            <input id="new-topic-name" placeholder="New topic, e.g. Lesson 1" style="flex:1; margin-bottom:0;" />
+            <button type="submit" style="white-space:nowrap;">Add topic</button>
+          </form>
+        </div>
+      </details>
+      <details class="card">
         <summary><strong>Create</strong></summary>
 
         <!-- Pick a type first (Google Classroom-style), then show only the
@@ -278,8 +289,11 @@
           </p>
           <label>Title</label>
           <input id="assignment-title" required placeholder="e.g. Performance Task 1" />
-          <label>Lesson / Unit (optional - groups this in the student's course outline)</label>
-          <input id="assignment-lesson" placeholder="e.g. Lesson 1" />
+          <label>Topic (groups this in the student's course outline)</label>
+          <div style="display:flex; gap:0.5rem; align-items:flex-start;">
+            <select id="assignment-lesson" style="flex:1;"></select>
+            <button type="button" class="secondary" id="assignment-lesson-add" title="Add a new topic" style="white-space:nowrap;">+ New</button>
+          </div>
           <label>Instructions (shown to students - paste the objective, output format/options, anything they need to know)</label>
           <textarea id="assignment-instructions" rows="4" placeholder="e.g. Explore a CSS-related career or business opportunity and present your findings. Output: 5-7 minute presentation (PowerPoint, Canva, Poster, or Infographic)."></textarea>
           <label>Material / instructions file link (optional - a Drive-hosted PDF/doc, shared as "anyone with the link". Shows embedded to students, not just as a link.)</label>
@@ -342,8 +356,11 @@
         <form id="edit-assignment-form" style="margin-top:0.75rem;">
           <label>Title</label>
           <input id="edit-assignment-title" required />
-          <label>Lesson / Unit (optional - groups this in the student's course outline)</label>
-          <input id="edit-assignment-lesson" placeholder="e.g. Lesson 1" />
+          <label>Topic (groups this in the student's course outline)</label>
+          <div style="display:flex; gap:0.5rem; align-items:flex-start;">
+            <select id="edit-assignment-lesson" style="flex:1;"></select>
+            <button type="button" class="secondary" id="edit-assignment-lesson-add" title="Add a new topic" style="white-space:nowrap;">+ New</button>
+          </div>
           <label>Instructions (shown to students)</label>
           <textarea id="edit-assignment-instructions" rows="4"></textarea>
           <label>Material / instructions file link (optional)</label>
@@ -405,6 +422,6 @@
     <button type="button" id="photo-lightbox-close" aria-label="Close preview">&times;</button>
   </div>
 
-  <script type="module" src="js/teacher.js?v=64"></script>
+  <script type="module" src="js/teacher.js?v=65"></script>
 </body>
 </html>

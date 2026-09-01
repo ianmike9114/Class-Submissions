@@ -18,7 +18,7 @@ import { loadWorkbook } from "./class-record.js";
 // would need a small adapter first.
 const AI_CHECK_ENABLED = false;
 
-const state = { subjectId: null, sectionId: null, assignmentId: null, subjectName: null, subjectOwnerName: null, viewAsEmail: null };
+const state = { subjectId: null, sectionId: null, assignmentId: null, subjectName: null, subjectOwnerName: null, viewAsEmail: null, topics: [] };
 let currentUser = null;
 
 // xlsx/qrcodejs/jszip used to be eager <script> tags in teacher.html,
@@ -1648,6 +1648,10 @@ async function openSection(sectionId) {
   // (title + class + due + join link) without re-fetching the section.
   state.joinCode = section.joinCode;
   state.sectionName = section.sectionName;
+  // Managed, ordered topics for this section (groups the student outline).
+  state.topics = Array.isArray(section.topics) ? section.topics.slice() : [];
+  renderTopicsPanel();
+  refreshLessonSelects();
 
   // Preload the already-saved roster (if any) so it's editable right away,
   // instead of only being visible right after a fresh upload. Older
@@ -1680,6 +1684,107 @@ async function openSection(sectionId) {
       el("add-student-panel").innerHTML = `<p class="muted">Couldn't load: ${err.message}</p>`;
     });
 }
+
+// ---------- managed, reorderable topics (per section) ----------
+// Topics live as an ordered string[] on the section doc (state.topics). They
+// group a post in the student's course outline: a post's topic is stored in
+// its `lesson` field (unchanged, so legacy free-text lessons still work), and
+// the section's ordered topics array is what sequences the outline. No new
+// collection and no firestore.rules change - a section update is already
+// owner-scoped.
+function escAttr(s) { return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
+// Options for a topic <select>: a "no topic" default, every managed topic,
+// and (so an edit never loses a legacy value) the current value if unlisted.
+function topicOptionsHtml(current) {
+  const cur = current || "";
+  const names = state.topics.slice();
+  if (cur && !names.includes(cur)) names.push(cur);
+  return `<option value="">— No topic (General) —</option>` +
+    names.map((t) => `<option value="${escAttr(t)}"${t === cur ? " selected" : ""}>${escAttr(t)}</option>`).join("");
+}
+function refreshLessonSelects() {
+  const c = el("assignment-lesson"); if (c) c.innerHTML = topicOptionsHtml(c.value);
+  const e = el("edit-assignment-lesson"); if (e) e.innerHTML = topicOptionsHtml(e.value);
+}
+
+async function saveTopics() {
+  await updateDoc(doc(db, "sections", state.sectionId), { topics: state.topics });
+  renderTopicsPanel();
+  refreshLessonSelects();
+}
+
+function renderTopicsPanel() {
+  const panel = el("topics-panel");
+  if (!panel) return;
+  if (state.topics.length === 0) {
+    panel.innerHTML = '<p class="muted">No topics yet. Add one below — posts without a topic fall under "General".</p>';
+    return;
+  }
+  panel.innerHTML = state.topics.map((t, i) => `
+    <div class="topic-row">
+      <span class="topic-name">${escAttr(t)}</span>
+      <span class="topic-actions">
+        <button type="button" class="secondary" data-topic-up="${i}"${i === 0 ? " disabled" : ""} title="Move up" aria-label="Move up">&#8593;</button>
+        <button type="button" class="secondary" data-topic-down="${i}"${i === state.topics.length - 1 ? " disabled" : ""} title="Move down" aria-label="Move down">&#8595;</button>
+        <button type="button" class="secondary" data-topic-rename="${i}">Rename</button>
+        <button type="button" class="danger icon" data-topic-del="${i}" title="Remove topic" aria-label="Remove topic">&times;</button>
+      </span>
+    </div>`).join("");
+  panel.querySelectorAll("[data-topic-up]").forEach((b) => b.addEventListener("click", () => moveTopic(+b.dataset.topicUp, -1)));
+  panel.querySelectorAll("[data-topic-down]").forEach((b) => b.addEventListener("click", () => moveTopic(+b.dataset.topicDown, 1)));
+  panel.querySelectorAll("[data-topic-rename]").forEach((b) => b.addEventListener("click", () => renameTopic(+b.dataset.topicRename)));
+  panel.querySelectorAll("[data-topic-del]").forEach((b) => b.addEventListener("click", () => deleteTopic(+b.dataset.topicDel)));
+}
+
+function moveTopic(i, dir) {
+  const j = i + dir;
+  if (j < 0 || j >= state.topics.length) return;
+  [state.topics[i], state.topics[j]] = [state.topics[j], state.topics[i]];
+  saveTopics().then(() => loadAssignments());
+}
+
+async function deleteTopic(i) {
+  const name = state.topics[i];
+  if (!confirm(`Remove the topic "${name}" from the ordered list? Posts under it keep the label and still show — they just lose the managed order.`)) return;
+  state.topics.splice(i, 1);
+  await saveTopics();
+}
+
+async function renameTopic(i) {
+  const oldName = state.topics[i];
+  const next = prompt(`Rename topic "${oldName}" to:`, oldName);
+  if (next === null) return;
+  const newName = next.trim();
+  if (!newName || newName === oldName) return;
+  if (state.topics.includes(newName)) { alert("A topic with that name already exists."); return; }
+  state.topics[i] = newName;
+  await saveTopics();
+  // Repoint every post that was under the old topic name to the new one.
+  const snap = await getDocs(query(collection(db, "assignments"), where("sectionId", "==", state.sectionId)));
+  const targets = snap.docs.filter((d) => ownedByViewAs(d.data()) && (d.data().lesson || "") === oldName);
+  await Promise.all(targets.map((d) => updateDoc(doc(db, "assignments", d.id), { lesson: newName })));
+  loadAssignments();
+}
+
+async function addTopicInline(selectEl) {
+  const name = (prompt("New topic name:") || "").trim();
+  if (!name) return;
+  if (!state.topics.includes(name)) { state.topics.push(name); await saveTopics(); }
+  selectEl.value = name;
+}
+
+el("add-topic-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const name = el("new-topic-name").value.trim();
+  if (!name) return;
+  if (state.topics.includes(name)) { alert("That topic already exists."); return; }
+  state.topics.push(name);
+  el("new-topic-name").value = "";
+  await saveTopics();
+});
+el("assignment-lesson-add").addEventListener("click", () => addTopicInline(el("assignment-lesson")));
+el("edit-assignment-lesson-add").addEventListener("click", () => addTopicInline(el("edit-assignment-lesson")));
 
 function renderActivitiesSummary(assignments) {
   const container = el("activities-summary");
@@ -1918,7 +2023,7 @@ async function openAssignment(assignmentId) {
   const isMaterial = data.type === "material";
   el("assignment-view-title").textContent = data.title;
   el("edit-assignment-title").value = data.title || "";
-  el("edit-assignment-lesson").value = data.lesson || "";
+  el("edit-assignment-lesson").innerHTML = topicOptionsHtml(data.lesson || "");
   el("edit-assignment-instructions").value = data.instructions || "";
   el("edit-assignment-instructions-link").value = data.instructionsLink || "";
   el("edit-assignment-upload-link").value = data.uploadFolderLink || "";

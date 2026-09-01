@@ -499,6 +499,23 @@ details.card summary::marker { color: var(--blue); }
 .type-choice-title { font-family: var(--font-headline); font-weight: 700; font-size: 1.05rem; }
 .type-choice-sub { font-size: 0.8rem; color: #6b7280; }
 
+/* Managed-topics panel: one reorderable row per topic. */
+.topic-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--gray-border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 0.4rem;
+  background: var(--gray-bg);
+}
+.topic-name { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topic-actions { display: flex; gap: 0.3rem; flex: none; }
+.topic-actions button { padding: 0.3rem 0.5rem; font-size: 0.85rem; }
+.topic-actions button.danger.icon { width: 1.9rem; height: 1.9rem; padding: 0; }
+
 /* Admin System Overview: teacher cards in a fluid grid (auto-fills columns
    on desktop, drops to one column on phones via the 640px block below). */
 .overview-teachers-grid,

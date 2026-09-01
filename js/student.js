@@ -587,7 +587,23 @@ async function loadEverything() {
   }
   saveAssignmentsSeen(seen);
 
-  renderOutline(assignmentsBySubject, subDocsByAssignment);
+  // Managed topic order per subject: read each enrolled section's ordered
+  // `topics` array (one get per section - a student has only a few) and merge
+  // per subject. Rules allow a single-doc get on sections. Falls back to the
+  // current first-seen order for any section without topics.
+  const topicOrderBySubject = new Map();
+  const sectionDocs = await Promise.all(
+    [...new Set(sectionIds)].slice(0, 30).map((id) => getDoc(doc(db, "sections", id)).catch(() => null))
+  );
+  for (const sd of sectionDocs) {
+    if (!sd || !sd.exists()) continue;
+    const subj = sectionToSubject.get(sd.id) || "Other";
+    if (!topicOrderBySubject.has(subj)) topicOrderBySubject.set(subj, []);
+    const arr = topicOrderBySubject.get(subj);
+    (Array.isArray(sd.data().topics) ? sd.data().topics : []).forEach((t) => { if (!arr.includes(t)) arr.push(t); });
+  }
+
+  renderOutline(assignmentsBySubject, subDocsByAssignment, topicOrderBySubject);
   attachSubmitHandlers();
   filterAssignments();
 }
@@ -596,7 +612,7 @@ async function loadEverything() {
 // bar per subject (assignments the student has already submitted / total).
 // Built entirely from data loadEverything() already fetched - no extra
 // Firestore reads. Each leaf jumps to (and briefly highlights) its card.
-function renderOutline(assignmentsBySubject, subDocsByAssignment) {
+function renderOutline(assignmentsBySubject, subDocsByAssignment, topicOrderBySubject) {
   const body = el("course-outline-body");
   const outline = el("course-outline");
   let html = "";
@@ -613,18 +629,25 @@ function renderOutline(assignmentsBySubject, subDocsByAssignment) {
     const done = gradable.filter((d) => subDocsByAssignment.get(d.id)).length;
     const pct = gradable.length ? Math.round((done / gradable.length) * 100) : 0;
 
-    // Group this subject's assignments by lesson, preserving first-seen order.
+    // Group this subject's assignments by lesson/topic.
     const byLesson = new Map();
     for (const d of aDocs) {
       const lesson = (d.data().lesson || "").trim() || "General";
       if (!byLesson.has(lesson)) byLesson.set(lesson, []);
       byLesson.get(lesson).push(d);
     }
+    // Order the groups by the teacher's managed topic order first, then any
+    // remaining (legacy/unmanaged) lessons in first-seen order.
+    const managed = (topicOrderBySubject && topicOrderBySubject.get(subjectName)) || [];
+    const orderedLessons = [];
+    for (const t of managed) if (byLesson.has(t)) orderedLessons.push(t);
+    for (const l of byLesson.keys()) if (!orderedLessons.includes(l)) orderedLessons.push(l);
 
     html += `<div class="outline-subject">
       <div class="outline-subject-head"><strong>${esc(subjectName)}</strong><span class="muted">${done}/${gradable.length}</span></div>
       <div class="outline-progress"><div class="outline-progress-bar" style="width:${pct}%"></div></div>`;
-    for (const [lesson, docs] of byLesson) {
+    for (const lesson of orderedLessons) {
+      const docs = byLesson.get(lesson);
       // Only label the lesson when the teacher actually set one - a lone
       // "General" group would just be noise.
       if (byLesson.size > 1 || lesson !== "General") {
