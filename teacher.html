@@ -20,39 +20,53 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=25" />
+  <link rel="stylesheet" href="css/style.css?v=26" />
 </head>
 <body>
-  <header>
-    <div class="hdr-group">
-      <button class="secondary" id="go-home">&#8962; Home</button>
-      <button class="secondary" id="toggle-master-lists">Student Lists</button>
-      <button class="secondary" id="toggle-settings">&#9881; Settings</button>
-      <button class="secondary hidden" id="go-overview" title="See every teacher and student (admin)">&#9638; Overview</button>
-      <select id="view-as-picker" class="hidden" style="width:auto;"></select>
-      <h1>Teacher Dashboard</h1>
-    </div>
-    <div class="hdr-search">
-      <input id="global-student-search" placeholder="Search subjects, sections, assignments, students..." autocomplete="off" />
-      <div id="global-search-results" class="notif-dropdown hidden"></div>
-    </div>
-    <div class="hdr-group">
-      <div style="position:relative; display:inline-block;">
-        <button class="secondary" id="notif-bell">&#128276;<span id="notif-count" class="notif-badge hidden">0</span></button>
-        <div id="notif-dropdown" class="notif-dropdown hidden"></div>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand">
+        <span class="brand-mark">Class Submissions</span>
+        <span id="role-badge"></span>
       </div>
-      <div style="position:relative; display:inline-block;">
-        <button class="secondary" id="photos-bell" title="Photo submissions - download as ZIP">&#128248;</button>
-        <div id="photos-dropdown" class="notif-dropdown hidden"></div>
+      <nav class="sidebar-nav">
+        <button id="go-home">&#8962; Home</button>
+        <button class="hidden" id="go-overview" title="See every teacher and student (admin)">&#9638; Overview</button>
+        <button id="toggle-master-lists">Student Lists</button>
+        <button id="toggle-settings">&#9881; Settings</button>
+      </nav>
+      <div class="sidebar-foot">
+        <select id="view-as-picker" class="hidden"></select>
+        <div class="sidebar-account">
+          <span id="teacher-email" class="hdr-avatar" title=""></span>
+          <span id="account-name" class="hdr-account"></span>
+        </div>
+        <button class="secondary" id="sign-out">Sign out</button>
       </div>
-      <span id="role-badge"></span>
-      <span id="teacher-email" class="hdr-avatar" title=""></span>
-      <span id="account-name" class="hdr-account"></span>
-      <button class="secondary" id="sign-out">Sign out</button>
-    </div>
-  </header>
+    </aside>
+    <div class="sidebar-scrim" id="sidebar-scrim"></div>
 
-  <main>
+    <div class="app-main">
+      <header class="topbar">
+        <button class="topbar-menu" id="sidebar-toggle" aria-label="Menu">&#9776;</button>
+        <h1>Teacher Dashboard</h1>
+        <div class="hdr-search">
+          <input id="global-student-search" placeholder="Search subjects, sections, assignments, students..." autocomplete="off" />
+          <div id="global-search-results" class="notif-dropdown hidden"></div>
+        </div>
+        <div class="topbar-actions">
+          <div style="position:relative; display:inline-block;">
+            <button class="secondary" id="notif-bell">&#128276;<span id="notif-count" class="notif-badge hidden">0</span></button>
+            <div id="notif-dropdown" class="notif-dropdown hidden"></div>
+          </div>
+          <div style="position:relative; display:inline-block;">
+            <button class="secondary" id="photos-bell" title="Photo submissions - download as ZIP">&#128248;</button>
+            <div id="photos-dropdown" class="notif-dropdown hidden"></div>
+          </div>
+        </div>
+      </header>
+
+      <main>
     <div class="card hidden" id="settings-panel">
       <h2>General Settings</h2>
       <form id="settings-form">
@@ -355,13 +369,15 @@
       <h2>Records — <span id="records-view-title"></span></h2>
       <div id="records-table"></div>
     </section>
-  </main>
+      </main>
+    </div>
+  </div>
 
   <div id="photo-lightbox" class="photo-lightbox hidden">
     <img id="photo-lightbox-img" alt="" />
     <button type="button" id="photo-lightbox-close" aria-label="Close preview">&times;</button>
   </div>
 
-  <script type="module" src="js/teacher.js?v=61"></script>
+  <script type="module" src="js/teacher.js?v=62"></script>
 </body>
 </html>

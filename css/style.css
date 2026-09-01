@@ -25,30 +25,94 @@ body {
 
 h1, h2, h3, h4, strong, summary { font-family: var(--font-headline); }
 
-header {
+/* App shell: fixed navy sidebar on the left, scrolling content on the right.
+   Replaced the old single crowded blue <header> - primary nav now lives in
+   the sidebar, and the top bar carries only the page title, search, and the
+   notification/photos bells. The 640px block turns the sidebar into an
+   off-canvas drawer toggled by the topbar hamburger. */
+.app-shell { display: flex; min-height: 100vh; }
+
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 230px;
   background: var(--blue);
-  color: white;
-  padding: 1rem 1.5rem;
-  /* Three flex items: [nav group] [flexible search] [action group]. The
-     search fills the middle and shrinks/wraps instead of overflowing, so the
-     header stays one clean row on desktop and wraps tidily on narrower
-     screens. The 640px block below still forces the full column stack on
-     phones. */
+  color: #eaf1ff;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem 0.75rem;
+  overflow-y: auto;
+  z-index: 30;
+}
+.sidebar-brand {
   display: flex;
   align-items: center;
+  gap: 0.5rem;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  padding: 0.25rem 0.5rem 0.75rem;
+  border-bottom: 1px solid #1d3a63;
+  margin-bottom: 0.5rem;
+}
+.brand-mark {
+  font-family: var(--font-headline);
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: #fff;
+  line-height: 1.15;
+}
+.sidebar-nav { display: flex; flex-direction: column; gap: 0.25rem; }
+.sidebar-nav button {
+  width: 100%;
+  text-align: left;
+  background: none;
+  color: #dbe4ff;
+  border-radius: var(--radius-sm);
+  padding: 0.55rem 0.7rem;
+  font-size: 0.95rem;
+}
+.sidebar-nav button:hover { background: #1d3a63; color: #fff; }
+.sidebar-foot {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #1d3a63;
+}
+.sidebar-foot #view-as-picker { width: 100%; margin: 0; }
+.sidebar-account { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+.sidebar-account .hdr-account { max-width: none; }
+
+.app-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-left: 230px;
 }
 
-header h1 { font-size: 1.15rem; margin: 0; }
-
-/* A nav/action cluster; may wrap its own buttons before the whole header does. */
-.hdr-group {
+/* Slim top bar: title + flexible search + the two bells. Sticky so it stays
+   put while the content scrolls. */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
   gap: 0.75rem;
   flex-wrap: wrap;
+  padding: 0.75rem 1.25rem;
+  background: #fff;
+  border-bottom: 1px solid var(--gray-border);
 }
+.topbar h1 { font-size: 1.15rem; margin: 0; }
+.topbar-actions { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; }
+/* Hamburger: hidden on desktop, shown in the 640px block. */
+.topbar-menu { display: none; background: none; color: var(--text); font-size: 1.25rem; padding: 0.35rem 0.6rem; }
+
+/* Dim overlay behind the mobile drawer; only visible when body.sidebar-open. */
+.sidebar-scrim { display: none; }
 
 /* The middle search: grows to fill leftover width, shrinks to its 220px basis,
    and drops to its own line when neither group leaves room - never clips. */
@@ -583,6 +647,27 @@ details.card summary::marker { color: var(--blue); }
   /* Overview teacher cards stack to a single column on phones. */
   #overview-teachers { grid-template-columns: 1fr; }
 
+  /* Teacher shell: the sidebar becomes an off-canvas drawer. It sits
+     off-screen until body.sidebar-open (set by the topbar hamburger), then
+     slides in over a dimmed scrim. The content area reclaims the full width. */
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    box-shadow: 0 0 24px rgba(0, 0, 0, 0.3);
+    width: 260px;
+  }
+  body.sidebar-open .sidebar { transform: none; }
+  .app-main { margin-left: 0; }
+  .topbar-menu { display: inline-flex; align-items: center; }
+  body.sidebar-open .sidebar-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 29;
+  }
+
+  /* Student page still uses a plain <header>; keep its phone stacking. */
   header {
     flex-direction: column;
     align-items: stretch;

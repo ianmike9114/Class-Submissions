@@ -3347,6 +3347,15 @@ async function restoreNavState() {
 }
 el("go-home").addEventListener("click", () => { show("view-subjects"); loadSubjects(); });
 el("toggle-settings").addEventListener("click", () => el("settings-panel").classList.toggle("hidden"));
+
+// Mobile sidebar drawer: the topbar hamburger opens it, the scrim or any
+// nav tap closes it. On desktop the sidebar is always shown, so these are
+// no-ops there (the toggle button and scrim are display:none above 640px).
+el("sidebar-toggle").addEventListener("click", () => document.body.classList.toggle("sidebar-open"));
+el("sidebar-scrim").addEventListener("click", () => document.body.classList.remove("sidebar-open"));
+document.querySelector(".sidebar-nav").addEventListener("click", (e) => {
+  if (e.target.closest("button")) document.body.classList.remove("sidebar-open");
+});
 el("back-to-subjects").addEventListener("click", () => { show("view-subjects"); loadSubjects(); });
 el("back-to-subject").addEventListener("click", () => show("view-subject"));
 el("back-to-section").addEventListener("click", () => show("view-section"));
