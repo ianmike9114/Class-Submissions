@@ -17,10 +17,24 @@ const firebaseConfig = {
   appId: "1:1077801155399:web:9a2c0d728da9a4a9dbaa62",
 };
 
-// The permanent super admin - can act as any teacher, manage the /teachers
-// allowlist (see js/auth.js's isTeacherEmail()), and see/edit any teacher's
-// data. Also update this in firestore.rules (which hardcodes it too).
+// The permanent super admins - each can act as any teacher, manage the
+// /teachers allowlist (see js/auth.js's isTeacherEmail()), and see/edit any
+// teacher's data. The SAME list must be kept in sync in firestore.rules'
+// isSuperAdmin() (the real gatekeeper). ADMIN_EMAIL stays the PRIMARY admin
+// and doubles as the owner of any pre-multi-tenant "legacy" docs that have
+// no ownerEmail field - do not repurpose it; add additional admins to
+// SUPER_ADMINS instead.
 export const ADMIN_EMAIL = "galutira.ianjoseph.f@gmail.com";
+export const SUPER_ADMINS = [
+  ADMIN_EMAIL,
+  "ckraigpc@gmail.com",
+];
+// Role gate: is this signed-in email a super admin? Case-insensitive, since
+// Google tokens can vary casing. Use this for every "is admin" check in the
+// app; keep ADMIN_EMAIL only where the ORIGINAL owner identity matters.
+export function isSuperAdmin(email) {
+  return !!email && SUPER_ADMINS.some((a) => a.toLowerCase() === email.toLowerCase());
+}
 
 // Google OAuth Web Client ID (NOT the same as apiKey above). Firebase
 // auto-creates one when you enable Google Sign-In: Firebase Console ->

@@ -1,4 +1,4 @@
-import { db, ADMIN_EMAIL } from "./firebase-config.js";
+import { db, ADMIN_EMAIL, isSuperAdmin } from "./firebase-config.js";
 import { guardPage, signOutUser } from "./auth.js";
 import {
   collection, addDoc, doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, query, where, serverTimestamp,
@@ -1521,7 +1521,7 @@ async function openEnrolled(onlySectionId) {
   // Super admin only: open a read-only preview of what this student sees on
   // their own dashboard (js/student.js's ?asStudentUID= view). Regular teachers
   // never see this control.
-  const canViewAsStudent = currentUser && currentUser.email === ADMIN_EMAIL;
+  const canViewAsStudent = currentUser && isSuperAdmin(currentUser.email);
   list.innerHTML = masterListLinkControl + (rows.length
     ? `<table class="records-grid"><thead><tr><th>#</th><th>Name</th><th>Gmail</th><th>Section</th><th></th></tr></thead><tbody>
         ${rows.map((r, i) => `<tr><td>${i + 1}</td><td id="enroll-name-${r.id}">${displayStudentName(r.studentName)}${r.leaveRequested ? ' <span class="status-pending">(leave requested)</span>' : ""}</td><td>${r.studentEmail || ""}</td><td>${sectionMap.get(r.sectionId) || ""}</td><td>
@@ -3420,9 +3420,12 @@ el("add-teacher-form").addEventListener("submit", async (e) => {
 async function renderViewAsPicker() {
   const picker = el("view-as-picker");
   const snap = await getDocs(collection(db, "teachers"));
-  const emails = snap.docs.map((d) => d.data().email).sort();
+  // "My Classes" is the signed-in admin's OWN email (not a hardcoded one) so
+  // the picker resolves correctly for whichever super admin is signed in.
+  const self = currentUser.email;
+  const emails = snap.docs.map((d) => d.data().email).filter((e) => e !== self).sort();
   picker.innerHTML =
-    `<option value="${ADMIN_EMAIL}">My Classes</option>` +
+    `<option value="${self}">My Classes</option>` +
     emails.map((email) => `<option value="${email}">View as: ${email}</option>`).join("");
   picker.value = state.viewAsEmail;
   picker.classList.remove("hidden");
@@ -3479,7 +3482,8 @@ async function buildOverviewData() {
     if (!owners.has(email)) owners.set(email, { subjects: 0, sections: 0, students: new Set(), pending: 0 });
     return owners.get(email);
   };
-  ensure(ADMIN_EMAIL);
+  ensure(ADMIN_EMAIL);        // primary admin / legacy-doc owner
+  ensure(currentUser.email);  // the signed-in admin (may be a second super admin)
   teachersSnap.docs.forEach((d) => ensure(d.data().email));
   subjSnap.docs.forEach((d) => ensure(ownerOf(d.data())).subjects++);
   sectSnap.docs.forEach((d) => ensure(ownerOf(d.data())).sections++);
@@ -3512,7 +3516,7 @@ async function buildOverviewData() {
 
 function renderOverviewTeachers(teacherRows) {
   el("overview-teachers").innerHTML = teacherRows.map((t) => {
-    const label = t.email === ADMIN_EMAIL ? "My Classes (you)" : t.email;
+    const label = t.email === currentUser.email ? "My Classes (you)" : t.email;
     return `<div class="overview-teacher-card">
       <div class="overview-teacher-head">
         <strong>${label}</strong>
@@ -3550,7 +3554,7 @@ function renderOverviewStudents(studentRows) {
           <td>${i + 1}</td>
           <td>${displayStudentName(r.name)}</td>
           <td>${r.email}</td>
-          <td>${r.teacher === ADMIN_EMAIL ? "You" : r.teacher}</td>
+          <td>${r.teacher === currentUser.email ? "You" : r.teacher}</td>
           <td>${r.section}${r.subject ? ` <span class="muted">(${r.subject})</span>` : ""}</td>
           <td><button class="secondary" data-view-as="${r.uid}" data-vemail="${r.email}" data-vname="${r.name}" title="Open this student's page (read-only)">View as</button></td>
         </tr>`).join("")}
@@ -3631,7 +3635,7 @@ guardPage("teacher").then(async (user) => {
   }
   em.title = user.email;
   el("account-name").textContent = user.displayName || user.email;
-  const isAdmin = user.email === ADMIN_EMAIL;
+  const isAdmin = isSuperAdmin(user.email);
   // Small role pill next to the account circle - same page serves both
   // regular teachers and the super admin, so it's otherwise not obvious
   // at a glance which one a given signed-in session is.

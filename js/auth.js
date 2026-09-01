@@ -1,4 +1,4 @@
-import { auth, db, ADMIN_EMAIL, GOOGLE_CLIENT_ID } from "./firebase-config.js";
+import { auth, db, isSuperAdmin, GOOGLE_CLIENT_ID } from "./firebase-config.js";
 import {
   GoogleAuthProvider,
   signInWithCredential,
@@ -96,10 +96,10 @@ export async function completeEmailLinkSignIn(emailOverride) {
   window.localStorage.removeItem(EMAIL_STORAGE_KEY);
 }
 
-// Super admin is always a teacher; anyone else needs a granted /teachers/
-// {email} doc (added by the super admin from teacher.html's Settings panel).
+// Any super admin is always a teacher; anyone else needs a granted /teachers/
+// {email} doc (added by a super admin from teacher.html's Settings panel).
 export async function isTeacherEmail(email) {
-  if (email === ADMIN_EMAIL) return true;
+  if (isSuperAdmin(email)) return true;
   const snap = await getDoc(doc(db, "teachers", email.toLowerCase()));
   return snap.exists();
 }

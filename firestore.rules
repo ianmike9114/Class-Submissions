@@ -16,8 +16,14 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Super admins - full cross-teacher access + manage the /teachers
+    // allowlist. Keep this list in sync with SUPER_ADMINS in
+    // js/firebase-config.js.
     function isSuperAdmin() {
-      return isSignedIn() && request.auth.token.email == "galutira.ianjoseph.f@gmail.com";
+      return isSignedIn() && request.auth.token.email in [
+        "galutira.ianjoseph.f@gmail.com",
+        "ckraigpc@gmail.com"
+      ];
     }
 
     function isGrantedTeacher() {
