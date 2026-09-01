@@ -719,4 +719,41 @@ details.card summary::marker { color: var(--blue); }
   }
   /* .notif-dropdown positioning is now JS-computed for every width (see
      positionDropdown() in js/teacher.js), so no mobile-only override here. */
+
+  /* Topbar was ~380px tall on a phone: the search's 220px flex-basis forced
+     it to wrap, and the bells (margin-left:auto) dropped onto their own line
+     with a big dead band above. Re-flow deliberately instead: hamburger +
+     title + bells share row 1, search takes a full-width row 2. */
+  /* Override the generic `header { flex-direction:column }` mobile rule above
+     (it targets the student page's plain <header>, but also matches this
+     <header class="topbar">). Keep the topbar a wrapping row. */
+  .topbar { flex-direction: row; align-items: center; flex-wrap: wrap; padding: 0.6rem 1rem; }
+  .topbar-menu { order: 1; }
+  .topbar h1 { order: 2; flex: 0 1 auto; font-size: 1.05rem; }
+  /* margin-left:auto keeps the bells on row 1, pushed to the right edge, next
+     to the title/hamburger; the search (order 4, full basis) drops below. */
+  .topbar-actions { order: 3; margin-left: auto; }
+  .hdr-search { order: 4; flex: 0 0 100%; }
+
+  /* Touch ergonomics: hold the 44px tap-target bar (WCAG 2.5.8 AAA / Apple
+     HIG) on the controls people actually tap on a phone - form controls,
+     nav, card actions, the bells. The tiny photo-thumb overlay/wrapper and
+     the student course-outline links are intentionally excluded (overlays
+     and a long link list, not primary targets). */
+  button, input, select, textarea { min-height: 44px; }
+  .photo-thumb button, button.photo-thumb-btn, .outline-item { min-height: 0; }
+  /* Round icon-delete: grow to a real 44px circle instead of a 32px oval. */
+  button.danger.icon,
+  .topic-actions button.danger.icon { width: 44px; height: 44px; }
+
+  /* Topic row: on a phone the 4-button action cluster (~158px) squeezed the
+     lesson name down to ~114px and hard-truncated it. Wrap the row so the
+     full name gets its own line and the actions sit below it, comfortably
+     spaced (>=8px apart). */
+  .topic-row { flex-wrap: wrap; }
+  .topic-name { flex: 1 1 100%; white-space: normal; }
+  .topic-actions { width: 100%; justify-content: flex-end; gap: 0.5rem; }
+  /* The reorder arrows are only ~23px wide (fail WCAG 2.5.8's 24px); give
+     every topic-action control a 44px min in both dimensions. */
+  .topic-actions button { min-width: 44px; }
 }
