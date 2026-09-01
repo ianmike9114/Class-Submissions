@@ -1715,7 +1715,9 @@ function renderActivitiesSummary(assignments) {
 async function loadAssignments() {
   const q = query(collection(db, "assignments"), where("sectionId", "==", state.sectionId));
   const [snap, counts] = await Promise.all([getDocs(q), getPendingCounts()]);
-  renderActivitiesSummary(snap.docs.map((d) => d.data()));
+  // Materials aren't graded activities - keep them out of the Written/
+  // Performance points overview.
+  renderActivitiesSummary(snap.docs.map((d) => d.data()).filter((a) => a.type !== "material"));
   const list = el("assignments-list");
   list.innerHTML = "";
   const assignmentTitles = new Map(); // id -> title, for the delete-confirm prompt below
@@ -1726,19 +1728,32 @@ async function loadAssignments() {
     assignmentData.set(d.id, a);
     const row = document.createElement("div");
     row.className = "card";
-    row.innerHTML = `
-      <strong>${a.title}</strong> <span class="muted">due ${a.dueDate || "no date"}</span>
-      ${pendingBadge(counts.byAssignment.get(d.id))}
-      ${a.instructions ? `<p class="muted">${a.instructions}</p>` : ""}
-      ${a.instructionsLink ? `<div class="muted"><a href="${a.instructionsLink}" target="_blank" rel="noopener">Instructions file</a></div>` : ""}
-      ${a.uploadFolderLink ? `<div class="muted"><a href="${a.uploadFolderLink}" target="_blank" rel="noopener">Upload folder</a></div>` : ""}
-      <div class="muted">Allowed: ${a.allowedFileTypes} — ${a.totalPoints} points</div>
-      <div style="margin-top:0.5rem;">
-        <button data-open="${d.id}">Open submissions</button>
-        <button class="secondary" data-share="${d.id}">&#128227; Share to group</button>
-        <button class="secondary" data-copy="${d.id}">&#10697; Copy</button>
-        <button class="danger icon" data-delete-assignment="${d.id}" title="Delete assignment" aria-label="Delete assignment">×</button>
-      </div>`;
+    if (a.type === "material") {
+      // Read-only material: no due/points/pending/submissions - just the
+      // content and Open/Delete.
+      row.innerHTML = `
+        <strong>${a.title}</strong> <span class="status-ai-drafted">Material</span>
+        ${a.instructions ? `<p class="muted">${a.instructions}</p>` : ""}
+        ${a.instructionsLink ? `<div class="muted"><a href="${a.instructionsLink}" target="_blank" rel="noopener">Material file</a></div>` : ""}
+        <div style="margin-top:0.5rem;">
+          <button data-open="${d.id}">Open</button>
+          <button class="danger icon" data-delete-assignment="${d.id}" title="Delete material" aria-label="Delete material">×</button>
+        </div>`;
+    } else {
+      row.innerHTML = `
+        <strong>${a.title}</strong> <span class="muted">due ${a.dueDate || "no date"}</span>
+        ${pendingBadge(counts.byAssignment.get(d.id))}
+        ${a.instructions ? `<p class="muted">${a.instructions}</p>` : ""}
+        ${a.instructionsLink ? `<div class="muted"><a href="${a.instructionsLink}" target="_blank" rel="noopener">Instructions file</a></div>` : ""}
+        ${a.uploadFolderLink ? `<div class="muted"><a href="${a.uploadFolderLink}" target="_blank" rel="noopener">Upload folder</a></div>` : ""}
+        <div class="muted">Allowed: ${a.allowedFileTypes} — ${a.totalPoints} points</div>
+        <div style="margin-top:0.5rem;">
+          <button data-open="${d.id}">Open submissions</button>
+          <button class="secondary" data-share="${d.id}">&#128227; Share to group</button>
+          <button class="secondary" data-copy="${d.id}">&#10697; Copy</button>
+          <button class="danger icon" data-delete-assignment="${d.id}" title="Delete assignment" aria-label="Delete assignment">×</button>
+        </div>`;
+    }
     list.appendChild(row);
   });
   list.querySelectorAll("[data-open]").forEach((b) =>
@@ -1761,29 +1776,65 @@ async function loadAssignments() {
     }));
 }
 
+// Pick-type-first create flow (Google Classroom-style): choosing a type
+// reveals the form with only the fields that type needs, so it's not a wall
+// of inputs. A Material is read-only reference content - no points, no due
+// date, no submissions - so it hides every graded-only field.
+function setCreateType(type) {
+  const form = el("add-assignment-form");
+  const isAssignment = type !== "material";
+  form.dataset.type = isAssignment ? "assignment" : "material";
+  el("create-type-choice").classList.add("hidden");
+  form.classList.remove("hidden");
+  form.querySelectorAll(".assignment-only").forEach((n) => n.classList.toggle("hidden", !isAssignment));
+  // A hidden `required` field silently blocks form submit - only require
+  // points for a graded assignment.
+  el("assignment-total-points").required = isAssignment;
+  el("create-type-label").textContent = isAssignment ? "Assignment" : "Material";
+  el("create-submit-btn").textContent = isAssignment ? "Add assignment" : "Add material";
+}
+function resetCreateType() {
+  const form = el("add-assignment-form");
+  form.reset();
+  form.classList.add("hidden");
+  el("create-type-choice").classList.remove("hidden");
+}
+document.querySelectorAll("[data-create-type]").forEach((b) =>
+  b.addEventListener("click", () => setCreateType(b.dataset.createType)));
+el("create-type-change").addEventListener("click", resetCreateType);
+
 el("add-assignment-form").addEventListener("submit", async (e) => {
   e.preventDefault();
 
+  const type = e.target.dataset.type === "material" ? "material" : "assignment";
   const title = el("assignment-title").value.trim();
-  const dueDate = el("assignment-due").value;
-  await addDoc(collection(db, "assignments"), {
+  const dueDate = type === "assignment" ? el("assignment-due").value : "";
+  const base = {
     subjectId: state.subjectId,
     sectionId: state.sectionId,
     title,
+    type,
     lesson: el("assignment-lesson").value.trim(),
     instructions: el("assignment-instructions").value.trim(),
     instructionsLink: el("assignment-instructions-link").value.trim(),
+    createdAt: Date.now(),
+    ownerEmail: state.viewAsEmail,
+  };
+  // A material stores only the fields above; graded fields are omitted, which
+  // is what makes every submission/gradebook path skip it automatically.
+  const payload = type === "material" ? base : {
+    ...base,
     uploadFolderLink: el("assignment-upload-link").value.trim(),
     component: el("assignment-component").value,
     dueDate,
     allowedFileTypes: el("assignment-filetype").value,
     totalPoints: Number(el("assignment-total-points").value) || 0,
     rubricReferenceLink: el("assignment-rubric-link").value.trim(),
-    createdAt: Date.now(),
-    ownerEmail: state.viewAsEmail,
-  });
-  e.target.reset();
+  };
+  await addDoc(collection(db, "assignments"), payload);
+  resetCreateType();
   loadAssignments();
+  if (type === "material") { alert("Material added."); return; }
   await notifyOnAssignmentCreate(title, dueDate);
 });
 
@@ -1864,6 +1915,7 @@ function renderAssignmentContext(a) {
 async function openAssignment(assignmentId) {
   state.assignmentId = assignmentId;
   const data = (await getDoc(doc(db, "assignments", assignmentId))).data();
+  const isMaterial = data.type === "material";
   el("assignment-view-title").textContent = data.title;
   el("edit-assignment-title").value = data.title || "";
   el("edit-assignment-lesson").value = data.lesson || "";
@@ -1875,26 +1927,49 @@ async function openAssignment(assignmentId) {
   el("edit-assignment-filetype").value = data.allowedFileTypes || "document";
   el("edit-assignment-total-points").value = data.totalPoints ?? "";
   el("edit-assignment-rubric-link").value = data.rubricReferenceLink || "";
+  // A material's edit form hides the graded-only fields, and points must not
+  // stay `required` (a hidden required field blocks submit).
+  const editForm = el("edit-assignment-form");
+  editForm.dataset.type = isMaterial ? "material" : "assignment";
+  editForm.querySelectorAll(".assignment-only").forEach((n) => n.classList.toggle("hidden", isMaterial));
+  el("edit-assignment-total-points").required = !isMaterial;
   renderAssignmentContext(data);
   show("view-assignment");
-  loadSubmissions();
+  if (isMaterial) {
+    // A material has no submissions - show the read-only content only and
+    // hide the whole grading UI.
+    el("scores-summary").innerHTML = "";
+    el("images-gallery").innerHTML = "";
+    el("submission-filter").classList.add("hidden");
+    el("submission-filter-label").classList.add("hidden");
+    el("submissions-list").innerHTML = '<p class="muted">This is a material — students read it, there is nothing to grade.</p>';
+  } else {
+    el("submission-filter").classList.remove("hidden");
+    el("submission-filter-label").classList.remove("hidden");
+    loadSubmissions();
+  }
 }
 
 el("edit-assignment-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const assignmentId = state.assignmentId;
-  await updateDoc(doc(db, "assignments", assignmentId), {
+  const isMaterial = e.target.dataset.type === "material";
+  const base = {
     title: el("edit-assignment-title").value.trim(),
     lesson: el("edit-assignment-lesson").value.trim(),
     instructions: el("edit-assignment-instructions").value.trim(),
     instructionsLink: el("edit-assignment-instructions-link").value.trim(),
+  };
+  const payload = isMaterial ? base : {
+    ...base,
     uploadFolderLink: el("edit-assignment-upload-link").value.trim(),
     component: el("edit-assignment-component").value,
     dueDate: el("edit-assignment-due").value,
     allowedFileTypes: el("edit-assignment-filetype").value,
     totalPoints: Number(el("edit-assignment-total-points").value) || 0,
     rubricReferenceLink: el("edit-assignment-rubric-link").value.trim(),
-  });
+  };
+  await updateDoc(doc(db, "assignments", assignmentId), payload);
   alert("Saved.");
   await openAssignment(assignmentId);
 });
@@ -3165,7 +3240,9 @@ async function loadRecords() {
   }
 
   const assignSnap = await getDocs(query(collection(db, "assignments"), where("sectionId", "==", state.sectionId)));
-  const assignments = assignSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  // Materials are read-only reference content with no submissions - never a
+  // graded gradebook column, and they must not inflate the "missing" count.
+  const assignments = assignSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((a) => a.type !== "material");
 
   if (assignments.length === 0) {
     container.innerHTML = `<p class="muted">No assignments yet in this section.</p>`;

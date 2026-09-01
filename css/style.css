@@ -476,6 +476,29 @@ button.photo-thumb-btn {
 details.card summary { cursor: pointer; }
 details.card summary::marker { color: var(--blue); }
 
+/* Pick-type-first create flow: two large choice cards (Assignment vs
+   Material). Flex-wrap stacks them to one column on narrow screens - no
+   media query needed. Overrides the global navy button styling. */
+.type-choice { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+.type-choice-btn {
+  flex: 1 1 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  align-items: flex-start;
+  text-align: left;
+  background: var(--gray-bg);
+  color: var(--text);
+  border: 1px solid var(--gray-border);
+  border-radius: var(--radius-lg);
+  padding: 0.9rem 1rem;
+  cursor: pointer;
+}
+.type-choice-btn:hover { border-color: var(--blue); box-shadow: var(--shadow-hover); }
+.type-choice-icon { font-size: 1.5rem; line-height: 1; }
+.type-choice-title { font-family: var(--font-headline); font-weight: 700; font-size: 1.05rem; }
+.type-choice-sub { font-size: 0.8rem; color: #6b7280; }
+
 /* Admin System Overview: teacher cards in a fluid grid (auto-fills columns
    on desktop, drops to one column on phones via the 640px block below). */
 .overview-teachers-grid,

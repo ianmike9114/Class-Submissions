@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=26" />
+  <link rel="stylesheet" href="css/style.css?v=27" />
 </head>
 <body>
   <div class="app-shell">
@@ -253,38 +253,63 @@
       <button class="secondary" id="open-enrolled-section">View Enrolled Students</button>
 
       <details class="card">
-        <summary><strong>Add assignment</strong></summary>
-        <form id="add-assignment-form" style="margin-top:0.75rem;">
+        <summary><strong>Create</strong></summary>
+
+        <!-- Pick a type first (Google Classroom-style), then show only the
+             fields that type needs - keeps the form from looking like a wall
+             of inputs. #create-fields stays hidden until a type is picked. -->
+        <div id="create-type-choice" class="type-choice" style="margin-top:0.75rem;">
+          <button type="button" class="type-choice-btn" data-create-type="assignment">
+            <span class="type-choice-icon">&#128221;</span>
+            <span class="type-choice-title">Assignment</span>
+            <span class="type-choice-sub">Graded - students submit work</span>
+          </button>
+          <button type="button" class="type-choice-btn" data-create-type="material">
+            <span class="type-choice-icon">&#128218;</span>
+            <span class="type-choice-title">Material</span>
+            <span class="type-choice-sub">Read-only - reference / lesson</span>
+          </button>
+        </div>
+
+        <form id="add-assignment-form" class="hidden" style="margin-top:0.75rem;">
+          <p class="muted" style="margin-top:0;">
+            Creating: <strong id="create-type-label">Assignment</strong>
+            <button type="button" class="secondary" id="create-type-change" style="margin-left:0.5rem;">Change</button>
+          </p>
           <label>Title</label>
           <input id="assignment-title" required placeholder="e.g. Performance Task 1" />
           <label>Lesson / Unit (optional - groups this in the student's course outline)</label>
           <input id="assignment-lesson" placeholder="e.g. Lesson 1" />
           <label>Instructions (shown to students - paste the objective, output format/options, anything they need to know)</label>
           <textarea id="assignment-instructions" rows="4" placeholder="e.g. Explore a CSS-related career or business opportunity and present your findings. Output: 5-7 minute presentation (PowerPoint, Canva, Poster, or Infographic)."></textarea>
-          <label>Instructions file link (optional - a Drive-hosted PDF/doc, shared as "anyone with the link". Shows embedded to students, not just as a link.)</label>
+          <label>Material / instructions file link (optional - a Drive-hosted PDF/doc, shared as "anyone with the link". Shows embedded to students, not just as a link.)</label>
           <input id="assignment-instructions-link" type="url" placeholder="https://drive.google.com/file/d/..." />
-          <label>Upload folder link (optional - a Drive folder shared "Anyone with the link: Editor". Shown to students as an "Upload here" button for large files like videos - they upload in Drive, then paste the resulting file link into their submission.)</label>
-          <input id="assignment-upload-link" type="url" placeholder="https://drive.google.com/drive/folders/..." />
-          <label>Component (for grouping in Records)</label>
-          <select id="assignment-component">
-            <option value="written">Written Work</option>
-            <option value="performance">Performance Task</option>
-          </select>
-          <label>Due date</label>
-          <input id="assignment-due" type="date" />
-          <label>Expected link type (shown to students as instructions)</label>
-          <select id="assignment-filetype">
-            <option value="document">Document (Google Doc/PDF - "anyone with link")</option>
-            <option value="code">Code (CodePen recommended - you can see it run; GitHub Gist also OK)</option>
-            <option value="image">Image / slides (Drive or Slides link, "anyone with link")</option>
-            <option value="video">Video (YouTube, unlisted)</option>
-          </select>
-          <label>Total points</label>
-          <input id="assignment-total-points" type="number" required placeholder="e.g. 100" />
-          <label style="margin-top:0.75rem;">Rubric reference file (optional - a Drive/Docs link to your rubric PDF/Word doc, shown to you while grading as your basis for scoring)</label>
-          <input id="assignment-rubric-link" type="url" placeholder="https://drive.google.com/file/d/..." />
+
+          <div class="assignment-only">
+            <label>Upload folder link (optional - a Drive folder shared "Anyone with the link: Editor". Shown to students as an "Upload here" button for large files like videos - they upload in Drive, then paste the resulting file link into their submission.)</label>
+            <input id="assignment-upload-link" type="url" placeholder="https://drive.google.com/drive/folders/..." />
+            <label>Component (for grouping in Records)</label>
+            <select id="assignment-component">
+              <option value="written">Written Work</option>
+              <option value="performance">Performance Task</option>
+            </select>
+            <label>Due date</label>
+            <input id="assignment-due" type="date" />
+            <label>Expected link type (shown to students as instructions)</label>
+            <select id="assignment-filetype">
+              <option value="document">Document (Google Doc/PDF - "anyone with link")</option>
+              <option value="code">Code (CodePen recommended - you can see it run; GitHub Gist also OK)</option>
+              <option value="image">Image / slides (Drive or Slides link, "anyone with link")</option>
+              <option value="video">Video (YouTube, unlisted)</option>
+            </select>
+            <label>Total points</label>
+            <input id="assignment-total-points" type="number" required placeholder="e.g. 100" />
+            <label style="margin-top:0.75rem;">Rubric reference file (optional - a Drive/Docs link to your rubric PDF/Word doc, shown to you while grading as your basis for scoring)</label>
+            <input id="assignment-rubric-link" type="url" placeholder="https://drive.google.com/file/d/..." />
+          </div>
+
           <div style="margin-top:0.75rem;">
-            <button type="submit">Add assignment</button>
+            <button type="submit" id="create-submit-btn">Add assignment</button>
           </div>
         </form>
       </details>
@@ -321,28 +346,30 @@
           <input id="edit-assignment-lesson" placeholder="e.g. Lesson 1" />
           <label>Instructions (shown to students)</label>
           <textarea id="edit-assignment-instructions" rows="4"></textarea>
-          <label>Instructions file link (optional)</label>
+          <label>Material / instructions file link (optional)</label>
           <input id="edit-assignment-instructions-link" type="url" placeholder="https://drive.google.com/file/d/..." />
-          <label>Upload folder link (optional - Drive folder shared "Anyone with the link: Editor", shown to students as an "Upload here" button)</label>
-          <input id="edit-assignment-upload-link" type="url" placeholder="https://drive.google.com/drive/folders/..." />
-          <label>Component (for grouping in Records)</label>
-          <select id="edit-assignment-component">
-            <option value="written">Written Work</option>
-            <option value="performance">Performance Task</option>
-          </select>
-          <label>Due date</label>
-          <input id="edit-assignment-due" type="date" />
-          <label>Expected link type</label>
-          <select id="edit-assignment-filetype">
-            <option value="document">Document (Google Doc/PDF - "anyone with link")</option>
-            <option value="code">Code (CodePen recommended - you can see it run; GitHub Gist also OK)</option>
-            <option value="image">Image / slides (Drive or Slides link, "anyone with link")</option>
-            <option value="video">Video (YouTube, unlisted)</option>
-          </select>
-          <label>Total points</label>
-          <input id="edit-assignment-total-points" type="number" required />
-          <label style="margin-top:0.75rem;">Rubric reference file (optional)</label>
-          <input id="edit-assignment-rubric-link" type="url" placeholder="https://drive.google.com/file/d/..." />
+          <div class="assignment-only">
+            <label>Upload folder link (optional - Drive folder shared "Anyone with the link: Editor", shown to students as an "Upload here" button)</label>
+            <input id="edit-assignment-upload-link" type="url" placeholder="https://drive.google.com/drive/folders/..." />
+            <label>Component (for grouping in Records)</label>
+            <select id="edit-assignment-component">
+              <option value="written">Written Work</option>
+              <option value="performance">Performance Task</option>
+            </select>
+            <label>Due date</label>
+            <input id="edit-assignment-due" type="date" />
+            <label>Expected link type</label>
+            <select id="edit-assignment-filetype">
+              <option value="document">Document (Google Doc/PDF - "anyone with link")</option>
+              <option value="code">Code (CodePen recommended - you can see it run; GitHub Gist also OK)</option>
+              <option value="image">Image / slides (Drive or Slides link, "anyone with link")</option>
+              <option value="video">Video (YouTube, unlisted)</option>
+            </select>
+            <label>Total points</label>
+            <input id="edit-assignment-total-points" type="number" required />
+            <label style="margin-top:0.75rem;">Rubric reference file (optional)</label>
+            <input id="edit-assignment-rubric-link" type="url" placeholder="https://drive.google.com/file/d/..." />
+          </div>
           <div style="margin-top:0.75rem;">
             <button type="submit">Save changes</button>
           </div>
@@ -352,7 +379,7 @@
       <div id="assignment-context"></div>
       <div id="scores-summary"></div>
       <div id="images-gallery"></div>
-      <label>Filter</label>
+      <label id="submission-filter-label">Filter</label>
       <select id="submission-filter">
         <option value="all">All</option>
         <option value="pending">Pending</option>
@@ -378,6 +405,6 @@
     <button type="button" id="photo-lightbox-close" aria-label="Close preview">&times;</button>
   </div>
 
-  <script type="module" src="js/teacher.js?v=63"></script>
+  <script type="module" src="js/teacher.js?v=64"></script>
 </body>
 </html>

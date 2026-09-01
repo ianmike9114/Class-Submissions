@@ -420,7 +420,15 @@ async function loadEverything() {
       row.dataset.subject = subjectName;
       row.dataset.assignmentId = aDoc.id;
 
-      if (!subDoc) {
+      if (a.type === "material") {
+        // Read-only reference material: no due date, no points, no submit
+        // form. Just the title, any instructions, and the embedded material.
+        row.innerHTML = `
+          <strong>${a.title}</strong> <span class="status-ai-drafted">Material</span>
+          ${isNew ? '<span class="status-pending"> New</span>' : ""}
+          ${a.instructions ? `<p>${a.instructions}</p>` : ""}
+          ${materialBlock(a)}`;
+      } else if (!subDoc) {
         const instructionsFileBlock = materialBlock(a);
         const uploadFolderBlock = a.uploadFolderLink
           ? `<div class="muted"><a href="${a.uploadFolderLink}" target="_blank" rel="noopener">Upload here (large files, e.g. video)</a>${openInChromeButton(a.uploadFolderLink)}</div>`
@@ -598,8 +606,12 @@ function renderOutline(assignmentsBySubject, subDocsByAssignment) {
     if (aDocs.length === 0) continue;
     anyAssignments = true;
 
-    const done = aDocs.filter((d) => subDocsByAssignment.get(d.id)).length;
-    const pct = Math.round((done / aDocs.length) * 100);
+    // Progress counts graded work only - materials are read-only and have no
+    // submission, so they must not sit in the numerator or denominator (else
+    // progress can never reach 100%).
+    const gradable = aDocs.filter((d) => d.data().type !== "material");
+    const done = gradable.filter((d) => subDocsByAssignment.get(d.id)).length;
+    const pct = gradable.length ? Math.round((done / gradable.length) * 100) : 0;
 
     // Group this subject's assignments by lesson, preserving first-seen order.
     const byLesson = new Map();
@@ -610,7 +622,7 @@ function renderOutline(assignmentsBySubject, subDocsByAssignment) {
     }
 
     html += `<div class="outline-subject">
-      <div class="outline-subject-head"><strong>${esc(subjectName)}</strong><span class="muted">${done}/${aDocs.length}</span></div>
+      <div class="outline-subject-head"><strong>${esc(subjectName)}</strong><span class="muted">${done}/${gradable.length}</span></div>
       <div class="outline-progress"><div class="outline-progress-bar" style="width:${pct}%"></div></div>`;
     for (const [lesson, docs] of byLesson) {
       // Only label the lesson when the teacher actually set one - a lone
