@@ -3297,7 +3297,7 @@ async function loadRecords() {
 
 // ---------- nav ----------
 function show(viewId) {
-  ["view-subjects", "view-subject", "view-enrolled", "view-section", "view-assignment", "view-records", "view-master-lists"].forEach((v) => {
+  ["view-overview", "view-subjects", "view-subject", "view-enrolled", "view-section", "view-assignment", "view-records", "view-master-lists"].forEach((v) => {
     el(v).classList.toggle("hidden", v !== viewId);
   });
   // Survives a page refresh - restoreNavState() below replays whichever
@@ -3419,11 +3419,167 @@ async function renderViewAsPicker() {
   picker.classList.remove("hidden");
 }
 
-el("view-as-picker").addEventListener("change", (e) => {
-  state.viewAsEmail = e.target.value;
+// Switch which teacher the admin is acting as, then land on their classes.
+// Shared by the "view as" picker and the Overview's per-teacher Open button
+// so both stay in sync (the picker's value is updated too).
+function switchToTeacher(email) {
+  state.viewAsEmail = email;
+  const picker = el("view-as-picker");
+  if (picker) picker.value = email;
   show("view-subjects");
   loadSubjects();
   refreshNotifications();
+}
+
+el("view-as-picker").addEventListener("change", (e) => switchToTeacher(e.target.value));
+
+// ---------- admin: system overview (super admin only) ----------
+// Every teacher + every student across the whole site, on one page. Reads
+// each collection ONCE, unfiltered (firestore.rules lets the super admin do
+// this - isSuperAdmin() short-circuits every list/read rule), and groups in
+// memory - same fetch-once-compute-in-memory shape as
+// getEnrollmentNotRespondingOverview(), never a query per teacher. Opt-in
+// (runs only when Overview is opened) and cached for the session so
+// re-opening doesn't re-scan the whole deployment - Refresh forces a re-read.
+let overviewCache = null; // { teacherRows, studentRows }
+
+function ownerOf(data) {
+  // Pre-multi-tenant docs have no ownerEmail - they belong to the super admin
+  // (mirrors firestore.rules' isLegacyUnowned).
+  return data.ownerEmail || ADMIN_EMAIL;
+}
+
+async function buildOverviewData() {
+  const [teachersSnap, subjSnap, sectSnap, enrollSnap, subSnap] = await Promise.all([
+    getDocs(collection(db, "teachers")),
+    getDocs(collection(db, "subjects")),
+    getDocs(collection(db, "sections")),
+    getDocs(collection(db, "enrollments")),
+    getDocs(collection(db, "submissions")),
+  ]);
+
+  const sectionMap = new Map(); // sectionId -> { name, subjectId }
+  sectSnap.docs.forEach((d) => sectionMap.set(d.id, { name: d.data().name || "", subjectId: d.data().subjectId }));
+  const subjectMap = new Map(); // subjectId -> name
+  subjSnap.docs.forEach((d) => subjectMap.set(d.id, d.data().name || ""));
+
+  // Per-teacher tallies, keyed by owner email. Union of the teachers
+  // allowlist + the super admin + any owner actually seen in the data.
+  const owners = new Map(); // email -> { subjects, sections, students:Set, pending }
+  const ensure = (email) => {
+    if (!owners.has(email)) owners.set(email, { subjects: 0, sections: 0, students: new Set(), pending: 0 });
+    return owners.get(email);
+  };
+  ensure(ADMIN_EMAIL);
+  teachersSnap.docs.forEach((d) => ensure(d.data().email));
+  subjSnap.docs.forEach((d) => ensure(ownerOf(d.data())).subjects++);
+  sectSnap.docs.forEach((d) => ensure(ownerOf(d.data())).sections++);
+  subSnap.docs.forEach((d) => { if (d.data().status === "pending") ensure(ownerOf(d.data())).pending++; });
+
+  const studentRows = [];
+  enrollSnap.docs.forEach((d) => {
+    const e = d.data();
+    const owner = ownerOf(e);
+    ensure(owner).students.add(e.studentUID);
+    const sect = sectionMap.get(e.sectionId);
+    studentRows.push({
+      name: e.studentName || "",
+      email: e.studentEmail || "",
+      teacher: owner,
+      section: sect ? sect.name : "",
+      subject: sect ? (subjectMap.get(sect.subjectId) || "") : "",
+      uid: e.studentUID || "",
+    });
+  });
+
+  const teacherRows = [...owners.entries()]
+    .map(([email, t]) => ({ email, subjects: t.subjects, sections: t.sections, students: t.students.size, pending: t.pending }))
+    // Admin ("My Classes") first, then teachers alphabetically.
+    .sort((a, b) => (a.email === ADMIN_EMAIL ? -1 : b.email === ADMIN_EMAIL ? 1 : a.email.localeCompare(b.email)));
+
+  studentRows.sort((a, b) => displayStudentName(a.name).localeCompare(displayStudentName(b.name)));
+  return { teacherRows, studentRows };
+}
+
+function renderOverviewTeachers(teacherRows) {
+  el("overview-teachers").innerHTML = teacherRows.map((t) => {
+    const label = t.email === ADMIN_EMAIL ? "My Classes (you)" : t.email;
+    return `<div class="overview-teacher-card">
+      <div class="overview-teacher-head">
+        <strong>${label}</strong>
+        <button class="secondary" data-open-teacher="${t.email}">Open</button>
+      </div>
+      <div class="overview-stats">
+        <span><b>${t.subjects}</b> subjects</span>
+        <span><b>${t.sections}</b> sections</span>
+        <span><b>${t.students}</b> students</span>
+        <span>${t.pending ? `<span class="status-pending">${t.pending} pending</span>` : '<span class="muted">0 pending</span>'}</span>
+      </div>
+    </div>`;
+  }).join("");
+
+  el("overview-teachers").querySelectorAll("[data-open-teacher]").forEach((b) =>
+    b.addEventListener("click", () => switchToTeacher(b.dataset.openTeacher)));
+}
+
+function renderOverviewStudents(studentRows) {
+  const q = el("overview-student-search").value.trim().toLowerCase();
+  const words = q.split(/\s+/).filter(Boolean);
+  const rows = words.length
+    ? studentRows.filter((r) => {
+        const hay = `${r.name} ${r.email} ${r.teacher} ${r.section} ${r.subject}`.toLowerCase();
+        return words.every((w) => hay.includes(w));
+      })
+    : studentRows;
+
+  el("overview-students-count").textContent =
+    `${rows.length} student${rows.length === 1 ? "" : "s"}${words.length ? ` (of ${studentRows.length})` : ""}`;
+
+  el("overview-students").innerHTML = rows.length
+    ? `<table class="records-grid"><thead><tr><th>#</th><th>Name</th><th>Gmail</th><th>Teacher</th><th>Class</th><th></th></tr></thead><tbody>
+        ${rows.map((r, i) => `<tr>
+          <td>${i + 1}</td>
+          <td>${displayStudentName(r.name)}</td>
+          <td>${r.email}</td>
+          <td>${r.teacher === ADMIN_EMAIL ? "You" : r.teacher}</td>
+          <td>${r.section}${r.subject ? ` <span class="muted">(${r.subject})</span>` : ""}</td>
+          <td><button class="secondary" data-view-as="${r.uid}" data-vemail="${r.email}" data-vname="${r.name}" title="Open this student's page (read-only)">View as</button></td>
+        </tr>`).join("")}
+      </tbody></table>`
+    : '<p class="muted">No students match that search.</p>';
+
+  el("overview-students").querySelectorAll("[data-view-as]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const url = `student.html?asStudentUID=${encodeURIComponent(b.dataset.viewAs)}` +
+        `&asStudentEmail=${encodeURIComponent(b.dataset.vemail)}` +
+        `&asStudentName=${encodeURIComponent(b.dataset.vname)}`;
+      window.open(url, "_blank", "noopener");
+    }));
+}
+
+async function openOverview(force) {
+  show("view-overview");
+  if (force || !overviewCache) {
+    el("overview-teachers").innerHTML = '<p class="muted">Loading&hellip;</p>';
+    el("overview-students").innerHTML = "";
+    el("overview-students-count").textContent = "";
+    try {
+      overviewCache = await buildOverviewData();
+    } catch (err) {
+      el("overview-teachers").innerHTML = '<p class="muted">Could not load the overview. Please try Refresh.</p>';
+      console.error("Overview load failed:", err);
+      return;
+    }
+  }
+  renderOverviewTeachers(overviewCache.teacherRows);
+  renderOverviewStudents(overviewCache.studentRows);
+}
+
+el("go-overview").addEventListener("click", () => openOverview(false));
+el("overview-refresh").addEventListener("click", () => openOverview(true));
+el("back-from-overview").addEventListener("click", () => { show("view-subjects"); loadSubjects(); });
+el("overview-student-search").addEventListener("input", () => {
+  if (overviewCache) renderOverviewStudents(overviewCache.studentRows);
 });
 
 // ---------- init ----------
@@ -3486,6 +3642,7 @@ guardPage("teacher").then(async (user) => {
   el("emailjs-public-key").value = emailConfig.publicKey;
   if (isAdmin) {
     el("admin-teachers-section").classList.remove("hidden");
+    el("go-overview").classList.remove("hidden");
     loadTeachers();
     renderViewAsPicker();
   }

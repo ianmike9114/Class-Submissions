@@ -412,6 +412,39 @@ button.photo-thumb-btn {
 details.card summary { cursor: pointer; }
 details.card summary::marker { color: var(--blue); }
 
+/* Admin System Overview: teacher cards in a fluid grid (auto-fills columns
+   on desktop, drops to one column on phones via the 640px block below). */
+.overview-teachers-grid,
+#overview-teachers {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+.overview-teacher-card {
+  border: 1px solid var(--gray-border);
+  border-radius: var(--radius-lg);
+  padding: 0.75rem 0.9rem;
+  background: var(--gray-bg);
+}
+.overview-teacher-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+.overview-teacher-head strong {
+  word-break: break-word;
+  min-width: 0;
+}
+.overview-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.9rem;
+  font-size: 0.85rem;
+}
+
 .collage-preview {
   display: block;
   width: 100%;
@@ -546,6 +579,9 @@ details.card summary::marker { color: var(--blue); }
      desktop box so Drive's cramped mobile viewer has room; the header's
      "Open" link is the escape to a full-screen read when it's still tight. */
   .submission-preview.material { height: 70vh; }
+
+  /* Overview teacher cards stack to a single column on phones. */
+  #overview-teachers { grid-template-columns: 1fr; }
 
   header {
     flex-direction: column;
