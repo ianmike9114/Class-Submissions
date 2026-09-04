@@ -709,13 +709,28 @@ async function getNotifications() {
   const sections = new Map(sectionsSnap.docs.map((d) => [d.id, d.data()]));
   const assignments = new Map(assignSnap.docs.map((d) => [d.id, d.data()]));
 
+  // Orphan-notification filter: a stray submission/enrollment doc whose
+  // parent subject/section/assignment was deleted (old data predating the
+  // cascade delete, or a partial cascade) otherwise renders as a dead
+  // "(deleted subject) > (deleted section)" row that goes nowhere useful
+  // when clicked. Hide any notification whose parent chain is broken.
+  // Display-only - the underlying docs are left untouched.
+  const sectionAlive = (sectionId) => {
+    const s = sections.get(sectionId);
+    return !!s && subjectNames.has(s.subjectId);
+  };
+  const assignmentAlive = (assignmentId) => {
+    const a = assignments.get(assignmentId);
+    return !!a && sectionAlive(a.sectionId);
+  };
+
   const submissionCounts = new Map();
   pendingSnap.forEach((d) => {
     if (!ownedByViewAs(d.data())) return; // admin's unfiltered submissions query includes every teacher's - narrow to mine/legacy
     const assignmentId = d.data().assignmentId;
     submissionCounts.set(assignmentId, (submissionCounts.get(assignmentId) || 0) + 1);
   });
-  const submissions = [...submissionCounts.entries()].map(([assignmentId, count]) => {
+  const submissions = [...submissionCounts.entries()].filter(([assignmentId]) => assignmentAlive(assignmentId)).map(([assignmentId, count]) => {
     const a = assignments.get(assignmentId) || {};
     const section = sections.get(a.sectionId) || {};
     return {
@@ -735,7 +750,7 @@ async function getNotifications() {
     const sectionId = d.data().sectionId;
     leaveCounts.set(sectionId, (leaveCounts.get(sectionId) || 0) + 1);
   });
-  const leaves = [...leaveCounts.entries()].map(([sectionId, count]) => {
+  const leaves = [...leaveCounts.entries()].filter(([sectionId]) => sectionAlive(sectionId)).map(([sectionId, count]) => {
     const section = sections.get(sectionId) || {};
     return {
       sectionId,
@@ -759,7 +774,7 @@ async function getNotifications() {
     if (!joinsBySection.has(data.sectionId)) joinsBySection.set(data.sectionId, []);
     joinsBySection.get(data.sectionId).push({ enrollmentId: d.id, studentName: data.studentName });
   });
-  const joins = [...joinsBySection.entries()].map(([sectionId, students]) => {
+  const joins = [...joinsBySection.entries()].filter(([sectionId]) => sectionAlive(sectionId)).map(([sectionId, students]) => {
     const section = sections.get(sectionId) || {};
     return {
       sectionId,
@@ -779,7 +794,7 @@ async function getNotifications() {
     const assignmentId = d.data().assignmentId;
     redoCounts.set(assignmentId, (redoCounts.get(assignmentId) || 0) + 1);
   });
-  const redos = [...redoCounts.entries()].map(([assignmentId, count]) => {
+  const redos = [...redoCounts.entries()].filter(([assignmentId]) => assignmentAlive(assignmentId)).map(([assignmentId, count]) => {
     const a = assignments.get(assignmentId) || {};
     const section = sections.get(a.sectionId) || {};
     return {
