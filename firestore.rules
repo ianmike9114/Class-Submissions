@@ -125,8 +125,23 @@ service cloud.firestore {
       allow create: if isSignedIn()
                     && request.resource.data.studentUID == request.auth.uid
                     && request.resource.data.ownerEmail is string;
+      // The owner branch is spelled out as a DIRECT
+      // `resource.data.ownerEmail == request.auth.token.email` comparison
+      // rather than via canActAsOwner(). Firestore's LIST/query analyzer only
+      // treats an owner-scoped query (where("ownerEmail","==",<me>)) as safe
+      // when the rule states that comparison directly - the identical check
+      // reached through a rules-function parameter (canActAsOwner(resource.data)
+      // -> isOwnerOrAdmin(data) -> data.ownerEmail == ...) is NOT recognized, so
+      // a granted teacher's owner-scoped read was denied with permission-denied
+      // even though it should be theirs. Mirrors the working subjects/sections
+      // list rules. isSuperAdmin() covers legacy-unowned docs on read (they have
+      // no ownerEmail to match anyway). Same fix on enrollments/masterLists/
+      // invites below. WRITE rules keep canActAsOwner() - single-doc writes
+      // don't go through the query analyzer, so the indirection is fine there.
       allow read: if isSignedIn()
-                  && (resource.data.studentUID == request.auth.uid || canActAsOwner(resource.data));
+                  && (resource.data.studentUID == request.auth.uid
+                      || isSuperAdmin()
+                      || (isGrantedTeacher() && resource.data.ownerEmail == request.auth.token.email));
       // A student may edit their own submission's link/photos in place
       // (fix a mistake without deleting + recreating), but only while
       // it's still pending or returned - never once published, and never
@@ -162,8 +177,12 @@ service cloud.firestore {
     match /invites/{inviteId} {
       allow create: if isSuperAdmin()
                     || (isGrantedTeacher() && request.resource.data.ownerEmail == request.auth.token.email);
+      // Direct ownerEmail comparison for the owner path - see the submissions
+      // read rule above for why canActAsOwner() can't be used for LIST queries.
       allow read: if isSignedIn()
-                  && (canActAsOwner(resource.data) || resource.data.studentEmail == request.auth.token.email.lower());
+                  && (isSuperAdmin()
+                      || (isGrantedTeacher() && resource.data.ownerEmail == request.auth.token.email)
+                      || resource.data.studentEmail == request.auth.token.email.lower());
       // Delete covers two cases: the teacher cancelling an invite they sent,
       // and the invited student consuming their own invite once auto-enrolled.
       allow delete: if canActAsOwner(resource.data)
@@ -177,7 +196,11 @@ service cloud.firestore {
     // reused next school year). No student-facing access - fully
     // owner-locked on read, unlike sections/assignments above. ----------
     match /masterLists/{listId} {
-      allow read: if isSignedIn() && canActAsOwner(resource.data);
+      // Direct ownerEmail comparison for the owner path - see the submissions
+      // read rule above for why canActAsOwner() can't be used for LIST queries.
+      allow read: if isSignedIn()
+                  && (isSuperAdmin()
+                      || (isGrantedTeacher() && resource.data.ownerEmail == request.auth.token.email));
       allow create: if isSuperAdmin()
                     || (isGrantedTeacher() && request.resource.data.ownerEmail == request.auth.token.email);
       allow update, delete: if canActAsOwner(resource.data);
@@ -185,8 +208,12 @@ service cloud.firestore {
 
     // ---------- enrollments ----------
     match /enrollments/{enrollmentId} {
+      // Direct ownerEmail comparison for the owner path - see the submissions
+      // read rule above for why canActAsOwner() can't be used for LIST queries.
       allow read: if isSignedIn()
-                  && (resource.data.studentUID == request.auth.uid || canActAsOwner(resource.data));
+                  && (resource.data.studentUID == request.auth.uid
+                      || isSuperAdmin()
+                      || (isGrantedTeacher() && resource.data.ownerEmail == request.auth.token.email));
       allow create: if isSignedIn()
                     && request.resource.data.studentUID == request.auth.uid
                     && request.resource.data.ownerEmail is string;
