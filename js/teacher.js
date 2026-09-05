@@ -97,6 +97,12 @@ function cachedOwnerDocs(key, collectionName, ...wheres) {
   // any remain.
   const scoped = query(collection(db, collectionName), where("ownerEmail", "==", state.viewAsEmail), ...wheres);
   const promise = getDocs(scoped);
+  // Never let a REJECTED read linger in the cache. getNotifications() runs
+  // before loadSubjects() on a fresh page load and populates these same keys;
+  // if one of its queries failed, a cached rejected promise would be reused by
+  // loadSubjects()'s count rollups and take the whole subject list down with
+  // it. Evict on failure so a reuse re-queries instead of re-throwing.
+  promise.catch(() => { if (readCache.get(fullKey)?.promise === promise) readCache.delete(fullKey); });
   readCache.set(fullKey, { t: now, promise });
   return promise;
 }
@@ -820,9 +826,10 @@ async function getNotifications() {
 async function refreshNotifications() {
   try {
     const data = await getNotifications();
-    lastNotifications = { ...data, error: false };
+    lastNotifications = { ...data, error: false, errorDetail: null };
   } catch (err) {
-    lastNotifications = { ...lastNotifications, error: true };
+    console.error("notifications load failed (bell badge only):", err);
+    lastNotifications = { ...lastNotifications, error: true, errorDetail: err };
   }
   const countEl = el("notif-count");
   countEl.textContent = lastNotifications.totalCount;
@@ -1119,7 +1126,17 @@ async function loadSubjects() {
   el("global-search-results").classList.add("hidden");
   searchRequestSeq++; // invalidate any in-flight search so it can't repopulate this after the fact
   const showArchived = el("toggle-archived").checked;
-  const [snap, counts, leaveCounts] = await Promise.all([getDocs(ownerScopedQuery("subjects")), getPendingCounts(), getLeaveRequestCounts()]);
+  // The subject list must render even if the (non-essential) pending / leave
+  // count badges can't load. Fetch subjects on their own; make the two badge
+  // rollups best-effort - a denied or errored rollup query only drops the
+  // badges, it never blanks the whole dashboard. (This is what used to make a
+  // regular teacher's freshly-created subject silently not show: a failed bell
+  // query rejected the shared Promise.all here before any subject rendered.)
+  const snap = await getDocs(ownerScopedQuery("subjects"));
+  const [counts, leaveCounts] = await Promise.all([
+    getPendingCounts().catch((err) => { console.error("pending-count rollup failed (badges only):", err); return { byAssignment: new Map(), bySection: new Map(), bySubject: new Map() }; }),
+    getLeaveRequestCounts().catch((err) => { console.error("leave-count rollup failed (badges only):", err); return { bySection: new Map(), bySubject: new Map() }; }),
+  ]);
   const list = el("subjects-list");
   list.innerHTML = "";
   const subjectNames = new Map(); // id -> name, for the delete-confirm prompt below
@@ -3519,7 +3536,7 @@ async function restoreNavState() {
   }
   if (!saved || saved.view === "view-subjects" || !saved.subjectId) {
     show("view-subjects");
-    loadSubjects();
+    await loadSubjects(); // awaited so a real failure reaches guardPage's catch (showConnectionError) instead of silently leaving an empty list
     return;
   }
   try {
@@ -3809,12 +3826,40 @@ function showConnectionError(err) {
     banner = document.createElement("div");
     banner.id = "conn-error";
     banner.className = "card";
-    banner.style.cssText = "background:#fee2e2; border-color:#b91c1c; color:#7f1d1d;";
+    banner.style.cssText = "background:#fee2e2; border-color:#b91c1c; color:#7f1d1d; white-space:pre-wrap;";
     const host = document.querySelector("main") || document.body;
     host.insertBefore(banner, host.firstChild);
   }
-  banner.textContent = friendly;
+  banner.textContent = friendly + debugSuffix(err);
   console.error("Initial load failed:", err);
+}
+
+// Add ?debug=1 to the dashboard URL to read the raw Firestore error (code +
+// message) right on the page - lets a phone with no dev-tools console still
+// surface the real reason a load failed. Off by default so real teachers never
+// see raw error text.
+const DEBUG_MODE = new URLSearchParams(location.search).has("debug");
+function debugSuffix(err) {
+  if (!DEBUG_MODE || !err) return "";
+  return `\n\n[debug] ${err.code || err.name || "error"}: ${err.message || err}`;
+}
+
+// Surface an otherwise-swallowed error (e.g. the notification bell rollups,
+// which are best-effort and never crash the page) as an on-screen banner, but
+// ONLY under ?debug=1. This is the phone-friendly way to capture which query
+// is actually being denied for a granted teacher.
+function showDebugBanner(err) {
+  if (!DEBUG_MODE || !err) return;
+  let banner = document.getElementById("debug-error");
+  if (!banner) {
+    banner = document.createElement("div");
+    banner.id = "debug-error";
+    banner.className = "card";
+    banner.style.cssText = "background:#fef9c3; border-color:#a16207; color:#713f12; white-space:pre-wrap;";
+    const host = document.querySelector("main") || document.body;
+    host.insertBefore(banner, host.firstChild);
+  }
+  banner.textContent = `[debug] a background query failed (badges only):${debugSuffix(err)}`;
 }
 
 guardPage("teacher").then(async (user) => {
@@ -3858,6 +3903,7 @@ guardPage("teacher").then(async (user) => {
   }
   try {
     await refreshNotifications();
+    showDebugBanner(lastNotifications.errorDetail); // ?debug=1 only: reveal a swallowed bell-query error on-screen
     await restoreNavState();
   } catch (err) {
     showConnectionError(err);
