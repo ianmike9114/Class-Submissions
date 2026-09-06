@@ -44,6 +44,7 @@
           <span id="teacher-email" class="hdr-avatar" title=""></span>
           <span id="account-name" class="hdr-account"></span>
         </div>
+        <button class="secondary hidden" id="install-app">&#8681; Install app</button>
         <button class="secondary" id="sign-out">Sign out</button>
       </div>
     </aside>
@@ -434,6 +435,10 @@
         navigator.serviceWorker.register("/sw.js").catch(() => {});
       });
     }
+  </script>
+  <script type="module">
+    import { initInstallButton } from "/js/pwa-install.js";
+    initInstallButton("install-app");
   </script>
 </body>
 </html>

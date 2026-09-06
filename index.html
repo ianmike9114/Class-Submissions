@@ -47,6 +47,8 @@
 
       <div id="google-signin-button" style="display:flex; justify-content:center;"></div>
 
+      <button type="button" class="secondary hidden" id="install-app" style="margin-top:1rem;">&#8681; Install app</button>
+
       <!-- Shown only when completing an email sign-in link that was opened in
            a different browser than it was requested from (the normal Messenger
            -> Mail app -> real browser hop), so localStorage can't supply the
@@ -240,6 +242,10 @@
         navigator.serviceWorker.register("/sw.js").catch(() => {});
       });
     }
+  </script>
+  <script type="module">
+    import { initInstallButton } from "/js/pwa-install.js";
+    initInstallButton("install-app");
   </script>
 </body>
 </html>

@@ -32,6 +32,7 @@
       <span class="status-ai-drafted">Student</span>
       <span id="student-avatar" class="hdr-avatar" title=""></span>
       <span id="student-email" class="hdr-account"></span>
+      <button class="secondary hidden" id="install-app">&#8681; Install app</button>
       <button class="secondary" id="sign-out">Sign out</button>
     </div>
   </header>
@@ -83,6 +84,10 @@
         navigator.serviceWorker.register("/sw.js").catch(() => {});
       });
     }
+  </script>
+  <script type="module">
+    import { initInstallButton } from "/js/pwa-install.js";
+    initInstallButton("install-app");
   </script>
 </body>
 </html>
