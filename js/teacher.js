@@ -293,7 +293,7 @@ async function cascadeDeleteSection(sectionId) {
 }
 
 async function cascadeDeleteSubject(subjectId) {
-  const sectionSnap = await getDocs(query(collection(db, "sections"), where("subjectId", "==", subjectId)));
+  const sectionSnap = await getDocs(ownerScopedQuery("sections", where("subjectId", "==", subjectId)));
   await Promise.all(sectionSnap.docs.map((d) => cascadeDeleteSection(d.id)));
   await deleteDoc(doc(db, "subjects", subjectId));
 }
@@ -1357,7 +1357,13 @@ async function openSubject(subjectId) {
 }
 
 async function loadSections() {
-  const q = query(collection(db, "sections"), where("subjectId", "==", state.subjectId));
+  // Must be owner-scoped (ownerScopedQuery adds where("ownerEmail","==",me) for
+  // a granted teacher): the sections `list` rule in firestore.rules denies any
+  // non-super-admin list query that isn't filtered by ownerEmail, so a plain
+  // subjectId-only query returned permission-denied for granted teachers and
+  // their sections silently never appeared. Same fix as subjects/submissions/
+  // enrollments; sections had been missed. Admin path stays unfiltered.
+  const q = ownerScopedQuery("sections", where("subjectId", "==", state.subjectId));
   const [snap, counts, leaveCounts] = await Promise.all([
     getDocs(q), getPendingCounts(), getLeaveRequestCounts(),
   ]);
@@ -1501,7 +1507,7 @@ async function openEnrolled(onlySectionId) {
     titleText = sectionData.sectionName;
     enrolledBackView = "view-section";
   } else {
-    const sectionsSnap = await getDocs(query(collection(db, "sections"), where("subjectId", "==", state.subjectId)));
+    const sectionsSnap = await getDocs(ownerScopedQuery("sections", where("subjectId", "==", state.subjectId)));
     sectionMap = new Map(sectionsSnap.docs.map((d) => [d.id, d.data().sectionName]));
     titleText = el("subject-view-name").textContent;
     enrolledBackView = "view-subject";
