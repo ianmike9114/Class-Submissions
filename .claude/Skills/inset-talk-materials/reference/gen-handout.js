@@ -1,4 +1,4 @@
-// Participant Handout (Taglish, English-dominant) — INSET workshop, printable
+// Participant Handout (English) — INSET workshop, printable
 const fs = require("fs");
 const {
   Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType,
@@ -71,10 +71,10 @@ const stuck = new Table({
   columnWidths: [3900, 5940], width: { size: 9840, type: WidthType.DXA },
   borders: { top: { style: BorderStyle.SINGLE, size: 4, color: "E7EEF5" }, bottom: { style: BorderStyle.SINGLE, size: 4, color: "E7EEF5" }, left: { style: BorderStyle.NONE }, right: { style: BorderStyle.NONE }, insideHorizontal: { style: BorderStyle.SINGLE, size: 2, color: "EEF3F8" }, insideVertical: { style: BorderStyle.NONE } },
   rows: [
-    trow("Blank screen / hindi mag-sign in", "You're inside the Messenger/FB browser. Open the link sa Chrome o Safari.", "F4F8FB"),
-    trow("Hindi ma-scan ang QR", "Just type the 5-character join code manually."),
-    trow("Wala akong makitang class", "Refresh the page — walang auto-update ang app.", "F4F8FB"),
-    trow("Wala ang pangalan ko sa list", "Pick any name muna — practice lang 'to.")
+    trow("Blank screen / can't sign in", "You're inside the Messenger/FB browser. Open the link in Chrome or Safari.", "F4F8FB"),
+    trow("Can't scan the QR", "Just type the 5-character join code manually."),
+    trow("Don't see the class", "Refresh the page — the app doesn't auto-update.", "F4F8FB"),
+    trow("Your name isn't in the list", "Pick any name for now — this is just practice.")
   ]
 });
 
@@ -85,36 +85,36 @@ const doc = new Document({
     children: [
       new Paragraph({ spacing: { after: 40 }, children: [new TextRun({ text: "INSET WORKSHOP · PARTICIPANT HANDOUT", font: "Calibri", bold: true, color: TEAL, size: 20, characterSpacing: 40 })] }),
       new Paragraph({ spacing: { after: 60 }, children: [new TextRun({ text: "Try It Yourself: Join & Submit in 4 Steps", font: "Cambria", bold: true, color: NAVY, size: 44 })] }),
-      new Paragraph({ spacing: { after: 200, line: 264 }, children: [t("Today you're the student. Follow these 4 steps sa phone ninyo — mag-join sa class, tapos mag-submit ng output. Ganito rin kadali ang mararanasan ng estudyante ninyo.", { color: "33414C" })] }),
+      new Paragraph({ spacing: { after: 200, line: 264 }, children: [t("Today you're the student. Follow these 4 steps on your phone — join the class, then submit an output. This is exactly how easy it will be for your students.", { color: "33414C" })] }),
 
       joinBox(),
       gap(200),
 
       step(1, [t("Open your browser — Chrome or Safari.", { bold: true }), t("  Go to ", {}), t(APP, { bold: true, color: NAVY })],
-              [t("Wag sa Messenger o Facebook browser — hindi doon gumagana ang Google sign-in.", { size: 20, color: MUTE })]),
+              [t("Not the Messenger or Facebook browser — Google sign-in doesn't work there.", { size: 20, color: MUTE })]),
       gap(),
       step(2, [t("Tap ", {}), t("“Sign in with Google”", { bold: true }), t(" and pick your Gmail.", {})],
-              [t("Normal lang na student view ang lalabas — yun mismo ang makikita ng bata.", { size: 20, color: MUTE })]),
+              [t("It's normal to land on the student view — that's exactly what your students see.", { size: 20, color: MUTE })]),
       gap(),
       step(3, [t("Join the class — ", {}), t("scan the QR", { bold: true }), t(" or type the ", {}), t("join code", { bold: true }), t(" above.", {})],
-              [t("Tapos pick your name sa roster kung may lalabas na listahan.", { size: 20, color: MUTE })]),
+              [t("Then pick your name from the roster if a list appears.", { size: 20, color: MUTE })]),
       gap(),
       step(4, [t("Open the assignment, ", {}), t("paste any link", { bold: true }), t(" or ", {}), t("add a photo", { bold: true }), t(", then tap ", {}), t("Submit", { bold: true }), t(". Done! 🎉", {})],
-              [t("Any link okay — Google, YouTube, kahit ano. Pwede mong bawiin habang “pending” pa.", { size: 20, color: MUTE })]),
+              [t("Any link works — Google, YouTube, anything. You can retract it while it's still “pending”.", { size: 20, color: MUTE })]),
       gap(220),
 
       new Paragraph({ spacing: { after: 100 }, children: [new TextRun({ text: "After you submit", font: "Cambria", bold: true, color: NAVY, size: 26 })] }),
-      new Paragraph({ spacing: { after: 220, line: 264 }, children: [t("Wait lang sandali, the teacher will grade it live. "), t("Refresh your phone", { bold: true }), t(" to see your score and feedback appear. Yun ang buong loop: submit, grade, feedback, nakita agad.")] }),
+      new Paragraph({ spacing: { after: 220, line: 264 }, children: [t("Wait a moment — the teacher will grade it live. "), t("Refresh your phone", { bold: true }), t(" to see your score and feedback appear. That is the whole loop: submit, grade, feedback, seen right away.")] }),
 
       new Paragraph({ spacing: { after: 100 }, children: [new TextRun({ text: "If you get stuck", font: "Cambria", bold: true, color: NAVY, size: 26 })] }),
       stuck,
 
-      new Paragraph({ spacing: { before: 300 }, border: { top: { style: BorderStyle.SINGLE, size: 6, color: "D9E2EB", space: 8 } }, alignment: AlignmentType.CENTER, children: [new TextRun({ text: "Wag mag-alala kung hindi perfect — practice lang 'to. Kaya ninyo 'yan! 🙌", font: "Calibri", italics: true, size: 22, color: MUTE })] })
+      new Paragraph({ spacing: { before: 300 }, border: { top: { style: BorderStyle.SINGLE, size: 6, color: "D9E2EB", space: 8 } }, alignment: AlignmentType.CENTER, children: [new TextRun({ text: "Don't worry if it's not perfect — this is just practice. You've got this! 🙌", font: "Calibri", italics: true, size: 22, color: MUTE })] })
     ]
   }]
 });
 
 Packer.toBuffer(doc).then(buf => {
-  const out = "D:/Desktop/INSET-Talk/INSET-Workshop-Participant-Handout-Taglish.docx";
+  const out = "D:/Desktop/INSET-Talk/INSET-Workshop-Participant-Handout.docx";
   fs.writeFileSync(out, buf); console.log("WROTE:", out);
 });
