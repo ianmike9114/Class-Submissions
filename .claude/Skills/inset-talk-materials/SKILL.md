@@ -5,11 +5,17 @@ description: Generate INSET / teacher-training talk materials for this project �
 
 # INSET talk materials
 
-Produces three deliverables for a teacher-audience talk:
+Produces four deliverables for a teacher-audience talk:
 
 1. **Slide deck** (`.pptx`) — engaging, in the user's sample-slide style.
 2. **Speaker script** (`.docx`) — **Taglish, English-dominant**, per-slide.
-3. **Workshop facilitator guide** (`.docx`) — Taglish, step-by-step run-of-show.
+3. **Workshop facilitator guide** (`.docx`) — Taglish, step-by-step run-of-show
+   for the *presenter*.
+4. **Participant handout** (`.docx`) — the one-page, print-ready sheet the
+   *participant teachers* follow on their phones during the workshop. Big
+   numbered steps, a fill-in box for the join code + a dashed frame to tape the
+   section QR, and a short "if you get stuck" table. Distinct from the
+   facilitator guide (that one is for whoever runs the session).
 
 Default output folder: **`D:\Desktop\INSET-Talk\`** (outside the app repo, so
 nothing touches the live Vercel site). Confirm/adjust with the user.
@@ -143,10 +149,13 @@ Messenger/FB/IG in-app browsers (`disallowed_useragent`) → open in Chrome/Safa
 
 ## Reference generators (adapt, don't start from scratch)
 
-`reference/gen-deck.js`, `reference/gen-script.js`, `reference/gen-workshop.js`
-are the exact generators for the current LMS-centered build (with the
-screenshot-swap wired in). To make a new talk: copy them, edit the content
-arrays (`SL` in the script, the slide bodies + `subject/feature` arrays in the
-deck, timeline/steps in the workshop), keep the helpers and style, regenerate,
-and re-run the QA render. Related: [[deped-teacher]], [[student-lms]],
-[[lms-domain]], [[deped-accomplishment-report]], [[lac-session-docs]].
+`reference/gen-deck.js`, `reference/gen-script.js`, `reference/gen-workshop.js`,
+and `reference/gen-handout.js` are the exact generators for the current
+LMS-centered build (with the screenshot-swap wired in). To make a new talk:
+copy them, edit the content arrays (`SL` in the script, the slide bodies +
+`subject/feature` arrays in the deck, timeline/steps in the workshop, the
+`step()` calls + join box in the handout), keep the helpers and style,
+regenerate, and re-run the QA render. `gen-handout.js` targets **one printed
+page** — keep it to a single page in QA (Word COM → PDF → PyMuPDF), it's meant
+to be photocopied. Related: [[deped-teacher]], [[student-lms]], [[lms-domain]],
+[[deped-accomplishment-report]], [[lac-session-docs]].
