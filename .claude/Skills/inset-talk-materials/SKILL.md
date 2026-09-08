@@ -15,28 +15,36 @@ Produces four deliverables for a teacher-audience talk:
    *participant teachers* follow on their phones during the workshop. Big
    numbered steps, a fill-in box for the join code + a dashed frame to tape the
    section QR, and a short "if you get stuck" table. Distinct from the
-   facilitator guide (that one is for whoever runs the session).
+   facilitator guide (that one is for whoever runs the session). Language mode
+   is per the ask-first rule; the reference `gen-handout.js` ships in **plain
+   English** (the user's chosen default for this sheet).
 
 Default output folder: **`D:\Desktop\INSET-Talk\`** (outside the app repo, so
 nothing touches the live Vercel site). Confirm/adjust with the user.
 
-## The standing register rule — Taglish, English-dominant
+## Language mode — ask first
 
-Every **guide / script / tutorial / step-by-step with descriptions** is written
-in Taglish, English-dominant (see the `taglish-guides-register` memory):
+**Ask the user which language mode to use before writing any deliverable** —
+plain **English** or **Taglish (English-dominant)**. There is no automatic
+default (the user changed this from an earlier "always Taglish" rule; see the
+`taglish-guides-register` memory). Different docs can differ — e.g. the user
+wanted the talk script + facilitator guide in Taglish but the **participant
+handout in pure English**. Confirm per build.
 
-- English-dominant sentences; Filipino as connectors / warmth / emphasis
-  (*kaya, diba, yung, para, ganito, tapos, sige, wag mag-alala*). The English
-  carries the sentence; Filipino only glues it — not the reverse.
+**Taglish (English-dominant) spec — apply only when they choose it:**
+
+- English carries the sentence; Filipino as connectors / warmth / emphasis
+  (*kaya, diba, yung, para, ganito, tapos, sige, wag mag-alala*), never the
+  reverse.
   - ✅ "Good morning po! I want to show you something na ginawa ko myself."
   - ❌ "Magandang umaga po! Gusto kong ipakita sa inyo ang ginawa ko." (Tagalog-dominant)
 - **All technical terms, UI labels, and step verbs stay English**
   ("Tap **Sign in with Google**", "click **Add assignment**").
-- Slide text, headings, and labels: **English**. Only the spoken script and
-  facilitator notes carry the Taglish flavor.
+- Slide text, headings, and labels: **English** either way. In Taglish mode only
+  the spoken script and facilitator notes carry the Filipino flavor.
 - Tone: teacher-to-teacher, encouraging, not academic.
-- Normal chat with the user stays **plain English** — the Taglish is for the
-  produced documents only.
+- Normal chat with the user always stays **plain English** — the mode question
+  is about the produced document only.
 
 ## Ask first (scope questions)
 
@@ -44,8 +52,9 @@ Before building, confirm: **what the talk is centered on** (the user's own
 system? a pedagogy/framework? both — and which is the star?), **duration**
 (sizes slide count + script length), **workshop task** (what teachers actually
 do), **access mode** (phones-on live vs demo-only vs screenshots), whether to
-use the **real live app**, and the user's **identity** (system name, presenter
-name, school, role) so the title/close aren't placeholders. The user has
+use the **real live app**, the **language mode** of each deliverable (English vs
+Taglish — see above), and the user's **identity** (system name, presenter name,
+school, role) so the title/close aren't placeholders. The user has
 pivoted the framing before — get the "star" of the talk explicit up front.
 Sizing: a live demo eats ~15 min with few slides; for a mixed audience prefer
 ~1 slide per 1.5–2 min plus section dividers.
