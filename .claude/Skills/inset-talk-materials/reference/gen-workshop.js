@@ -130,9 +130,9 @@ const doc = new Document({
       numbered("Ituro ang notification bell, records grid, at photo ZIPs bilang “yun ang makikita ninyo araw-araw.”"),
 
       H2("55–60 min · Debrief at hamon"),
-      numbered("Balik sa topic na naisip nila sa ice-breaker. Sabihin: “Yung topic na naisip ninyo kanina — anong local resource at product ang pwede doon?”"),
-      numbered("Tanong: 2–3 teacher magbahagi ng contextualized idea nila (Local resource → ICT tool → Product)."),
-      numbered("Hamon: “Pumili ng isang topic ngayong linggo. Gawing contextualized. Ipasa sa LMS.”"),
+      numbered("Tanong: 2–3 teacher — ano ang pinaka-nagustuhan ninyong feature? Ano ang pwede ninyong gamitin agad sa klase?"),
+      numbered("Sabihin: “Ganito rin kadali ang mararanasan ng estudyante ninyo — link o litrato lang, tapos may feedback agad.”"),
+      numbered("Hamon: “Gumawa ng isang totoong assignment sa system ngayong linggo, at ipa-submit sa isang klase ninyo.”"),
       numbered("Sabihin: “Kung gusto ninyo ng sariling teacher access, lapitan ninyo ako — ig-grant ko kayo.”"),
 
       H2("Troubleshooting (mabilis na sagot)"),
