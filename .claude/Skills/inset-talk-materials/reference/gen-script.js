@@ -58,160 +58,160 @@ const timingTable = new Table({
 
 const SL = [
   { n: 1, title: "Title", time: "1 min", say: [
-    "Magandang umaga po! Salamat sa oras ninyo ngayong INSET.",
-    "Gusto kong ipakita sa inyo ang isang bagay na ginawa ko — ang Class Submissions LMS. Isang libreng digital classroom kung saan nagpapasa ang bata ng link o litrato, ginagrade natin, tapos nakikita nila agad ang feedback.",
-    "By the end, may sariling access na kayo kung gusto ninyo — at alam ninyong gamitin."
-  ], transition: "Pero una, isang tanong na alam kong pamilyar sa inyo." },
+    "Good morning po! Thank you sa oras ninyo this INSET.",
+    "I want to show you something na ginawa ko myself — the Class Submissions LMS. It's a free digital classroom kung saan nagsu-submit ang student ng link o photo, ginagrade natin, tapos they see the feedback agad.",
+    "By the end, may sarili na kayong access kung gusto ninyo — at alam ninyo nang gamitin."
+  ], transition: "Pero una, one question na alam kong pamilyar sa inyo." },
 
   { n: 2, title: "Hook", time: "2 min", say: [
-    "Ilang beses na ba kayong naghanap ng project ng bata sa Messenger? O sa email, sa chat, sa stack ng printout?",
-    "Scattered ang submissions. Nakapasa na ba lahat? Nasaan ang link? Nakita ba ng bata ang grado? Mahirap i-track — at nakaka-ubos ng oras.",
-    "Kaya ako gumawa ng sarili kong system para ayusin exactly 'to."
-  ], transition: "Tignan natin kung ano siya." },
+    "How many times na kayong naghanap ng student project sa Messenger? O sa email, sa chat, sa stack of printouts?",
+    "The submissions are scattered. Kumpleto na ba? Nasaan yung link? Did the student even see the grade? It's hard to track — at nakaka-ubos ng oras.",
+    "Kaya I built my own system para ayusin exactly this."
+  ], transition: "Let's see kung ano siya." },
 
   { n: 3, title: "Roadmap", time: "2 min", say: [
-    "Tatlong bahagi. Una, kung bakit ko ginawa at ano nga ba ito. Pangalawa, kung paano ito gumagana — live demo. Pangatlo, kayo naman — hands-on sa phone ninyo.",
+    "Three parts. Una, kung bakit ko ginawa at what it is. Pangalawa, how it works — live demo. Pangatlo, kayo naman — hands-on sa phone ninyo.",
     "So i-charge na ang phone at buksan ang data o Wi-Fi para sa dulo."
-  ], transition: "Simulan natin sa 'bakit.'" },
+  ], transition: "Let's start sa 'why.'" },
 
-  { n: 4, title: "Part 1 divider — Why I Built This", time: "0.5 min", say: ["Part 1: kung bakit ko ito ginawa, at ano ito."] },
+  { n: 4, title: "Part 1 divider — Why I Built This", time: "0.5 min", say: ["Part 1: why I built it, at ano nga ba ito."] },
 
   { n: 5, title: "The old way", time: "2 min", say: [
-    "Ito ang dating paraan, at alam nating lahat 'to. Paper piles na mabigat at madaling mawala. Mga link na kalat sa Messenger at email.",
-    "Walang malinaw na feedback loop — nakapasa na, pero nakita ba ng bata? At mahirap i-track kung sino ang nakapasa at sino hindi.",
-    "Magandang gawain ng bata, pero sayang kung magulo ang pagpasa at pag-grade."
-  ], transition: "Kaya heto ang solusyon." },
+    "This is the old way, at alam nating lahat ito. Paper piles na mabigat at madaling mawala. Links na kalat sa Messenger at email.",
+    "Walang clear feedback loop — nakapasa na, pero did the student see it? At mahirap i-track kung sino ang naka-submit at sino hindi.",
+    "Magandang work ng bata, pero sayang kung magulo ang submission at grading."
+  ], transition: "Kaya heto ang solution." },
 
   { n: 6, title: "Meet the LMS", time: "2.5 min", say: [
-    "Ito ang Class Submissions LMS — isang libreng digital classroom kung saan nagpapasa ang bata ng link o litrato ng output nila.",
-    "Nire-review at ginagrade natin, tapos nakikita nila agad ang score at feedback.",
-    "Apat na tandaan: libre habambuhay, phone-first, link o litrato lang — walang mabigat na upload — at isolated ang bawat teacher. Ginawa ko ito para sa sarili kong klase, at pwede na ring gamitin ng kahit sinong guro."
-  ], transition: "Ganito gumagana ang buong ideya." },
+    "This is the Class Submissions LMS — a free digital classroom kung saan nagsu-submit ang student ng link o photo ng output nila.",
+    "Nire-review natin at ginagrade, tapos they instantly see the score and feedback.",
+    "Four things to remember: free forever, phone-first, link o photo lang — walang mabigat na upload — at isolated ang bawat teacher. I built it para sa sarili kong klase, pero pwede na ring gamitin ng kahit sinong guro."
+  ], transition: "Ganito gumagana ang buong idea." },
 
   { n: 7, title: "The core loop", time: "1.5 min", say: [
-    "Isang malinis na loop: Submit, Review, Grade, Publish, tapos nakikita ng bata.",
-    "Nagsu-submit ang bata ng link o litrato; nire-review natin nang hindi umaalis sa page; nilalagyan ng score at feedback; i-publish; at nakikita agad ng bata. Ito ang buong buhay ng isang submission."
+    "One clean loop: Submit, Review, Grade, Publish, tapos nakikita ng student.",
+    "The student submits a link o photo; nire-review natin nang hindi umaalis sa page; we add a score and feedback; i-publish; tapos nakikita agad ng student. That's the whole life ng isang submission."
   ] },
 
   { n: 8, title: "Links, not uploads", time: "2 min", say: [
-    "Isang mahalagang desisyon: links, hindi uploads. Nagpapasa ang bata ng LINK — Google Doc, Drive file o folder, YouTube, CodePen o Gist para sa ICT — o litrato mula sa phone.",
-    "Bakit ganito? Para manatiling libre — walang mabigat na storage — at gumana kahit mahina ang internet. Basta 'anyone with link can view,' okay na."
+    "One key decision: links, not uploads. Nagsu-submit ang student ng LINK — Google Doc, Drive file o folder, YouTube, CodePen o Gist para sa ICT — o photo mula sa phone.",
+    "Bakit ganito? Para manatiling free — walang mabigat na storage — at gumana kahit mahina ang internet. Basta 'anyone with link can view,' okay na."
   ] },
 
   { n: 9, title: "Free & private", time: "1.5 min", say: [
-    "Dalawang tanong na lagi kong naririnig. 'Libre nga ba?' Oo — zero cost, forever, naka-free tier. 'Safe ba?' Oo — walang file uploads, isolated ang bawat teacher, at walang student passwords; Google Sign-In lang.",
-    "Ligtas para sa DepEd budget at para sa student privacy — sadya kong ginawang ganito."
+    "Two questions na lagi kong naririnig. 'Is it really free?' Yes — zero cost, forever, naka-free tier. 'Is it safe?' Yes — walang file uploads, isolated ang bawat teacher, at walang student passwords; Google Sign-In lang.",
+    "Safe para sa DepEd budget at para sa student privacy — sadya kong ginawang ganito."
   ] },
 
   { n: 10, title: "How it stays free", time: "2 min", say: [
-    "Para sa mga curious sa likod ng system: static site siya na naka-host sa Vercel — walang paid server. Firebase free tier lang para sa Auth at Firestore. Walang paid Storage o Cloud Functions. At Google Sign-In, kaya walang password system na aalagaan.",
-    "Piniling ganito ang arkitektura para hindi kailanman maningil — hard rule ko 'yan sa project."
-  ], transition: "Ngayon, tignan natin kung paano ito gamitin." },
+    "For those curious sa likod ng system: it's a static site na naka-host sa Vercel — walang paid server. Firebase free tier lang para sa Auth at Firestore. Walang paid Storage o Cloud Functions. At Google Sign-In, kaya walang password system na aalagaan.",
+    "I chose this architecture para hindi kailanman maningil — hard rule ko yan sa project."
+  ], transition: "Ngayon, let's see kung paano ito gamitin." },
 
   { n: 11, title: "Part 2 divider — How It Works", time: "0.5 min", say: [
-    "Part 2: paano ito gumagana. Buksan ko ang app sa " + APP + ". (Kung mabagal ang internet, may screenshots tayo — okay lang.)"
+    "Part 2: how it works. I'll open the app sa " + APP + ". (Kung mabagal ang internet, may screenshots tayo — okay lang.)"
   ] },
 
   { n: 12, title: "The three roles", time: "1.5 min", say: [
-    "Tatlong role. Teacher — gumagawa ng Subjects, Sections, Assignments, at nagga-grade. Student — sumasali at nagpapasa. Super Admin — nagbibigay ng teacher access at nakikita ang lahat kung kailangan.",
-    "Isang app, tatlong view — automatic depende sa email na naka-sign in."
+    "Three roles. Teacher — creates Subjects, Sections, Assignments, at nagga-grade. Student — joins and submits. Super Admin — grants teacher access at nakikita ang lahat kung kailangan.",
+    "One app, three views — automatic depende sa email na naka-sign in."
   ] },
 
   { n: 13, title: "The structure", time: "1.5 min", say: [
-    "Malinaw ang ayos: Subject, tapos Section, tapos Assignment, tapos Submission.",
-    "Isang Subject bawat term; maraming Section na may sariling join code; maraming Assignment; at bawat pasa ng bata, isang Submission na may grado. Simple, pero kaya ang buong klase."
-  ], transition: "Simulan natin sa teacher side." },
+    "The layout is clear: Subject, tapos Section, tapos Assignment, tapos Submission.",
+    "One Subject per term; multiple Sections na may sariling join code; multiple Assignments; at bawat pasa ng student, one Submission na may grado. Simple, pero kaya ang buong klase."
+  ], transition: "Let's start sa teacher side." },
 
   { n: 14, title: "Teacher — create Subject & Section", time: "2 min", say: [
-    "Bilang teacher, mag-sign in ako with Google. Add Subject — pangalan, grade, school year, term.",
-    "Buksan ang subject, tapos Add Section — halimbawa 'Grade 9 – Rizal.' Automatic na may sariling join code ang bawat section."
-  ], demo: ["Sign in as teacher/admin.", "Add a Subject (o ipakita ang naka-set up).", "Open subject → Add Section → ituro ang join code."] },
+    "As a teacher, mag-sign in ako with Google. Add Subject — name, grade, school year, term.",
+    "Open the subject, tapos Add Section — like 'Grade 9 – Rizal.' Automatic na may sariling join code ang bawat section."
+  ], demo: ["Sign in as teacher/admin.", "Add a Subject (o ipakita ang naka-set up).", "Open subject, Add Section, ituro ang join code."] },
 
   { n: 15, title: "Teacher — Join code / QR", time: "1.5 min", say: [
-    "Para sumali ang mga bata, i-click ko ang 'Show QR' — client-side lang, walang third-party server.",
-    "I-project ko ang QR o isulat ang 5-character code. Pwede rin akong mag-invite by email para auto-join sila pagsign-in."
+    "Para sumali ang mga student, i-click ko ang 'Show QR' — client-side lang, walang third-party server.",
+    "I project the QR o isulat ang 5-character code. Pwede rin akong mag-invite by email para auto-join sila pag-sign-in."
   ], demo: ["Click 'Show QR' — ipakita ang QR + code.", "Banggitin ang 'Invite by email'."] },
 
   { n: 16, title: "Teacher — Add Assignment", time: "1.5 min", say: [
-    "Sa loob ng section, Add Assignment. Title, instructions, total points, due date.",
-    "Pipiliin ko kung link submission o photo. Pwede rin akong mag-attach ng instructions o rubric link."
+    "Inside the section, Add Assignment. Title, instructions, total points, due date.",
+    "I pick kung link submission o photo. Pwede rin akong mag-attach ng instructions o rubric link."
   ], demo: ["Create a demo assignment (e.g. 'Weekly Project', 20 pts).", "Ipakita ang link vs photo option."] },
 
   { n: 17, title: "Student — sign in & join", time: "1.5 min", say: [
-    "Ngayon, sa mata ng estudyante. Bubuksan nila ang link o i-scan ang QR. Tap 'Sign in with Google.'",
-    "Ilalagay ang join code kung hindi via QR, tapos pipiliin ang pangalan nila sa roster. Tapos — sali na."
+    "Ngayon, from the student's eyes. They open the link o i-scan ang QR. Tap 'Sign in with Google.'",
+    "Enter the join code kung hindi via QR, tapos pick their name sa roster. Tapos — sali na."
   ], demo: ["Ipakita sa phone o second window ang student join.", "Pumili ng pangalan sa roster."] },
 
   { n: 18, title: "Student — submit", time: "1.5 min", say: [
-    "Bubuksan ng bata ang assignment sa My Classes. Ipe-paste ang link — Google Doc, Drive, YouTube — o kukuha ng litrato, na auto-compressed.",
+    "The student opens the assignment sa My Classes. They paste the link — Google Doc, Drive, YouTube — o kukuha ng photo, na auto-compressed.",
     "Tap Submit. Pwede pa nilang bawiin habang 'pending' pa."
   ], demo: ["Mag-submit ng sample link bilang student.", "Ipakita ang submitted state."] },
 
   { n: 19, title: "Teacher — review, grade, publish", time: "2 min", say: [
-    "Balik sa teacher. Buksan ko ang assignment — nandito na ang submissions. Pwede kong i-preview ang link o litrato nang hindi umaalis.",
-    "Ilalagay ko ang score out of total, plus feedback, tapos Publish. Makikita na agad ng bata."
+    "Back to the teacher. I open the assignment — nandito na ang submissions. I can preview the link o photo nang hindi umaalis.",
+    "I enter the score out of total, plus feedback, tapos Publish. Makikita na agad ng student."
   ], demo: ["Open the submission just made.", "Preview it, enter score + feedback, Publish.", "Ituro ang notification bell."] },
 
   { n: 20, title: "Student — sees grade", time: "1 min", say: [
-    "At sa bata — balik sa My Classes, updated na ang status. Makikita nila ang score at feedback.",
+    "At sa student — back sa My Classes, updated na ang status. They see the score and feedback.",
     "Walang chat, walang hanap sa ibang app. Malinaw: tapos na, may grado na, may sagot na."
-  ], transition: "Bukod sa flow, marami pang tools para sa'yo bilang guro." },
+  ], transition: "Bukod sa flow, marami pang tools para sa'yo as a teacher." },
 
   { n: 21, title: "Notification bell", time: "1.5 min", say: [
-    "Ang notification bell may tatlong bucket: pending submissions, leave requests, at new joins — kung sino ang bagong sumali, by name.",
-    "Click ang row, dumidiretso ka na sa mismong assignment o student. Walang hahanapin."
+    "The notification bell has three buckets: pending submissions, leave requests, at new joins — kung sino ang bagong sumali, by name.",
+    "Click the row, dumidiretso ka na sa mismong assignment o student. Walang hahanapin."
   ] },
 
   { n: 22, title: "Records grid", time: "1.5 min", say: [
-    "May records grid — parang Class Record. Bawat roster student, bawat assignment, nakikita mo agad kung sino may score at sino ang 'Not joined' pa.",
-    "Grouped by gender, may Written Work at Performance Task columns. Pero para lang sa tingin — ikaw pa rin ang bahala sa opisyal na Class Record."
+    "There's a records grid — parang Class Record. Bawat roster student, bawat assignment, you instantly see kung sino may score at sino ang 'Not joined' pa.",
+    "Grouped by gender, may Written Work at Performance Task columns. Pero para lang sa tingin — ikaw pa rin ang bahala sa official Class Record."
   ] },
 
   { n: 23, title: "Photos + ZIPs", time: "1.5 min", say: [
-    "Para sa image o document tasks, may in-app camera o gallery — walang link kailangan, auto-compressed, hanggang 10 pages.",
-    "At pwede mong i-download lahat ng litrato ng isang assignment bilang ZIP, isang click. Perpekto para sa modular o WFH outputs."
+    "For image o document tasks, may in-app camera o gallery — walang link kailangan, auto-compressed, up to 10 pages.",
+    "At pwede mong i-download lahat ng photo ng isang assignment as a ZIP, one click. Perfect para sa modular o WFH outputs."
   ] },
 
   { n: 24, title: "Accomplishment report", time: "1.5 min", say: [
-    "Ito ang paborito ng marami: mula sa mga litratong pinasa, gumagawa ang app ng photo collage at ng opisyal na DepEd 'Individual Daily Log and Accomplishment Report' na .docx.",
-    "Buo ang font, seal, at borders ng totoong template. Para sa WFH o modular documentation — hindi na kailangang gawin nang manu-mano."
+    "This is a favorite ng marami: from the submitted photos, the app builds a photo collage at ng official DepEd 'Individual Daily Log and Accomplishment Report' na .docx.",
+    "Buo ang font, seal, at borders ng totoong template. For WFH o modular documentation — hindi na kailangang gawin nang manual."
   ] },
 
   { n: 25, title: "Roster & invites", time: "1.5 min", say: [
-    "Pwede kang mag-seed ng roster — i-paste o i-upload, kasama ang gender. Sa join, pinipili ng bata ang totoong pangalan sa listahan, kaya tugma sa Class Record.",
-    "May invite by Gmail din — auto-join pagsign-in — at QR join. Iba-ibang paraan, iisang resulta."
+    "You can seed a roster — i-paste o i-upload, kasama ang gender. On join, the student picks their real name sa listahan, kaya tugma sa Class Record.",
+    "May invite by Gmail din — auto-join pag-sign-in — at QR join. Iba-ibang paraan, iisang result."
   ] },
 
   { n: 26, title: "Isolation & PWA", time: "1.5 min", say: [
-    "Para sa buong faculty: isolated ang bawat teacher — sariling dashboard, hindi nagkikita ang data. Isang super admin ang nagbibigay ng access.",
+    "For the whole faculty: isolated ang bawat teacher — sariling dashboard, hindi nagkikita ang data. One super admin grants access.",
     "At installable siya — PWA — pwede sa home screen ng phone, may offline shell na bubukas kahit mahina ang signal."
   ] },
 
   { n: 27, title: "Low-tech friendly", time: "1.5 min", say: [
-    "Ginawa ko ito para sa totoong sitwasyon: gumagana sa lumang phone, sa data, kahit mahina ang signal.",
-    "Kapag binuksan sa Messenger, may 'Open in Chrome' na patnubay. At may '?debug=1' banner na nagpapakita ng error on-screen — madaling i-report kapag may problema."
+    "I built this para sa totoong sitwasyon: it works sa lumang phone, sa data, kahit mahina ang signal.",
+    "Kapag binuksan sa Messenger, may 'Open in Chrome' na guide. At may '?debug=1' banner na nagpapakita ng error on-screen — madaling i-report kapag may problema."
   ], transition: "Ngayon — kayo naman." },
 
   { n: 28, title: "Part 3 divider — Your Turn (Workshop)", time: "0.5 min", say: [
-    "Part 3: kayo na. Phones out — subukan ninyo mismo. (Facilitator: sundan ang Workshop Facilitator Guide.)"
+    "Part 3: your turn. Phones out — try it yourselves. (Facilitator: follow the Workshop Facilitator Guide.)"
   ] },
 
   { n: 29, title: "Workshop instructions", time: "2.5 min", say: [
-    "Apat na hakbang. Una — buksan sa phone browser, Chrome o Safari (hindi sa Messenger), ang " + APP + ".",
-    "Pangalawa — tap 'Sign in with Google.' Pangatlo — i-scan ang QR o ilagay ang join code. Pang-apat — mag-submit ng kahit anong link.",
-    "Wag mag-alala kung hindi perpekto — practice lang. Lilibutin ko kayo."
+    "Four steps. Una — open sa phone browser, Chrome o Safari (hindi sa Messenger), ang " + APP + ".",
+    "Pangalawa — tap 'Sign in with Google.' Pangatlo — scan the QR o enter ang join code. Pang-apat — submit any link.",
+    "Wag mag-alala kung hindi perfect — practice lang. I'll go around sa inyo."
   ], demo: ["Palitan ang QR sa slide ng totoong section QR bago ang talk.", "Gabayan ang bawat hakbang."] },
 
   { n: 30, title: "FAQ", time: "2 min", say: [
-    "Ilang madalas na tanong. 'Walang internet sa bahay?' — pwede sa data, school Wi-Fi, o lab; link lang naman.",
-    "'Hindi mag-sign in?' — kung nasa Messenger/FB browser, i-open sa Chrome o Safari; blocked ng Google ang WebView.",
+    "Some common questions. 'Walang internet sa bahay?' — pwede sa data, school Wi-Fi, o lab; link lang naman.",
+    "'Hindi mag-sign in?' — kung nasa Messenger/FB browser, open it sa Chrome o Safari; blocked ng Google ang WebView.",
     "'May bayad sa susunod?' — wala. 'Makikita ng iba ang klase ko?' — hindi, isolated ang bawat teacher."
-  ], transition: "Panghuli." },
+  ], transition: "Last na." },
 
   { n: 31, title: "Close", time: "2 min", say: [
-    "Isang klase. Isang link. Isang grado — nakikita agad. Gawin nating mas madali ang pagpasa at pag-grade — libre, sa phone, para sa lahat.",
+    "One class. One link. One grade — seen agad. Let's make submission and grading easier — free, sa phone, para sa lahat.",
     "Kung gusto ninyo ng sariling teacher access, lapitan ninyo ako — ig-grant ko kayo.",
-    "Maraming salamat po! Bukas ako sa mga tanong."
+    "Maraming salamat po! I'm open sa mga tanong."
   ] }
 ];
 
@@ -231,15 +231,15 @@ const doc = new Document({
     children: [
       new Paragraph({ spacing: { after: 60 }, children: [new TextRun({ text: "INSET SPEAKER SCRIPT", font: "Calibri", bold: true, color: TEAL, size: 20, characterSpacing: 40 })] }),
       new Paragraph({ spacing: { after: 60 }, children: [new TextRun({ text: "Class Submissions LMS — a talk about the system I built", font: "Cambria", bold: true, color: NAVY, size: 40 })] }),
-      P([t("Taglish (English-dominant) na script para sa ~1-hour talk. Basahin nang natural — hindi salita-por-salita. Ang naka-", { color: MUTE }), t("italics", { italics: true, color: MUTE }), t(" ay ang sasabihin; ang naka-numero ay ang gagawin/ide-demo.", { color: MUTE })]),
+      P([t("Taglish (English-dominant) script for a ~1-hour talk. Read it naturally — hindi word-for-word. The ", { color: MUTE }), t("italics", { italics: true, color: MUTE }), t(" are what to say; the numbered items are what to do / demo.", { color: MUTE })]),
       P([label("Live app:  ", NAVY), t(APP, { bold: true, color: NAVY })]),
       H2("Timing overview (~60 min)"),
       timingTable,
-      P([t("Note: Ang aktwal na 1-hour hands-on workshop ay nasa hiwalay na Workshop Facilitator Guide. Ang Part 3 dito (Slides 28–30) ang bridge papunta doon.", { italics: true, color: MUTE })]),
+      P([t("Note: The actual 1-hour hands-on workshop is in the separate Workshop Facilitator Guide. Part 3 here (Slides 28–30) is the bridge papunta doon.", { italics: true, color: MUTE })]),
       new Paragraph({ children: [new PageBreak()] }),
       H1("Slide-by-slide script"),
       ...body,
-      new Paragraph({ spacing: { before: 300 }, border: { top: { style: BorderStyle.SINGLE, size: 6, color: "D9E2EB", space: 8 } }, children: [new TextRun({ text: "Tip: I-print sa 2 pages per sheet, o buksan sa phone. Kaya mo 'to — sarili mong sistema ang ipe-present mo! 🙌", font: "Calibri", italics: true, size: 20, color: MUTE })] })
+      new Paragraph({ spacing: { before: 300 }, border: { top: { style: BorderStyle.SINGLE, size: 6, color: "D9E2EB", space: 8 } }, children: [new TextRun({ text: "Tip: Print it 2 pages per sheet, o buksan sa phone. Kaya mo 'to — your own system ang ipe-present mo! 🙌", font: "Calibri", italics: true, size: 20, color: MUTE })] })
     ]
   }]
 });

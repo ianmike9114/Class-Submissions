@@ -20,7 +20,10 @@ Every **guide / script / tutorial / step-by-step with descriptions** is written
 in Taglish, English-dominant (see the `taglish-guides-register` memory):
 
 - English-dominant sentences; Filipino as connectors / warmth / emphasis
-  (*kaya, diba, yung, para, ganito, tapos, sige, wag mag-alala*).
+  (*kaya, diba, yung, para, ganito, tapos, sige, wag mag-alala*). The English
+  carries the sentence; Filipino only glues it — not the reverse.
+  - ✅ "Good morning po! I want to show you something na ginawa ko myself."
+  - ❌ "Magandang umaga po! Gusto kong ipakita sa inyo ang ginawa ko." (Tagalog-dominant)
 - **All technical terms, UI labels, and step verbs stay English**
   ("Tap **Sign in with Google**", "click **Add assignment**").
 - Slide text, headings, and labels: **English**. Only the spoken script and
