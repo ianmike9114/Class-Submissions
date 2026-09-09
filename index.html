@@ -103,6 +103,41 @@
     // arrives via an invite/QR link still auto-enrolls afterwards.
     const joinCode = new URLSearchParams(location.search).get("code");
 
+    // ?debug=1 diagnostic banner (same convention as the rest of the app).
+    // Off for normal users. Reports why the login page did or didn't redirect:
+    // navigation type (reload vs back/forward vs bfcache), whether Firebase has
+    // a stored session in IndexedDB, and what onAuthStateChanged actually saw.
+    // Its mere presence also proves the page is running THIS code, not a stale
+    // cached index.html.
+    const DEBUG = new URLSearchParams(location.search).get("debug") === "1";
+    function dbg(msg) {
+      if (!DEBUG) return;
+      let b = document.getElementById("dbg");
+      if (!b) {
+        b = document.createElement("pre");
+        b.id = "dbg";
+        b.style.cssText = "text-align:left;white-space:pre-wrap;font-size:11px;background:#0b1220;color:#38f;padding:8px;margin-top:12px;border-radius:6px;max-height:45vh;overflow:auto;";
+        (document.querySelector(".card") || document.body).appendChild(b);
+      }
+      b.textContent += "[" + (Math.round(performance.now())) + "ms] " + msg + "\n";
+    }
+    if (DEBUG) {
+      const nav = (performance.getEntriesByType && performance.getEntriesByType("navigation")[0]) || {};
+      dbg("BUILD=fix#9-diag  navType=" + (nav.type || "?") + "  readyState=" + document.readyState);
+      try {
+        const req = indexedDB.open("firebaseLocalStorageDb");
+        req.onsuccess = () => {
+          try {
+            const store = req.result.transaction("firebaseLocalStorage", "readonly").objectStore("firebaseLocalStorage");
+            const keys = store.getAllKeys();
+            keys.onsuccess = () => dbg("IndexedDB session keys=" + JSON.stringify(keys.result));
+            keys.onerror = () => dbg("IndexedDB getAllKeys error");
+          } catch (e) { dbg("IndexedDB store error=" + e.message + " (no stored session?)"); }
+        };
+        req.onerror = () => dbg("IndexedDB open error (storage blocked?)");
+      } catch (e) { dbg("IndexedDB unavailable=" + e.message); }
+    }
+
     // True when this page load is completing an emailed sign-in link - handled
     // separately below, and its own auth-state change will redirect. We must
     // NOT reveal the normal sign-in UI in that case.
@@ -125,20 +160,33 @@
       }
     }
 
+    let authResolved = false;
     onAuthStateChanged(auth, async (user) => {
+      authResolved = true;
+      dbg("onAuthStateChanged user=" + (user ? user.email : "NULL"));
       if (user) {
         window.location.href = ((await isTeacherEmail(user.email)) ? "teacher.html" : "student.html") + location.search;
         return;
       }
       // Confirmed signed OUT - now it's safe to show the sign-in UI (unless
       // we're mid email-link completion, which redirects on its own).
-      if (!completingEmailLink) revealSignIn();
+      if (!completingEmailLink) { dbg("revealing sign-in form"); revealSignIn(); }
     });
+
+    // Safety net: if Firebase auth never initializes (blocked CDN, dead
+    // connection), onAuthStateChanged never fires - don't strand the user on
+    // "Checking your sign-in…". Reveal the sign-in UI after a short wait so
+    // they can at least try. Harmless if auth resolves first (revealSignIn and
+    // the redirect both no-op once done).
+    setTimeout(() => {
+      if (!authResolved && !completingEmailLink) { dbg("auth timeout - revealing form as fallback"); revealSignIn(); }
+    }, 5000);
 
     // Browser Back into this page can restore it from the bfcache without
     // re-firing onAuthStateChanged. If a session is still live, redirect
     // immediately so the login form never appears.
     window.addEventListener("pageshow", async (e) => {
+      dbg("pageshow persisted=" + e.persisted + " currentUser=" + (auth.currentUser ? auth.currentUser.email : "NULL"));
       if (e.persisted && auth.currentUser) {
         window.location.href = ((await isTeacherEmail(auth.currentUser.email)) ? "teacher.html" : "student.html") + location.search;
       }
