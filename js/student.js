@@ -1,4 +1,4 @@
-import { db, ADMIN_EMAIL } from "./firebase-config.js";
+import { db, ADMIN_EMAIL, isSuperAdmin } from "./firebase-config.js";
 import { guardPage, signOutUser } from "./auth.js";
 import {
   collection, addDoc, setDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where, serverTimestamp,
@@ -27,14 +27,14 @@ function readOnlyBlocked() {
   return false;
 }
 function showViewAsBanner() {
-  const main = document.querySelector("main");
   const b = document.createElement("div");
-  b.className = "card";
-  b.style.cssText = "background:#dbe4ef; border-color:#1d3a63; color:#111c2c;";
+  b.className = "view-as-bar";
   const who = esc(viewCtx.name || viewCtx.email || viewCtx.uid);
-  b.innerHTML = `<strong>Admin preview (read-only)</strong> — viewing as <strong>${who}</strong>` +
-    `${viewCtx.email ? ` (${esc(viewCtx.email)})` : ""}. Submitting, joining, and editing are disabled.`;
-  main.insertBefore(b, main.firstChild);
+  b.innerHTML = `&#128065; <strong>Viewing as ${who}</strong>` +
+    `${viewCtx.email ? ` (${esc(viewCtx.email)})` : ""} — read-only preview. Submitting, joining, and editing are disabled.`;
+  // Sticky at the very top of the page so "who am I viewing" is always on
+  // screen, not scrolled away with the first card.
+  document.body.insertBefore(b, document.body.firstChild);
 }
 
 // Names arrive with inconsistent casing depending on source (roster
@@ -83,7 +83,12 @@ function withTimeout(promise, ms = 12000) {
   ]);
 }
 
-async function enroll(sectionId, section, subject, studentName) {
+// status: "pending" (self-join by code/QR - the teacher must approve and
+// confirm the name before the student sees the class) or "approved"
+// (teacher-initiated invite, where the teacher already provided the name).
+// Existing enrollments with no status field are treated as approved
+// everywhere, so nothing already live is re-gated.
+async function enroll(sectionId, section, subject, studentName, status = "pending") {
   if (readOnlyBlocked()) return;
   // Deterministic ID (one section + one student = one doc, always) instead
   // of addDoc's random ID - the "already enrolled?" checks above this call
@@ -105,6 +110,10 @@ async function enroll(sectionId, section, subject, studentName) {
     // Sections created before multi-teacher support have no ownerEmail -
     // those belong to the super admin (the one teacher that existed then).
     ownerEmail: section.ownerEmail || ADMIN_EMAIL,
+    // Join-approval workflow: pending until the teacher approves. Students
+    // cannot change this field (firestore.rules limits their update to
+    // studentName/leaveRequested), so they can't self-approve.
+    status,
     // Powers the teacher's notification bell "new joins" bucket - flipped
     // to true once they've seen it (js/teacher.js). Missing on every
     // enrollment made before this field existed, which is fine: a query for
@@ -131,11 +140,14 @@ async function applyPendingInvites() {
       where("sectionId", "==", invite.sectionId)
     ));
     if (already.empty) {
+      // Teacher-initiated invite already carries the teacher's chosen name,
+      // so it's pre-approved - no second approval step.
       await enroll(
         invite.sectionId,
         { subjectId: invite.subjectId, sectionName: invite.sectionName, ownerEmail: invite.ownerEmail },
         { name: invite.subjectName, ownerName: invite.teacherName },
-        invite.studentName
+        invite.studentName,
+        "approved"
       );
     }
     await deleteDoc(doc(db, "invites", inviteDoc.id));
@@ -167,9 +179,9 @@ async function renderNamePicker() {
       pendingJoin = null;
       el("join-form").reset();
       container.innerHTML = "";
-      el("join-message").textContent = `Joined ${sectionName} as ${chosen}!`;
+      el("join-message").textContent = `Request sent for ${sectionName} as ${chosen}. Waiting for your teacher to approve you.`;
       await loadEverything();
-      el("assignments-list").scrollIntoView({ behavior: "smooth", block: "start" });
+      el("waiting-approval").scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (err) {
       el("join-name-message").textContent = "Join failed: " + err.message;
       btn.disabled = false;
@@ -238,9 +250,9 @@ el("join-form").addEventListener("submit", async (e) => {
         msg.textContent = "Joining...";
         await enroll(sectionDoc.id, section, subject, currentUser.displayName || currentUser.email);
         e.target.reset();
-        msg.textContent = `Joined ${section.sectionName}!`;
+        msg.textContent = `Request sent for ${section.sectionName}. Waiting for your teacher to approve you.`;
         await loadEverything();
-        el("assignments-list").scrollIntoView({ behavior: "smooth", block: "start" });
+        el("waiting-approval").scrollIntoView({ behavior: "smooth", block: "start" });
         return;
       }
 
@@ -280,11 +292,40 @@ function isPastDue(a) {
   return !!a.dueDate && Date.now() > new Date(a.dueDate + "T23:59:59+08:00").getTime();
 }
 
+// When a regular teacher is previewing a student (viewCtx.owner set), every
+// read must be owner-scoped or firestore.rules denies it - they can only see
+// this student's rows inside their OWN classes. Super admin (owner null) and
+// the real student (no viewCtx) read unscoped.
+function ownerScope() {
+  return viewCtx && viewCtx.owner ? [where("ownerEmail", "==", viewCtx.owner)] : [];
+}
+
 async function loadEverything() {
   const enrollSnap = await getDocs(
-    query(collection(db, "enrollments"), where("studentUID", "==", dataUID()))
+    query(collection(db, "enrollments"), where("studentUID", "==", dataUID()), ...ownerScope())
   );
-  const enrollments = enrollSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const allEnrollments = enrollSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  // Join-approval gate: a "pending" enrollment isn't live yet - the teacher
+  // hasn't approved it. Only approved enrollments (or older ones with no
+  // status field at all) unlock the class's assignments. Pending ones show in
+  // a separate "waiting" block below.
+  const pendingEnrollments = allEnrollments.filter((en) => en.status === "pending");
+  const enrollments = allEnrollments.filter((en) => en.status !== "pending");
+
+  // Waiting-for-approval block: shown only when the student has pending joins.
+  const waitingBlock = el("waiting-approval");
+  if (waitingBlock) {
+    if (pendingEnrollments.length) {
+      waitingBlock.classList.remove("hidden");
+      waitingBlock.innerHTML = `<strong>Waiting for teacher approval</strong>` +
+        pendingEnrollments.map((en) => `<div class="muted" style="margin-top:0.25rem;">
+          ${en.subjectName} — ${en.sectionName} (Teacher: ${en.teacherName || "—"}). You'll see the class once your teacher approves you.
+        </div>`).join("");
+    } else {
+      waitingBlock.classList.add("hidden");
+      waitingBlock.innerHTML = "";
+    }
+  }
 
   const classesList = el("classes-list");
   classesList.innerHTML = enrollments.length
@@ -296,7 +337,9 @@ async function loadEverything() {
           <button type="button" class="secondary" data-toggle-leave="${en.id}" data-current="${!!en.leaveRequested}" style="margin-left:0.4rem;">${en.leaveRequested ? "Cancel leave request" : "Request to leave"}</button>
           ${en.leaveRequested ? '<span class="status-pending"> — leave requested</span>' : ""}
         </span>`).join("")
-    : '<p class="muted">Not joined to any class yet.</p>';
+    : (pendingEnrollments.length
+        ? '<p class="muted">Your join request is waiting for teacher approval.</p>'
+        : '<p class="muted">Not joined to any class yet.</p>');
 
   classesList.querySelectorAll("[data-edit-my-name]").forEach((b) =>
     b.addEventListener("click", () => {
@@ -387,7 +430,7 @@ async function loadEverything() {
   // (studentUID-only equality). Rules already allow a student to read their
   // own submissions (studentUID == request.auth.uid).
   const mySubsSnap = await getDocs(
-    query(collection(db, "submissions"), where("studentUID", "==", dataUID()))
+    query(collection(db, "submissions"), where("studentUID", "==", dataUID()), ...ownerScope())
   );
   const subDocsByAssignment = new Map();
   mySubsSnap.forEach((d) => {
@@ -1036,15 +1079,23 @@ guardPage("student").then(async (user) => {
   av.title = user.email;
   el("student-email").textContent = user.displayName || user.email;
 
-  // Admin-only read-only preview of a specific student (see viewCtx notes up top).
+  // Read-only preview of a specific student (see viewCtx notes up top).
+  // Super admin sees the student's whole cross-teacher page; a regular teacher
+  // is scoped to their OWN classes via asOwner, so their owner-scoped reads
+  // pass firestore.rules. Anyone signed in can open a preview URL, but the
+  // rules still only return docs they're actually allowed to read.
   const params = new URLSearchParams(location.search);
   const asUID = params.get("asStudentUID");
-  if (asUID && user.email === ADMIN_EMAIL) {
+  if (asUID) {
+    const admin = isSuperAdmin(user.email);
     viewCtx = {
       uid: asUID,
       email: params.get("asStudentEmail") || "",
       name: params.get("asStudentName") || "",
       readOnly: true,
+      // null for super admin (unscoped, cross-teacher); the acting teacher's
+      // email otherwise, to owner-scope every read below.
+      owner: admin ? null : (params.get("asOwner") || user.email),
     };
     document.body.classList.add("view-as-readonly");
     showViewAsBanner();

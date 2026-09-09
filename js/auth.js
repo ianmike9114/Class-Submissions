@@ -121,7 +121,15 @@ export function guardPage(expectedRole) {
         return;
       }
       const role = (await isTeacherEmail(user.email)) ? "teacher" : "student";
-      if (expectedRole && role !== expectedRole) {
+      // Teacher/admin "View as student": a teacher opens student.html with an
+      // ?asStudentUID= to preview a student's read-only page. Let them stay on
+      // it instead of bouncing back to their own dashboard - student.js gates
+      // this to a read-only, owner-scoped view (see viewCtx there).
+      const viewingAsStudent =
+        expectedRole === "student" &&
+        role === "teacher" &&
+        new URLSearchParams(location.search).has("asStudentUID");
+      if (expectedRole && role !== expectedRole && !viewingAsStudent) {
         window.location.href = (role === "teacher" ? "teacher.html" : "student.html") + location.search;
         return;
       }

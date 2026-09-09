@@ -778,7 +778,7 @@ async function getNotifications() {
     if (!ownedByViewAs(d.data())) return; // admin's unfiltered enrollments query includes every teacher's - narrow to mine/legacy
     const data = d.data();
     if (!joinsBySection.has(data.sectionId)) joinsBySection.set(data.sectionId, []);
-    joinsBySection.get(data.sectionId).push({ enrollmentId: d.id, studentName: data.studentName });
+    joinsBySection.get(data.sectionId).push({ enrollmentId: d.id, studentName: data.studentName, status: data.status });
   });
   const joins = [...joinsBySection.entries()].filter(([sectionId]) => sectionAlive(sectionId)).map(([sectionId, students]) => {
     const section = sections.get(sectionId) || {};
@@ -884,17 +884,21 @@ function renderNotifDropdown() {
     <button class="notif-item" data-goto-leave="${l.subjectId}|${l.sectionId}">
       ${l.subjectName} &rsaquo; ${l.sectionName} — ${l.count} leave request${l.count > 1 ? "s" : ""}
     </button>`).join("");
-  const joinRows = joins.map((j) => `
+  const joinRows = joins.map((j) => {
+    const pendingCount = j.students.filter((s) => s.status === "pending").length;
+    const names = j.students.map((s) => displayStudentName(s.studentName) + (s.status === "pending" ? " (needs approval)" : "")).join(", ");
+    return `
     <button class="notif-item" data-goto-join="${j.subjectId}|${j.sectionId}">
-      ${j.students.map((s) => displayStudentName(s.studentName)).join(", ")} joined <span class="muted">(${j.subjectName} &rsaquo; ${j.sectionName})</span>
-    </button>`).join("");
+      ${names} ${pendingCount ? "want to join" : "joined"} <span class="muted">(${j.subjectName} &rsaquo; ${j.sectionName})</span>
+    </button>`;
+  }).join("");
   const redoRows = redos.map((r) => `
     <button class="notif-item" data-goto-assignment="${r.subjectId}|${r.sectionId}|${r.assignmentId}">
       ${r.title} <span class="muted">(${r.subjectName} &rsaquo; ${r.sectionName})</span> — ${r.count} redo request${r.count > 1 ? "s" : ""}
     </button>`).join("");
 
   dropdown.innerHTML =
-    (joins.length ? `<div class="notif-group-label">New joins</div>${joinRows}` : "") +
+    (joins.length ? `<div class="notif-group-label">Join requests</div>${joinRows}` : "") +
     (redos.length ? `<div class="notif-group-label">Redo requests</div>${redoRows}` : "") +
     (submissions.length ? `<div class="notif-group-label">Pending submissions</div>${submissionRows}` : "") +
     (leaves.length ? `<div class="notif-group-label">Leave requests</div>${leaveRows}` : "");
@@ -913,7 +917,11 @@ function renderNotifDropdown() {
     b.addEventListener("click", () => {
       const [subjectId, sectionId] = b.dataset.gotoJoin.split("|");
       const j = joins.find((x) => x.sectionId === sectionId);
-      goToNewJoins(subjectId, sectionId, j?.students.map((s) => s.enrollmentId) || []);
+      // Only clear the "seen" flag for already-approved (invited) joins - a
+      // pending one keeps nagging the bell until the teacher actually approves
+      // it in Enrolled Students (approve sets seen:true then).
+      const seenIds = (j?.students || []).filter((s) => s.status !== "pending").map((s) => s.enrollmentId);
+      goToNewJoins(subjectId, sectionId, seenIds);
     }));
 }
 
@@ -1556,25 +1564,49 @@ async function openEnrolled(onlySectionId) {
       </div>`;
   }
 
-  // Super admin only: open a read-only preview of what this student sees on
-  // their own dashboard (js/student.js's ?asStudentUID= view). Regular teachers
-  // never see this control.
-  const canViewAsStudent = currentUser && isSuperAdmin(currentUser.email);
+  // Open a read-only preview of what this student sees on their own dashboard
+  // (js/student.js's ?asStudentUID= view). Available to any teacher now, not
+  // just the super admin - a regular teacher's preview is owner-scoped to
+  // their own classes (asOwner below), which firestore.rules allows.
+  const canViewAsStudent = !!currentUser;
   list.innerHTML = masterListLinkControl + (rows.length
     ? `<table class="records-grid"><thead><tr><th>#</th><th>Name</th><th>Gmail</th><th>Section</th><th></th></tr></thead><tbody>
-        ${rows.map((r, i) => `<tr><td>${i + 1}</td><td id="enroll-name-${r.id}">${displayStudentName(r.studentName)}${r.leaveRequested ? ' <span class="status-pending">(leave requested)</span>' : ""}</td><td>${r.studentEmail || ""}</td><td>${sectionMap.get(r.sectionId) || ""}</td><td>
+        ${rows.map((r, i) => { const pending = r.status === "pending"; return `<tr><td>${i + 1}</td><td id="enroll-name-${r.id}">${displayStudentName(r.studentName)}${pending ? ' <span class="status-pending">(pending approval)</span>' : ""}${r.leaveRequested ? ' <span class="status-pending">(leave requested)</span>' : ""}</td><td>${r.studentEmail || ""}</td><td>${sectionMap.get(r.sectionId) || ""}</td><td>
           <button class="secondary" data-edit-enrollment="${r.id}" data-uid="${r.studentUID}" data-raw="${r.studentName}">Edit name</button>
+          ${pending ? `<button data-approve-enrollment="${r.id}" title="Approve this student's join request">Approve</button>` : ""}
           ${canViewAsStudent ? `<button class="secondary" data-view-as="${r.studentUID}" data-vemail="${r.studentEmail || ""}" data-vname="${r.studentName || ""}" title="Open this student's page (read-only)">View as</button>` : ""}
-          <button class="danger icon" data-remove-enrollment="${r.id}" data-leave-requested="${!!r.leaveRequested}" title="Remove" aria-label="Remove enrollment">×</button>
-        </td></tr>`).join("")}
+          <button class="danger icon" data-remove-enrollment="${r.id}" data-leave-requested="${!!r.leaveRequested}" title="${pending ? "Reject join request" : "Remove"}" aria-label="Remove enrollment">×</button>
+        </td></tr>`; }).join("")}
       </tbody></table>`
     : '<p class="muted">No students enrolled yet.</p>');
 
+  // Approve a pending join: mark it approved and stamp seen:true so it also
+  // clears the "new joins" notification bucket. The teacher can Edit name
+  // first (button beside this) to fix the student's chosen name before
+  // approving - a canActAsOwner update, allowed by firestore.rules.
+  list.querySelectorAll("[data-approve-enrollment]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      b.disabled = true;
+      try {
+        await updateDoc(doc(db, "enrollments", b.dataset.approveEnrollment), { status: "approved", seen: true });
+      } catch (err) {
+        alert("Couldn't approve: " + err.message);
+        b.disabled = false;
+        return;
+      }
+      openEnrolled(onlySectionId);
+      refreshNotifications();
+    }));
+
   list.querySelectorAll("[data-view-as]").forEach((b) =>
     b.addEventListener("click", () => {
+      // Scope the preview to THIS teacher's classes (asOwner) so a regular
+      // teacher's owner-scoped reads pass firestore.rules; the super admin's
+      // preview stays cross-teacher (js/student.js ignores asOwner for them).
       const url = `student.html?asStudentUID=${encodeURIComponent(b.dataset.viewAs)}` +
         `&asStudentEmail=${encodeURIComponent(b.dataset.vemail)}` +
-        `&asStudentName=${encodeURIComponent(b.dataset.vname)}`;
+        `&asStudentName=${encodeURIComponent(b.dataset.vname)}` +
+        `&asOwner=${encodeURIComponent(state.viewAsEmail)}`;
       window.open(url, "_blank", "noopener");
     }));
 
