@@ -74,6 +74,12 @@ h1, h2, h3, h4, strong, summary { font-family: var(--font-headline); }
   font-size: 0.95rem;
 }
 .sidebar-nav button:hover { background: #1d3a63; color: #fff; }
+.sidebar-nav button.active {
+  background: #1d3a63;
+  color: #fff;
+  font-weight: 700;
+  box-shadow: inset 3px 0 0 var(--amber, #f6b73c);
+}
 .sidebar-foot {
   margin-top: auto;
   display: flex;

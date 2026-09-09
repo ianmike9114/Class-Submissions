@@ -3517,9 +3517,24 @@ async function loadRecords() {
 
 // ---------- nav ----------
 function show(viewId) {
-  ["view-overview", "view-subjects", "view-subject", "view-enrolled", "view-section", "view-assignment", "view-records", "view-master-lists"].forEach((v) => {
+  // settings-panel is included so opening Settings/Student Lists/Overview
+  // REPLACES the current view instead of stacking on top of it - every nav
+  // destination is now a mutually-exclusive tab.
+  ["view-overview", "view-subjects", "view-subject", "view-enrolled", "view-section", "view-assignment", "view-records", "view-master-lists", "settings-panel"].forEach((v) => {
     el(v).classList.toggle("hidden", v !== viewId);
   });
+  // Highlight which sidebar tab we're on so the teacher always knows their
+  // location. The subject/section/assignment/records/enrolled drilldowns all
+  // live under "Home", so anything not Overview/Student Lists/Settings lights
+  // up Home.
+  const navFor = {
+    "view-overview": "go-overview",
+    "view-master-lists": "toggle-master-lists",
+    "settings-panel": "toggle-settings",
+  };
+  const activeBtn = navFor[viewId] || "go-home";
+  document.querySelectorAll(".sidebar-nav button").forEach((b) =>
+    b.classList.toggle("active", b.id === activeBtn));
   // Survives a page refresh - restoreNavState() below replays whichever
   // view this was on init instead of always landing back on the subjects list.
   try {
@@ -3566,7 +3581,7 @@ async function restoreNavState() {
   }
 }
 el("go-home").addEventListener("click", () => { show("view-subjects"); loadSubjects(); });
-el("toggle-settings").addEventListener("click", () => el("settings-panel").classList.toggle("hidden"));
+el("toggle-settings").addEventListener("click", () => show("settings-panel"));
 
 // Mobile sidebar drawer: the topbar hamburger opens it, the scrim or any
 // nav tap closes it. On desktop the sidebar is always shown, so these are
