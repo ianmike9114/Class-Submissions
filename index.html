@@ -29,7 +29,14 @@
   <main style="margin-top: 4rem; text-align: center;">
     <div class="card" style="max-width: 400px; margin: 0 auto;">
       <h1>Class Submissions</h1>
-      <p class="muted">Sign in with your Gmail to submit or check work.</p>
+
+      <!-- Shown while we check for an existing session. Hiding the sign-in UI
+           until we know the user is signed OUT stops the login form flashing
+           when someone presses the browser Back button into this page (they're
+           still signed in, so we redirect them straight back). -->
+      <p id="auth-checking" class="muted">Checking your sign-in…</p>
+
+      <p id="signin-prompt" class="muted hidden">Sign in with your Gmail to submit or check work.</p>
 
       <div id="in-app-browser-warning" class="hidden" style="text-align:left; border:1px solid var(--amber); border-radius:6px; padding:0.75rem; margin-bottom:1rem;">
         <p><strong>Can't sign in here</strong></p>
@@ -96,9 +103,44 @@
     // arrives via an invite/QR link still auto-enrolls afterwards.
     const joinCode = new URLSearchParams(location.search).get("code");
 
+    // True when this page load is completing an emailed sign-in link - handled
+    // separately below, and its own auth-state change will redirect. We must
+    // NOT reveal the normal sign-in UI in that case.
+    const completingEmailLink = isEmailSignInLink();
+
+    let signInRevealed = false;
+    function revealSignIn() {
+      if (signInRevealed) return;
+      signInRevealed = true;
+      document.getElementById("auth-checking").classList.add("hidden");
+      document.getElementById("signin-prompt").classList.remove("hidden");
+      // The Google Identity script is deferred; if the signed-out auth check
+      // beat it, wait for window load before wiring the button so we don't
+      // wrongly report "sign-in couldn't load".
+      const googleReady = typeof window.google !== "undefined" && window.google.accounts;
+      if (!googleReady && document.readyState !== "complete") {
+        window.addEventListener("load", initNormalSignIn, { once: true });
+      } else {
+        initNormalSignIn();
+      }
+    }
+
     onAuthStateChanged(auth, async (user) => {
       if (user) {
         window.location.href = ((await isTeacherEmail(user.email)) ? "teacher.html" : "student.html") + location.search;
+        return;
+      }
+      // Confirmed signed OUT - now it's safe to show the sign-in UI (unless
+      // we're mid email-link completion, which redirects on its own).
+      if (!completingEmailLink) revealSignIn();
+    });
+
+    // Browser Back into this page can restore it from the bfcache without
+    // re-firing onAuthStateChanged. If a session is still live, redirect
+    // immediately so the login form never appears.
+    window.addEventListener("pageshow", async (e) => {
+      if (e.persisted && auth.currentUser) {
+        window.location.href = ((await isTeacherEmail(auth.currentUser.email)) ? "teacher.html" : "student.html") + location.search;
       }
     });
 
@@ -116,10 +158,11 @@
     // reloads this page with Firebase's sign-in params. Complete the sign-in
     // here and skip the normal Google-button path entirely - this tap is how
     // the student escapes the in-app browser, so this branch never runs in one.
-    if (isEmailSignInLink()) {
+    // Email-link completion runs now; the normal sign-in UI is revealed by
+    // onAuthStateChanged above once we confirm there's no live session.
+    if (completingEmailLink) {
+      document.getElementById("auth-checking").classList.add("hidden");
       finishEmailLinkSignIn();
-    } else {
-      initNormalSignIn();
     }
 
     async function finishEmailLinkSignIn() {
