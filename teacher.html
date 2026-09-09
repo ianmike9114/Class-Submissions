@@ -334,14 +334,13 @@
       <details class="card">
         <summary><strong>Set deadline for many at once</strong></summary>
         <div style="margin-top:0.5rem;">
-          <p class="muted">After the due date, students can no longer submit or edit that assignment.</p>
+          <p class="muted">After the due date, students can no longer submit or edit that assignment. Tick the assignments you want to apply the deadline to.</p>
           <label>Due date</label>
           <input id="bulk-due-date" type="date" />
-          <label>Apply to (this section)</label>
-          <select id="bulk-due-component">
-            <option value="written">All Written</option>
-            <option value="performance">All Performance Task</option>
-          </select>
+          <label style="display:flex; align-items:center; gap:0.4rem; font-weight:normal; margin-top:0.5rem;">
+            <input type="checkbox" id="bulk-due-all" style="width:auto;" /> Select all
+          </label>
+          <div id="bulk-due-list" style="margin:0.5rem 0;"></div>
           <button type="button" id="bulk-due-apply" style="margin-top:0.5rem;">Apply deadline</button>
           <p id="bulk-due-status" class="muted hidden" style="margin-top:0.5rem;"></p>
         </div>

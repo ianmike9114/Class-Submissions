@@ -1899,6 +1899,11 @@ async function loadAssignments() {
     }
     list.appendChild(row);
   });
+  // Bulk-deadline picker: one checkbox per graded assignment in this section
+  // (materials excluded - they have no due date). Rebuilt on every load so it
+  // always mirrors the current assignment set.
+  renderBulkDueList(snap.docs.filter((d) => d.data().type !== "material"));
+
   list.querySelectorAll("[data-open]").forEach((b) =>
     b.addEventListener("click", () => openAssignment(b.dataset.open)));
   list.querySelectorAll("[data-share]").forEach((b) =>
@@ -1981,26 +1986,46 @@ el("add-assignment-form").addEventListener("submit", async (e) => {
   await notifyOnAssignmentCreate(title, dueDate);
 });
 
-// Bulk-set one due date across all Written (or all Performance) assignments
-// in the open section - so a whole batch closes on the same day without
-// editing each assignment. Per-component because sections run written and
-// performance tasks on different deadlines.
+// Bulk-set one due date across the assignments the teacher ticks in the open
+// section - so a whole batch closes on the same day without editing each one.
+// Teacher picks exactly which assignments, instead of the old coarse "all
+// Written / all Performance" split (confusing for a low-tech teacher).
+function renderBulkDueList(docs) {
+  const container = el("bulk-due-list");
+  if (!container) return;
+  el("bulk-due-all").checked = false;
+  const owned = docs.filter((d) => ownedByViewAs(d.data()));
+  if (owned.length === 0) {
+    container.innerHTML = '<p class="muted">No assignments in this section yet.</p>';
+    return;
+  }
+  container.innerHTML = owned.map((d) => {
+    const a = d.data();
+    const comp = a.component === "performance" ? "Performance Task" : "Written";
+    return `<label style="display:flex; align-items:center; gap:0.4rem; font-weight:normal;">
+      <input type="checkbox" class="bulk-due-cb" value="${d.id}" style="width:auto;" />
+      ${a.title} <span class="muted">(${comp}${a.dueDate ? ` — due ${a.dueDate}` : ""})</span>
+    </label>`;
+  }).join("");
+}
+
+el("bulk-due-all").addEventListener("change", (e) => {
+  el("bulk-due-list").querySelectorAll(".bulk-due-cb").forEach((cb) => { cb.checked = e.target.checked; });
+});
+
 el("bulk-due-apply").addEventListener("click", async () => {
   const date = el("bulk-due-date").value;
-  const component = el("bulk-due-component").value;
   const statusEl = el("bulk-due-status");
   statusEl.classList.remove("hidden");
   if (!date) { statusEl.textContent = "Pick a due date first."; return; }
 
-  const snap = await getDocs(query(collection(db, "assignments"), where("sectionId", "==", state.sectionId)));
-  const targets = snap.docs.filter((d) => d.data().component === component && ownedByViewAs(d.data()));
-  const label = component === "written" ? "Written" : "Performance Task";
-  if (targets.length === 0) { statusEl.textContent = `No ${label} assignments in this section.`; return; }
-  if (!confirm(`Set due date to ${date} for ${targets.length} ${label} assignment(s) in this section?`)) return;
+  const ids = Array.from(el("bulk-due-list").querySelectorAll(".bulk-due-cb:checked")).map((cb) => cb.value);
+  if (ids.length === 0) { statusEl.textContent = "Tick at least one assignment first."; return; }
+  if (!confirm(`Set due date to ${date} for ${ids.length} assignment(s)?`)) return;
 
   statusEl.textContent = "Applying...";
-  await Promise.all(targets.map((d) => updateDoc(doc(db, "assignments", d.id), { dueDate: date })));
-  statusEl.textContent = `Set ${date} on ${targets.length} ${label} assignment(s).`;
+  await Promise.all(ids.map((id) => updateDoc(doc(db, "assignments", id), { dueDate: date })));
+  statusEl.textContent = `Set ${date} on ${ids.length} assignment(s).`;
   loadAssignments();
 });
 
