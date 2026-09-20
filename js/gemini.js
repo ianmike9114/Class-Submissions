@@ -126,3 +126,47 @@ Score each criterion using its own max-points scale, exactly as named above (the
     throw new Error("Gemini didn't return valid JSON: " + rawText.slice(0, 300));
   }
 }
+
+// Teacher-only: draft an example/starter program for a topic, to hand to
+// students. Same browser-direct Gemini call as runRubricCheck (teacher's own
+// key, no backend), but returns raw source code as a plain string.
+// style: "starter" (skeleton with TODOs), "solution" (complete worked
+// example), or "commented" (complete + heavily explained line by line).
+export async function generateCodeExample({ topic, language = "Java", style = "commented" }) {
+  const apiKey = getGeminiKey();
+  if (!apiKey) throw new Error("No Gemini API key set. Add one in Settings first.");
+  if (!topic || !topic.trim()) throw new Error("Describe what the example should do first.");
+
+  const styleLine = {
+    starter: "a STARTER SKELETON: the class/method structure and imports the student needs, with `// TODO:` comments where they must write the logic themselves. Do not give away the full solution.",
+    solution: "a COMPLETE, correct worked example that compiles and runs.",
+    commented: "a COMPLETE, correct example that compiles and runs, with clear comments on each important line explaining what it does, suitable for a beginner.",
+  }[style] || "a complete, correct example.";
+
+  const promptText = `You are helping a Senior High School teacher prepare a ${language} programming example for their students.
+Write ${styleLine}
+The example must cover: ${topic}
+
+Rules:
+- Output ONLY the ${language} source code. No explanation before or after, no markdown code fences.
+- If it is ${language} and a runnable program, put the entry point in a public class named Main so it can be run as-is.
+- Keep it appropriate for a beginner Grade 11-12 student.`;
+
+  const body = { contents: [{ parts: [{ text: promptText }] }] };
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  );
+  if (!res.ok) {
+    throw new Error(`Gemini request failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
+  }
+  const data = await res.json();
+  const rawText = data.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
+  // Strip any stray markdown fences the model adds despite the instruction.
+  return rawText.replace(/^```[a-zA-Z]*\s*/i, "").replace(/```\s*$/, "").trim();
+}

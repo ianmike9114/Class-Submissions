@@ -4,6 +4,8 @@ import {
   collection, addDoc, setDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js";
+import { runJava } from "./runner.js";
+import { codeBlockHtml, highlightWithin } from "./highlight.js";
 
 let currentUser = null;
 function el(id) { return document.getElementById(id); }
@@ -602,6 +604,7 @@ async function loadEverything() {
               id: subDoc.id,
               link: s.link || "",
               photoPages: existingPhotos,
+              code: s.code || "",
             });
             editContainer.dataset.open = "true";
             editBtn.disabled = true;
@@ -609,11 +612,17 @@ async function loadEverything() {
             wireSubmitForm(editContainer.querySelector(".submit-form"));
             const photoInput = editContainer.querySelector(".submission-photo");
             if (photoInput) wirePhotoInput(photoInput);
+            const codeFileInput = editContainer.querySelector(".submission-code-file");
+            if (codeFileInput) wireCodeFileInput(codeFileInput);
+            const runBtn = editContainer.querySelector(".submission-run");
+            if (runBtn) wireRunButton(runBtn);
+            highlightWithin(editContainer);
             editContainer.querySelector("[data-cancel-edit]")?.addEventListener("click", () => {
               editContainer.innerHTML = "";
               editContainer.dataset.open = "false";
               editBtn.disabled = false;
               pendingPhotos.delete(aDoc.id);
+              pendingCodeOutput.delete(aDoc.id);
             });
           });
         }
@@ -648,6 +657,7 @@ async function loadEverything() {
 
   renderOutline(assignmentsBySubject, subDocsByAssignment, topicOrderBySubject);
   attachSubmitHandlers();
+  highlightWithin(el("assignments-list"));
   filterAssignments();
 }
 
@@ -818,6 +828,12 @@ function renderResult(s, a) {
 // separate editable submit form).
 function renderSubmittedWork(s) {
   const parts = [];
+  if (s.code) {
+    parts.push(codeBlockHtml(s.code, "java"));
+    if (s.codeOutput) {
+      parts.push(`<div class="muted">Output when you last ran it</div><pre class="code-output">${esc(s.codeOutput)}</pre>`);
+    }
+  }
   if (s.link) parts.push(embedBlockFor(s.link, { label: "Open your submission" }));
   const photos = (s.photoPages && s.photoPages.length > 0)
     ? s.photoPages
@@ -832,7 +848,7 @@ function renderSubmittedWork(s) {
 
 const LINK_HINTS = {
   document: "Paste a Google Doc/PDF link, shared as \"anyone with the link can view\"",
-  code: "Paste a CodePen link if it fits (single HTML/CSS/JS page - your teacher can see it run live), or a GitHub Gist link for anything else",
+  code: "Optional: paste a GitHub Gist or Google Doc link instead of (or as well as) the code box above",
   image: "Paste a Drive or Google Slides link, shared as \"anyone with the link can view\"",
   video: "Paste a YouTube link (unlisted is fine)",
 };
@@ -850,14 +866,31 @@ function renderSubmitForm(assignmentId, type, prefill = null) {
       <input type="file" accept="image/*" multiple class="submission-photo" data-assignment="${assignmentId}" />
       <div class="photo-thumbs" data-thumbs="${assignmentId}"></div>
       <p class="muted">Each photo is compressed and saved directly - skip the link above if you use this. For full-quality photos, check if your teacher gave a shared folder link in the Instructions above - upload there instead and paste that file's link.</p>` : "";
-  // prefill: { id, link, photoPages } - present only when editing an
+  // For "code" assignments the primary path is pasting the source straight
+  // into the app (saved as text - no Storage), with a Run button that
+  // executes it via the free public Piston runner (js/runner.js). The link
+  // field below stays as an optional alternative (Gist/Doc).
+  const codeValue = prefill?.code ? esc(prefill.code) : "";
+  const codePlaceholder = "public class Main {&#10;  public static void main(String[] args) {&#10;    System.out.println(&quot;Hello&quot;);&#10;  }&#10;}";
+  const codeBlock = (type === "code") ? `
+      <label>Your Java code</label>
+      <textarea class="submission-code" data-assignment="${assignmentId}" rows="12" spellcheck="false" placeholder="${codePlaceholder}">${codeValue}</textarea>
+      <input type="file" accept=".java,.txt,text/plain" class="submission-code-file" data-assignment="${assignmentId}" />
+      <p class="muted">Type/paste your code above, or pick a .java file. Keep your public class named <strong>Main</strong> so it runs.</p>
+      <div class="code-run">
+        <button type="button" class="secondary submission-run" data-assignment="${assignmentId}">&#9654; Run</button>
+        <span class="muted run-note">Runs on a free public code runner (wandbox.org) - your code is sent there to execute.</span>
+      </div>
+      <pre class="code-output hidden" data-output="${assignmentId}"></pre>` : "";
+  // prefill: { id, link, photoPages, code } - present only when editing an
   // existing submission in place, never on the normal blank first-submit form.
   const submissionAttr = prefill ? ` data-submission="${prefill.id}"` : "";
   const linkValue = prefill?.link ? ` value="${String(prefill.link).replace(/"/g, "&quot;")}"` : "";
   const cancelBtn = prefill ? ` <button type="button" class="secondary" data-cancel-edit>Cancel</button>` : "";
   return `
     <form class="submit-form" data-assignment="${assignmentId}"${submissionAttr}>
-      <label>Submission link</label>
+      ${codeBlock}
+      <label>${type === "code" ? "Or a submission link (optional)" : "Submission link"}</label>
       <input type="url" class="submission-link" placeholder="https://..."${linkValue} />
       <p class="muted">${LINK_HINTS[type] || "Paste a shareable link"}</p>
       ${photoBlock}
@@ -911,6 +944,11 @@ function compressImage(file, maxLen = PER_PHOTO_MAX_LEN) {
 // assignmentId -> string[] of already-compressed photo data URLs, in the
 // order the student added them (i.e. page order).
 const pendingPhotos = new Map();
+
+// assignmentId -> the text output of the student's most recent "Run" for a
+// code assignment, saved onto the submission (codeOutput) so the teacher sees
+// what the program printed. Cleared once the submission is saved.
+const pendingCodeOutput = new Map();
 
 // assignmentId -> assignment data, refreshed every loadEverything() - lets
 // the submit-form handler below (wired up once, reused across renders) look
@@ -980,13 +1018,18 @@ function wireSubmitForm(form) {
       loadEverything();
       return;
     }
-    const btn = form.querySelector("button");
+    // The Run button is also a <button> inside this form, so target the
+    // submit one specifically rather than "the first button".
+    const btn = form.querySelector('button[type="submit"]');
     const originalLabel = btn.textContent;
     const link = form.querySelector(".submission-link").value.trim();
+    const codeEl = form.querySelector(".submission-code");
+    const code = codeEl ? codeEl.value.trim() : "";
+    const codeOutput = code ? (pendingCodeOutput.get(assignmentId) || "") : "";
     const photoPages = pendingPhotos.get(assignmentId) || [];
 
-    if (!link && photoPages.length === 0) {
-      alert("Add a link or take a photo first.");
+    if (!link && !code && photoPages.length === 0) {
+      alert(codeEl ? "Paste your code, add a link, or take a photo first." : "Add a link or take a photo first.");
       return;
     }
 
@@ -1000,6 +1043,8 @@ function wireSubmitForm(form) {
         // on the card, and refreshes submittedAt.
         await updateDoc(doc(db, "submissions", submissionId), {
           link,
+          code,
+          codeOutput,
           photoPages,
           status: "pending",
           submittedAt: Date.now(),
@@ -1014,6 +1059,8 @@ function wireSubmitForm(form) {
           studentUID: currentUser.uid,
           studentName: currentUser.displayName || currentUser.email,
           link,
+          code,
+          codeOutput,
           photoPages,
           status: "pending",
           submittedAt: Date.now(),
@@ -1021,6 +1068,7 @@ function wireSubmitForm(form) {
         });
       }
       pendingPhotos.delete(assignmentId);
+      pendingCodeOutput.delete(assignmentId);
       alert(submissionId ? "Saved — resubmitted for review." : "Submitted!");
       loadEverything();
     } catch (err) {
@@ -1031,8 +1079,56 @@ function wireSubmitForm(form) {
   });
 }
 
+// A ".java" (or plain text) file picker that just fills the code textarea in
+// the same form - the file is read as text client-side, never uploaded
+// anywhere (no Storage), same as the pasted-in case.
+function wireCodeFileInput(input) {
+  input.addEventListener("change", () => {
+    const file = input.files[0];
+    if (!file) return;
+    const form = input.closest(".submit-form");
+    const textarea = form && form.querySelector(".submission-code");
+    if (!textarea) return;
+    const reader = new FileReader();
+    reader.onerror = () => alert("Couldn't read that file.");
+    reader.onload = () => { textarea.value = String(reader.result || ""); };
+    reader.readAsText(file);
+    input.value = ""; // allow re-picking the same file after edits
+  });
+}
+
+// The "Run" button for a code assignment: sends the pasted source to the free
+// Piston runner (js/runner.js) and shows the output. The result is stashed in
+// pendingCodeOutput so it saves onto the submission when the student submits.
+function wireRunButton(btn) {
+  btn.addEventListener("click", async () => {
+    const assignmentId = btn.dataset.assignment;
+    const form = btn.closest(".submit-form");
+    const textarea = form && form.querySelector(".submission-code");
+    const outPane = form && form.querySelector(`[data-output="${assignmentId}"]`);
+    if (!textarea || !outPane) return;
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Running...";
+    outPane.classList.remove("hidden");
+    outPane.textContent = "Running your code...";
+    try {
+      const { output } = await runJava(textarea.value);
+      outPane.textContent = output;
+      pendingCodeOutput.set(assignmentId, output);
+    } catch (err) {
+      outPane.textContent = "Couldn't run your code: " + err.message;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+  });
+}
+
 function attachSubmitHandlers() {
   document.querySelectorAll(".submission-photo").forEach(wirePhotoInput);
+  document.querySelectorAll(".submission-code-file").forEach(wireCodeFileInput);
+  document.querySelectorAll(".submission-run").forEach(wireRunButton);
   document.querySelectorAll(".submit-form").forEach(wireSubmitForm);
 }
 

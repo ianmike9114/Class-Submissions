@@ -3,10 +3,12 @@ import { guardPage, signOutUser } from "./auth.js";
 import {
   collection, addDoc, doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, query, where, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { getGeminiKey, setGeminiKey, runRubricCheck } from "./gemini.js";
+import { getGeminiKey, setGeminiKey, runRubricCheck, generateCodeExample } from "./gemini.js";
 import { getEmailConfig, saveEmailConfig, notifySection } from "./notify.js";
 import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons } from "./embed.js";
 import { loadWorkbook } from "./class-record.js";
+import { runJava } from "./runner.js";
+import { codeBlockHtml, highlightWithin } from "./highlight.js";
 
 // AI rubric-check is hidden (not deleted) - per-call Gemini cost isn't
 // worth it right now. Flip this back to true to restore the Run AI Check
@@ -17,6 +19,13 @@ import { loadWorkbook } from "./class-record.js";
 // since grading switched to a single total-points score - re-enabling
 // would need a small adapter first.
 const AI_CHECK_ENABLED = false;
+
+// The teacher Code Examples generator (js/gemini.js's generateCodeExample) -
+// separate from the hidden AI rubric-check above. When on, it needs the
+// Gemini key box shown/saved in Settings, so the key section is revealed when
+// EITHER feature is enabled.
+const CODE_GEN_ENABLED = true;
+const GEMINI_KEY_NEEDED = AI_CHECK_ENABLED || CODE_GEN_ENABLED;
 
 const state = { subjectId: null, sectionId: null, assignmentId: null, subjectName: null, subjectOwnerName: null, viewAsEmail: null, topics: [] };
 let currentUser = null;
@@ -2786,11 +2795,21 @@ async function loadSubmissions() {
         ? `<iframe src="${embedUrl}" class="submission-preview"></iframe>
          <div class="muted"><a href="${s.link}" target="_blank" rel="noopener">open in new tab</a></div>`
         : `<div class="muted"><a href="${s.link}" target="_blank" rel="noopener">${s.link}</a></div>`;
+    // Pasted-code submissions (Code assignments): show the source highlighted,
+    // the student's saved run output, and a Run button so the teacher can
+    // re-run it here without leaving the review screen.
+    const codeBlock = s.code
+      ? codeBlockHtml(s.code, "java")
+        + (s.codeOutput ? `<div class="muted">Student's saved output</div><pre class="code-output">${escAttr(s.codeOutput)}</pre>` : "")
+        + `<div class="code-run"><button type="button" class="secondary" data-run-code="${d.id}">&#9654; Run this</button></div>`
+        + `<pre class="code-output hidden" data-teacher-output="${d.id}"></pre>`
+      : "";
     row.innerHTML = `
       <strong id="sub-name-${d.id}">${displayStudentName(s.studentName)}</strong>
       <button type="button" class="secondary" data-edit-sub-name="${d.id}" data-uid="${s.studentUID}" data-raw="${s.studentName}" style="margin-left:0.4rem;">Edit name</button>
       <span class="status-${s.status}"> — ${s.status}</span>
       ${s.resubmitRequested ? ' <span class="status-pending">redo requested</span>' : ""}
+      ${codeBlock}
       ${linkBlock}
       <div id="detail-${d.id}"></div>
       <div style="margin-top:0.5rem;">
@@ -2801,8 +2820,31 @@ async function loadSubmissions() {
       </div>`;
     list.appendChild(row);
   });
+  highlightWithin(list);
   const highlighted = list.querySelector('[data-search-highlight="true"]');
   if (highlighted) highlighted.scrollIntoView({ behavior: "smooth", block: "center" });
+  // Teacher-side Run of a pasted-code submission (reuses the Piston runner).
+  list.querySelectorAll("[data-run-code]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const rowEl = b.closest(".card");
+      const codeEl = rowEl && rowEl.querySelector(".code-block code");
+      const outPane = rowEl && rowEl.querySelector(`[data-teacher-output="${b.dataset.runCode}"]`);
+      if (!codeEl || !outPane) return;
+      const original = b.textContent;
+      b.disabled = true;
+      b.textContent = "Running...";
+      outPane.classList.remove("hidden");
+      outPane.textContent = "Running...";
+      try {
+        const { output } = await runJava(codeEl.textContent);
+        outPane.textContent = output;
+      } catch (err) {
+        outPane.textContent = "Couldn't run: " + err.message;
+      } finally {
+        b.disabled = false;
+        b.textContent = original;
+      }
+    }));
   if (AI_CHECK_ENABLED) {
     list.querySelectorAll("[data-ai]").forEach((b) =>
       b.addEventListener("click", () => runAiCheck(b.dataset.ai)));
@@ -3577,7 +3619,7 @@ function show(viewId) {
   // settings-panel is included so opening Settings/Student Lists/Overview
   // REPLACES the current view instead of stacking on top of it - every nav
   // destination is now a mutually-exclusive tab.
-  ["view-overview", "view-subjects", "view-subject", "view-enrolled", "view-section", "view-assignment", "view-records", "view-master-lists", "settings-panel"].forEach((v) => {
+  ["view-overview", "view-subjects", "view-subject", "view-enrolled", "view-section", "view-assignment", "view-records", "view-master-lists", "view-code-gen", "settings-panel"].forEach((v) => {
     el(v).classList.toggle("hidden", v !== viewId);
   });
   // Highlight which sidebar tab we're on so the teacher always knows their
@@ -3587,6 +3629,7 @@ function show(viewId) {
   const navFor = {
     "view-overview": "go-overview",
     "view-master-lists": "toggle-master-lists",
+    "view-code-gen": "toggle-code-gen",
     "settings-panel": "toggle-settings",
   };
   const activeBtn = navFor[viewId] || "go-home";
@@ -3639,6 +3682,7 @@ async function restoreNavState() {
 }
 el("go-home").addEventListener("click", () => { show("view-subjects"); loadSubjects(); });
 el("toggle-settings").addEventListener("click", () => show("settings-panel"));
+el("toggle-code-gen").addEventListener("click", () => show("view-code-gen"));
 
 // Mobile sidebar drawer: the topbar hamburger opens it, the scrim or any
 // nav tap closes it. On desktop the sidebar is always shown, so these are
@@ -3658,13 +3702,55 @@ wireOpenInChromeButtons(el("assignment-context"));
 // ---------- settings (Gemini key + EmailJS config, kept in localStorage only) ----------
 el("settings-form").addEventListener("submit", (e) => {
   e.preventDefault();
-  if (AI_CHECK_ENABLED) setGeminiKey(el("gemini-key").value);
+  if (GEMINI_KEY_NEEDED) setGeminiKey(el("gemini-key").value);
   saveEmailConfig({
     serviceId: el("emailjs-service-id").value,
     templateId: el("emailjs-template-id").value,
     publicKey: el("emailjs-public-key").value,
   });
   el("settings-message").textContent = "Saved (kept in this browser only).";
+});
+
+// ---------- Code Examples generator (teacher tool, uses own Gemini key) ----------
+el("codegen-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = el("codegen-generate");
+  const msg = el("codegen-message");
+  const result = el("codegen-result");
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Generating...";
+  msg.textContent = "";
+  try {
+    const code = await generateCodeExample({
+      topic: el("codegen-topic").value,
+      language: el("codegen-language").value.trim() || "Java",
+      style: el("codegen-style").value,
+    });
+    const out = el("codegen-output");
+    out.textContent = code;
+    out.removeAttribute("data-highlighted"); // let hljs re-run on regenerate
+    out.className = "language-" + (el("codegen-language").value.trim().toLowerCase() || "java");
+    result.classList.remove("hidden");
+    highlightWithin(result);
+  } catch (err) {
+    msg.textContent = err.message;
+    result.classList.add("hidden");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+});
+
+el("codegen-copy").addEventListener("click", async () => {
+  const code = el("codegen-output").textContent;
+  try {
+    await navigator.clipboard.writeText(code);
+    el("codegen-copy").textContent = "Copied!";
+    setTimeout(() => { el("codegen-copy").textContent = "Copy code"; }, 1500);
+  } catch {
+    el("codegen-message").textContent = "Couldn't copy automatically - select the code and copy manually.";
+  }
 });
 
 // ---------- admin: teacher accounts (super admin only, see firestore.rules) ----------
@@ -3962,10 +4048,14 @@ guardPage("teacher").then(async (user) => {
   const roleBadge = el("role-badge");
   roleBadge.textContent = isAdmin ? "Admin" : "Teacher";
   roleBadge.className = isAdmin ? "status-returned" : "status-published";
-  if (AI_CHECK_ENABLED) {
+  // The Gemini key box is shown whenever a feature needs it (the hidden AI
+  // rubric-check OR the Code Examples generator).
+  if (GEMINI_KEY_NEEDED) {
     el("gemini-key").value = getGeminiKey();
     el("gemini-settings-section").classList.remove("hidden");
-  } else {
+  }
+  if (!CODE_GEN_ENABLED) el("toggle-code-gen").classList.add("hidden");
+  if (!AI_CHECK_ENABLED) {
     const aiOption = el("submission-filter").querySelector('option[value="ai-drafted"]');
     if (aiOption) aiOption.hidden = true;
   }
