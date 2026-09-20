@@ -17,13 +17,42 @@ see/edit any teacher's data and grants/revokes other teachers' access.
 No password system either way (Google Sign-In only).
 
 **AI rubric-check hidden, not deleted.** `js/teacher.js`'s
-`AI_CHECK_ENABLED` flag (currently `false`) gates "Run AI Check" button,
-Settings gear (only Gemini key box lives there today), and "AI drafted"
-filter option — flip back to `true` to restore all three. `js/gemini.js`
-(`runRubricCheck()`, calls Gemini directly from browser with teacher's
-own key) untouched underneath. Hidden because per-call Gemini cost
-wasn't worth it for real usage; see grading-model note below for why
-re-enabling isn't pure flip.
+`AI_CHECK_ENABLED` flag (currently `false`) gates "Run AI Check" button
+and "AI drafted" filter option — flip back to `true` to restore both.
+`js/gemini.js` (`runRubricCheck()`, calls Gemini directly from browser
+with teacher's own key) untouched underneath. Hidden because per-call
+Gemini cost wasn't worth it for real usage; see grading-model note below
+for why re-enabling isn't pure flip. (The Settings Gemini-key box is no
+longer gated by this flag — it now shows whenever `GEMINI_KEY_NEEDED`,
+i.e. `AI_CHECK_ENABLED || CODE_GEN_ENABLED`, because the Code Examples
+generator below needs the same key.)
+
+**Java code submission + in-app Run.** "Code" assignments accept a pasted
+code box (or a `.java` file read as text — no Storage) saved to the
+submission's `code`/`codeOutput` fields, not just a link. Students get a
+**Run** button (teacher too, on the review card) that executes Java via
+`js/runner.js`'s `runJava()` — a browser-direct call to **Wandbox's**
+free public API (`wandbox.org`, OpenJDK, no key, CORS-open). Chosen after
+the originally-planned Piston public API (`emkc.org`) went whitelist-only
+Feb 2026. Wandbox saves the source as `prog.java`, so `runJava()` strips
+`public` off top-level `class`/`interface`/`enum`/`record` before sending
+(else `public class Main` fails on filename mismatch); Wandbox still
+auto-runs whichever class has `main`. External service + no-Storage, so
+it doesn't break the zero-cost/no-Blaze constraint; a failed Run degrades
+to a friendly message and never blocks submitting. Highlighting on code
+blocks is `js/highlight.js` (highlight.js lazy-loaded from CDN, no-op
+fallback if blocked). **`firestore.rules` change shipped with this:**
+`'code'`/`'codeOutput'` added to the student self-edit `hasOnly()` list
+on `submissions` update, else resubmitting edited code is rejected —
+**must `firebase deploy --only firestore:rules`**.
+
+**Teacher Code Examples generator.** `js/teacher.js`'s `CODE_GEN_ENABLED`
+flag (currently `true`) gates the "💻 Code Examples" sidebar tab and its
+`#view-code-gen` panel. `js/gemini.js`'s `generateCodeExample({topic,
+language, style})` drafts starter/worked/commented example code (teacher
+hands to students) via the same browser-direct Gemini call as the hidden
+rubric-check, using the teacher's own key. Teacher-only; writes nothing
+to Firestore.
 
 **No Firebase Storage, no Cloud Functions — deliberately.** Both require
 paid Blaze plan just to exist, even at zero usage, hard constraint for

@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=31" />
+  <link rel="stylesheet" href="css/style.css?v=32" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="theme-color" content="#002045" />
   <link rel="apple-touch-icon" href="/icons/icon-192.png" />
@@ -36,6 +36,7 @@
         <button id="go-home">&#8962; Home</button>
         <button class="hidden" id="go-overview" title="See every teacher and student (admin)">&#9638; Overview</button>
         <button id="toggle-master-lists">Student Lists</button>
+        <button id="toggle-code-gen">&#128187; Code Examples</button>
         <button id="toggle-settings">&#9881; Settings</button>
       </nav>
       <div class="sidebar-foot">
@@ -75,8 +76,9 @@
       <h2>General Settings</h2>
       <form id="settings-form">
         <div id="gemini-settings-section" class="hidden">
-          <label>Gemini API key (for AI rubric-check)</label>
+          <label>Gemini API key (for the Code Examples generator)</label>
           <input id="gemini-key" type="password" placeholder="Paste your key from aistudio.google.com/apikey" />
+          <p class="muted">Free key from aistudio.google.com/apikey. Kept in this browser only - never saved to the repo or seen by students.</p>
         </div>
         <label>Notify students by email on new assignment (EmailJS)</label>
         <input id="emailjs-service-id" placeholder="Service ID" />
@@ -103,6 +105,32 @@
         <p id="migrate-joincodes-message" class="muted"></p>
       </div>
     </div>
+
+    <!-- CODE EXAMPLES (teacher tool: AI-drafted starter/worked code for students) -->
+    <section id="view-code-gen" class="hidden">
+      <div class="card">
+        <h2>&#128187; Code Examples</h2>
+        <p class="muted">Draft a starter or worked program to hand to your students. Needs your free Gemini API key (add it in Settings). Runs from your browser using your own key - students never see it.</p>
+        <form id="codegen-form">
+          <label>What should the example do?</label>
+          <textarea id="codegen-topic" rows="3" required placeholder="e.g. Sort an array of customer transaction amounts using bubble sort, then print them in order"></textarea>
+          <label>Language</label>
+          <input id="codegen-language" value="Java" />
+          <label>Style</label>
+          <select id="codegen-style">
+            <option value="commented">Worked example, heavily commented (best for teaching)</option>
+            <option value="solution">Complete worked solution</option>
+            <option value="starter">Starter skeleton with TODOs (students finish it)</option>
+          </select>
+          <button type="submit" id="codegen-generate">Generate</button>
+        </form>
+        <p id="codegen-message" class="muted"></p>
+        <div id="codegen-result" class="hidden">
+          <button type="button" class="secondary" id="codegen-copy">Copy code</button>
+          <pre class="code-block"><code id="codegen-output" class="language-java"></code></pre>
+        </div>
+      </div>
+    </section>
 
     <!-- ADMIN OVERVIEW (super admin only - every teacher + every student) -->
     <section id="view-overview" class="hidden">
@@ -316,7 +344,7 @@
             <label>Expected link type (shown to students as instructions)</label>
             <select id="assignment-filetype">
               <option value="document">Document (Google Doc/PDF - "anyone with link")</option>
-              <option value="code">Code (CodePen recommended - you can see it run; GitHub Gist also OK)</option>
+              <option value="code">Code (students paste &amp; run their code in-app; Gist/Doc link also OK)</option>
               <option value="image">Image / slides (Drive or Slides link, "anyone with link")</option>
               <option value="video">Video (YouTube, unlisted)</option>
             </select>
@@ -381,7 +409,7 @@
             <label>Expected link type</label>
             <select id="edit-assignment-filetype">
               <option value="document">Document (Google Doc/PDF - "anyone with link")</option>
-              <option value="code">Code (CodePen recommended - you can see it run; GitHub Gist also OK)</option>
+              <option value="code">Code (students paste &amp; run their code in-app; Gist/Doc link also OK)</option>
               <option value="image">Image / slides (Drive or Slides link, "anyone with link")</option>
               <option value="video">Video (YouTube, unlisted)</option>
             </select>
@@ -425,7 +453,7 @@
     <button type="button" id="photo-lightbox-close" aria-label="Close preview">&times;</button>
   </div>
 
-  <script type="module" src="js/teacher.js?v=70"></script>
+  <script type="module" src="js/teacher.js?v=71"></script>
 
   <!-- PWA: register the service worker (see sw.js). Failure swallowed. -->
   <script>

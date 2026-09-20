@@ -159,7 +159,7 @@ service cloud.firestore {
                         && resource.data.studentUID == request.auth.uid
                         && (resource.data.status == "pending" || resource.data.status == "returned")
                         && request.resource.data.status == "pending"
-                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['link', 'photoPages', 'status', 'submittedAt']))
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['link', 'code', 'codeOutput', 'photoPages', 'status', 'submittedAt']))
                     || (isSignedIn()
                         && resource.data.studentUID == request.auth.uid
                         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['resubmitRequested']));

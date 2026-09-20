@@ -345,6 +345,60 @@ body.view-as-readonly #join-card { display: none; }
   max-width: 100%;
 }
 
+/* ---- Code submissions & generated examples ---- */
+/* Monospace family reused by the paste box, highlighted source, and output. */
+:root { --font-mono: ui-monospace, "Cascadia Code", "Source Code Pro", Consolas, "Liberation Mono", monospace; }
+
+textarea.submission-code {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.45;
+  tab-size: 2;
+  white-space: pre;         /* don't wrap code lines... */
+  overflow-x: auto;         /* ...scroll the box instead (stays clean on phones) */
+}
+
+/* Highlighted source block (student "your submission", teacher review,
+   generated example). highlight.js sets the text colours on the inner
+   <code>; this just frames and scrolls it. Falls back to a plain grey box
+   when the CDN is blocked. */
+.code-block {
+  margin: 0.5rem 0;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--gray-border);
+  border-radius: var(--radius-sm);
+  background: var(--gray-bg);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+.code-block code { font-family: inherit; white-space: pre; }
+
+/* Program output pane (Run result / saved output). */
+.code-output {
+  margin: 0.4rem 0;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--gray-border);
+  border-radius: var(--radius-sm);
+  background: #0b1a2b;
+  color: #e6edf3;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.code-run {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin: 0.4rem 0;
+}
+
 /* Titled viewer card around the student's inline lesson material: a header
    (file label + full-screen "Open" link) over the document, so it reads like
    a real material viewer and stays open/readable by default. */
