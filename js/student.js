@@ -1,7 +1,7 @@
 import { db, ADMIN_EMAIL, isSuperAdmin } from "./firebase-config.js";
 import { guardPage, signOutUser } from "./auth.js";
 import {
-  collection, addDoc, setDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where, serverTimestamp,
+  collection, addDoc, setDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where, documentId, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js";
 import { runJava } from "./runner.js";
@@ -302,6 +302,29 @@ function ownerScope() {
   return viewCtx && viewCtx.owner ? [where("ownerEmail", "==", viewCtx.owner)] : [];
 }
 
+// Returns the set of archived subject ids among the given ids. Batches by 30
+// (Firestore `in` cap); a student is realistically in a handful of subjects,
+// so this is one small read. Best-effort: on any read error it returns an
+// empty set, so a hiccup never blanks the dashboard - the class just stays
+// visible, same as before this feature.
+async function getArchivedSubjectIds(subjectIds) {
+  const ids = [...new Set(subjectIds.filter(Boolean))];
+  const archived = new Set();
+  try {
+    for (let i = 0; i < ids.length; i += 30) {
+      const chunk = ids.slice(i, i + 30);
+      const snap = await getDocs(
+        query(collection(db, "subjects"), where(documentId(), "in", chunk))
+      );
+      snap.forEach((d) => { if (d.data().archived === true) archived.add(d.id); });
+    }
+  } catch (err) {
+    console.error("archived-subject lookup failed (showing all classes):", err);
+    return new Set();
+  }
+  return archived;
+}
+
 async function loadEverything() {
   const enrollSnap = await getDocs(
     query(collection(db, "enrollments"), where("studentUID", "==", dataUID()), ...ownerScope())
@@ -312,7 +335,25 @@ async function loadEverything() {
   // status field at all) unlock the class's assignments. Pending ones show in
   // a separate "waiting" block below.
   const pendingEnrollments = allEnrollments.filter((en) => en.status === "pending");
-  const enrollments = allEnrollments.filter((en) => en.status !== "pending");
+  let enrollments = allEnrollments.filter((en) => en.status !== "pending");
+
+  // Hide archived subjects from the student entirely - a teacher archives
+  // last term's subject to clean up for the new term, and the student
+  // shouldn't keep seeing that class or its work. `archived` lives on the
+  // subject doc (world-readable), so fetch just the subjects this student is
+  // enrolled in and drop any that are archived. An enrollment with no
+  // subjectId can't match, so it stays visible (safe fallback). Filtering
+  // both arrays here hides the class card, its assignments, and its outline
+  // group at once, since everything downstream derives from them.
+  const archivedSubjectIds = await getArchivedSubjectIds(
+    [...allEnrollments].map((en) => en.subjectId)
+  );
+  if (archivedSubjectIds.size) {
+    enrollments = enrollments.filter((en) => !archivedSubjectIds.has(en.subjectId));
+    for (let i = pendingEnrollments.length - 1; i >= 0; i--) {
+      if (archivedSubjectIds.has(pendingEnrollments[i].subjectId)) pendingEnrollments.splice(i, 1);
+    }
+  }
 
   // Waiting-for-approval block: shown only when the student has pending joins.
   const waitingBlock = el("waiting-approval");
