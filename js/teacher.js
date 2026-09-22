@@ -360,6 +360,88 @@ async function getLeaveRequestCounts() {
   return { bySection, bySubject };
 }
 
+// ---------- join-approval-waiting counts (mirrors getLeaveRequestCounts() above) ----------
+// Students whose enrollment is still status:"pending" - the teacher hasn't
+// approved them yet. Surfaced as a subject-card badge so the teacher sees
+// who's waiting without opening the bell.
+async function getJoinWaitingCounts() {
+  const [sectionsSnap, enrollSnap] = await Promise.all([
+    cachedOwnerDocs("sections", "sections"),
+    cachedOwnerDocs("enr:pending", "enrollments", where("status", "==", "pending")),
+  ]);
+  const sectionToSubject = new Map(sectionsSnap.docs.map((d) => [d.id, d.data().subjectId]));
+
+  const bySection = new Map();
+  const bySubject = new Map();
+  enrollSnap.forEach((d) => {
+    if (!ownedByViewAs(d.data())) return; // admin's unfiltered query includes every teacher's - narrow to mine/legacy
+    const sectionId = d.data().sectionId;
+    const subjectId = sectionToSubject.get(sectionId);
+    bySection.set(sectionId, (bySection.get(sectionId) || 0) + 1);
+    if (subjectId) bySubject.set(subjectId, (bySubject.get(subjectId) || 0) + 1);
+  });
+  return { bySection, bySubject };
+}
+
+function joinWaitingBadge(count) {
+  return count ? `<span class="status-pending"> — ${count} waiting to approve</span>` : "";
+}
+
+// ---------- missing-work counts (enrolled students who haven't submitted a past-due assignment) ----------
+// Per subject: for each assignment (not a material) whose due date has passed,
+// count approved-enrolled students in its section who have no submission for
+// it, and sum those. Heaviest rollup (adds one all-submissions read), so it's
+// only called from loadSubjects(), not the per-section getPendingCounts path.
+async function getMissingWorkCounts() {
+  const [sectionsSnap, assignSnap, enrollSnap, subSnap] = await Promise.all([
+    cachedOwnerDocs("sections", "sections"),
+    cachedOwnerDocs("assignments", "assignments"),
+    cachedOwnerDocs("enrollments", "enrollments"),
+    cachedOwnerDocs("subs:all", "submissions"),
+  ]);
+  const sectionToSubject = new Map(sectionsSnap.docs.map((d) => [d.id, d.data().subjectId]));
+
+  // Approved-enrolled headcount per section (a pending join isn't a live
+  // student yet, so it can't be "missing" work).
+  const enrolledBySection = new Map();
+  enrollSnap.forEach((d) => {
+    const e = d.data();
+    if (!ownedByViewAs(e) || e.status === "pending") return;
+    enrolledBySection.set(e.sectionId, (enrolledBySection.get(e.sectionId) || 0) + 1);
+  });
+
+  // Distinct submitters per assignment.
+  const submittersByAssignment = new Map();
+  subSnap.forEach((d) => {
+    const s = d.data();
+    if (!ownedByViewAs(s)) return;
+    if (!submittersByAssignment.has(s.assignmentId)) submittersByAssignment.set(s.assignmentId, new Set());
+    submittersByAssignment.get(s.assignmentId).add(s.studentUID);
+  });
+
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+  const bySubject = new Map();
+  assignSnap.forEach((d) => {
+    const a = d.data();
+    if (!ownedByViewAs(a)) return;
+    if (a.type === "material") return;            // materials have no submissions
+    if (!a.dueDate || a.dueDate > today) return;  // only assignments actually past due
+    const expected = enrolledBySection.get(a.sectionId) || 0;
+    const submitted = submittersByAssignment.get(d.id)?.size || 0;
+    const missing = Math.max(0, expected - submitted);
+    if (!missing) return;
+    const subjectId = sectionToSubject.get(a.sectionId);
+    if (subjectId) bySubject.set(subjectId, (bySubject.get(subjectId) || 0) + missing);
+  });
+  return { bySubject };
+}
+
+function missingWorkBadge(count) {
+  return count ? `<span class="status-pending"> — ${count} missing</span>` : "";
+}
+
 function leaveBadge(count) {
   return count ? `<span class="status-pending"> — ${count} leave request${count > 1 ? "s" : ""}</span>` : "";
 }
@@ -1184,9 +1266,11 @@ async function loadSubjects() {
   // regular teacher's freshly-created subject silently not show: a failed bell
   // query rejected the shared Promise.all here before any subject rendered.)
   const snap = await getDocs(ownerScopedQuery("subjects"));
-  const [counts, leaveCounts] = await Promise.all([
+  const [counts, leaveCounts, joinCounts, missingCounts] = await Promise.all([
     getPendingCounts().catch((err) => { console.error("pending-count rollup failed (badges only):", err); return { byAssignment: new Map(), bySection: new Map(), bySubject: new Map() }; }),
     getLeaveRequestCounts().catch((err) => { console.error("leave-count rollup failed (badges only):", err); return { bySection: new Map(), bySubject: new Map() }; }),
+    getJoinWaitingCounts().catch((err) => { console.error("join-waiting rollup failed (badges only):", err); return { bySection: new Map(), bySubject: new Map() }; }),
+    getMissingWorkCounts().catch((err) => { console.error("missing-work rollup failed (badges only):", err); return { bySubject: new Map() }; }),
   ]);
   const list = el("subjects-list");
   list.innerHTML = "";
@@ -1202,6 +1286,8 @@ async function loadSubjects() {
       <strong>${s.name}</strong>
       <span class="muted" id="year-term-${d.id}">(${s.gradeLevel} — SY ${s.schoolYear || "—"} · Term ${s.term || "—"})</span>
       ${pendingBadge(counts.bySubject.get(d.id))}
+      ${joinWaitingBadge(joinCounts.bySubject.get(d.id))}
+      ${missingWorkBadge(missingCounts.bySubject.get(d.id))}
       ${leaveBadge(leaveCounts.bySubject.get(d.id))}
       ${s.archived ? '<span class="muted"> — archived</span>' : ""}
       <div id="year-term-edit-${d.id}"></div>
