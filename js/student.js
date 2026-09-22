@@ -302,27 +302,44 @@ function ownerScope() {
   return viewCtx && viewCtx.owner ? [where("ownerEmail", "==", viewCtx.owner)] : [];
 }
 
-// Returns the set of archived subject ids among the given ids. Batches by 30
-// (Firestore `in` cap); a student is realistically in a handful of subjects,
-// so this is one small read. Best-effort: on any read error it returns an
-// empty set, so a hiccup never blanks the dashboard - the class just stays
-// visible, same as before this feature.
-async function getArchivedSubjectIds(subjectIds) {
-  const ids = [...new Set(subjectIds.filter(Boolean))];
-  const archived = new Set();
+// Small helper: fetch docs from a collection by id, batched by 30 (Firestore
+// `in` cap), returning the raw snapshot docs. A student is in a handful of
+// sections/subjects, so this is a couple of small reads.
+async function getDocsByIds(collectionName, ids) {
+  const unique = [...new Set(ids.filter(Boolean))];
+  const docs = [];
+  for (let i = 0; i < unique.length; i += 30) {
+    const snap = await getDocs(
+      query(collection(db, collectionName), where(documentId(), "in", unique.slice(i, i + 30)))
+    );
+    snap.forEach((d) => docs.push(d));
+  }
+  return docs;
+}
+
+// Returns the set of *section* ids whose subject is archived, resolved via the
+// section doc (sectionId -> subjectId -> archived). Keyed off sectionId, not
+// the enrollment's cached subjectId: on this live system some enrollments
+// predate the subjectId field (or joined via a path that didn't cache it), so
+// keying off subjectId silently missed them. Every enrollment always has a
+// sectionId (it's half the doc id), and the section is the source of truth for
+// which subject it belongs to. Best-effort: any read error returns an empty
+// set, so a hiccup never blanks the dashboard - the class just stays visible.
+async function getArchivedSectionIds(sectionIds) {
   try {
-    for (let i = 0; i < ids.length; i += 30) {
-      const chunk = ids.slice(i, i + 30);
-      const snap = await getDocs(
-        query(collection(db, "subjects"), where(documentId(), "in", chunk))
-      );
-      snap.forEach((d) => { if (d.data().archived === true) archived.add(d.id); });
+    const sectionDocs = await getDocsByIds("sections", sectionIds);
+    const sectionToSubject = new Map(sectionDocs.map((d) => [d.id, d.data().subjectId]));
+    const subjectDocs = await getDocsByIds("subjects", [...sectionToSubject.values()]);
+    const archivedSubjects = new Set(subjectDocs.filter((d) => d.data().archived === true).map((d) => d.id));
+    const archivedSections = new Set();
+    for (const [sectionId, subjectId] of sectionToSubject) {
+      if (archivedSubjects.has(subjectId)) archivedSections.add(sectionId);
     }
+    return archivedSections;
   } catch (err) {
-    console.error("archived-subject lookup failed (showing all classes):", err);
+    console.error("archived-section lookup failed (showing all classes):", err);
     return new Set();
   }
-  return archived;
 }
 
 async function loadEverything() {
@@ -339,19 +356,18 @@ async function loadEverything() {
 
   // Hide archived subjects from the student entirely - a teacher archives
   // last term's subject to clean up for the new term, and the student
-  // shouldn't keep seeing that class or its work. `archived` lives on the
-  // subject doc (world-readable), so fetch just the subjects this student is
-  // enrolled in and drop any that are archived. An enrollment with no
-  // subjectId can't match, so it stays visible (safe fallback). Filtering
-  // both arrays here hides the class card, its assignments, and its outline
-  // group at once, since everything downstream derives from them.
-  const archivedSubjectIds = await getArchivedSubjectIds(
-    [...allEnrollments].map((en) => en.subjectId)
+  // shouldn't keep seeing that class or its work. Resolved by section
+  // (sectionId -> subject -> archived) rather than the enrollment's cached
+  // subjectId, which some legacy enrollments don't have. Filtering both arrays
+  // here hides the class card, its assignments, and its outline group at once,
+  // since everything downstream derives from them.
+  const archivedSectionIds = await getArchivedSectionIds(
+    allEnrollments.map((en) => en.sectionId)
   );
-  if (archivedSubjectIds.size) {
-    enrollments = enrollments.filter((en) => !archivedSubjectIds.has(en.subjectId));
+  if (archivedSectionIds.size) {
+    enrollments = enrollments.filter((en) => !archivedSectionIds.has(en.sectionId));
     for (let i = pendingEnrollments.length - 1; i >= 0; i--) {
-      if (archivedSubjectIds.has(pendingEnrollments[i].subjectId)) pendingEnrollments.splice(i, 1);
+      if (archivedSectionIds.has(pendingEnrollments[i].sectionId)) pendingEnrollments.splice(i, 1);
     }
   }
 
