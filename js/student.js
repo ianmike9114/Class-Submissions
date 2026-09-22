@@ -1,5 +1,5 @@
 import { db, ADMIN_EMAIL, isSuperAdmin } from "./firebase-config.js";
-import { guardPage, signOutUser } from "./auth.js";
+import { guardPage, signOutUser } from "./auth.js?v=2";
 import {
   collection, addDoc, setDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where, documentId, arrayUnion, arrayRemove, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -61,6 +61,10 @@ function applyPendingJoinCode() {
   if (!code) return;
   sessionStorage.removeItem("pendingJoinCode");
   history.replaceState(null, "", location.pathname);
+  // The Join-a-class card is hidden by default (students normally enroll via
+  // QR/invite). A pending QR/deep-link code needs it visible so the roster
+  // name picker (#join-name-picker) can show after the code resolves.
+  el("join-card").classList.remove("hidden");
   el("join-code").value = code;
   el("join-form").requestSubmit();
 }
@@ -1277,6 +1281,7 @@ function attachSubmitHandlers() {
 }
 
 el("sign-out").addEventListener("click", signOutUser);
+el("refresh-app")?.addEventListener("click", () => location.reload());
 wireOpenInChromeButtons(el("assignments-list"));
 
 // ---------- init ----------
@@ -1338,6 +1343,11 @@ guardPage("student").then(async (user) => {
       owner: admin ? null : (params.get("asOwner") || user.email),
     };
     document.body.classList.add("view-as-readonly");
+    // In the teacher's in-app "View as" iframe the Firebase session is shared
+    // with the teacher's own tab, so a Sign out here would sign the teacher
+    // out too - hide it (and the refresh) in this read-only preview.
+    el("sign-out")?.classList.add("hidden");
+    el("refresh-app")?.classList.add("hidden");
     showViewAsBanner();
   }
 

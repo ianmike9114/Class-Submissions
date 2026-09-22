@@ -1,5 +1,5 @@
 import { db, ADMIN_EMAIL, isSuperAdmin } from "./firebase-config.js";
-import { guardPage, signOutUser } from "./auth.js";
+import { guardPage, signOutUser } from "./auth.js?v=2";
 import {
   collection, addDoc, doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, query, where, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -1704,6 +1704,7 @@ async function openEnrolled(onlySectionId) {
           <button class="secondary" data-edit-enrollment="${r.id}" data-uid="${r.studentUID}" data-raw="${r.studentName}">Edit name</button>
           ${pending ? `<button data-approve-enrollment="${r.id}" title="Approve this student's join request">Approve</button>` : ""}
           ${canViewAsStudent ? `<button class="secondary" data-view-as="${r.studentUID}" data-vemail="${r.studentEmail || ""}" data-vname="${r.studentName || ""}" title="Open this student's page (read-only)">View as</button>` : ""}
+          ${r.leaveRequested ? `<button class="secondary" data-dismiss-leave="${r.id}" title="Cancel this leave request and keep the student in the class">Keep in class</button>` : ""}
           <button class="danger icon" data-remove-enrollment="${r.id}" data-leave-requested="${!!r.leaveRequested}" title="${pending ? "Reject join request" : "Remove"}" aria-label="Remove enrollment">×</button>
         </td></tr>`; }).join("")}
       </tbody></table>`
@@ -1736,7 +1737,7 @@ async function openEnrolled(onlySectionId) {
         `&asStudentEmail=${encodeURIComponent(b.dataset.vemail)}` +
         `&asStudentName=${encodeURIComponent(b.dataset.vname)}` +
         `&asOwner=${encodeURIComponent(state.viewAsEmail)}`;
-      window.open(url, "_blank", "noopener");
+      openStudentView(url, b.dataset.vname || b.dataset.vemail);
     }));
 
   const linkSelect = el("master-list-link-select");
@@ -1775,6 +1776,23 @@ async function openEnrolled(onlySectionId) {
       };
       input.addEventListener("keydown", (e) => { if (e.key === "Enter") save(); });
       input.addEventListener("blur", save);
+    }));
+
+  // Cancel a student's "request to leave" without removing them - clears the
+  // leaveRequested flag, so the subject-card badge and the notification bucket
+  // clear too. Owner update is already allowed by firestore.rules.
+  list.querySelectorAll("[data-dismiss-leave]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      b.disabled = true;
+      try {
+        await updateDoc(doc(db, "enrollments", b.dataset.dismissLeave), { leaveRequested: false });
+      } catch (err) {
+        alert("Couldn't cancel the leave request: " + err.message);
+        b.disabled = false;
+        return;
+      }
+      openEnrolled(onlySectionId);
+      refreshNotifications();
     }));
 
   list.querySelectorAll("[data-remove-enrollment]").forEach((b) =>
@@ -3828,7 +3846,21 @@ el("back-to-subject").addEventListener("click", () => show("view-subject"));
 el("back-to-section").addEventListener("click", () => show("view-section"));
 el("back-to-section-from-records").addEventListener("click", () => show("view-section"));
 el("sign-out").addEventListener("click", signOutUser);
+el("refresh-app").addEventListener("click", () => location.reload());
 wireOpenInChromeButtons(el("assignment-context"));
+
+// "View as student" - opens the student's read-only page inside an in-app
+// modal iframe (same origin, so it shares this teacher's Firebase auth)
+// instead of a separate browser window, so the teacher never leaves the app.
+function openStudentView(url, label) {
+  el("viewas-title").textContent = label ? `Viewing as: ${label}` : "Student view";
+  el("viewas-frame").src = url;
+  el("view-as-modal").classList.remove("hidden");
+}
+el("viewas-close").addEventListener("click", () => {
+  el("view-as-modal").classList.add("hidden");
+  el("viewas-frame").src = "about:blank"; // stop the iframe / free the session view
+});
 
 // ---------- settings (Gemini key + EmailJS config, kept in localStorage only) ----------
 el("settings-form").addEventListener("submit", (e) => {
@@ -4075,7 +4107,7 @@ function renderOverviewStudents(studentRows) {
       const url = `student.html?asStudentUID=${encodeURIComponent(b.dataset.viewAs)}` +
         `&asStudentEmail=${encodeURIComponent(b.dataset.vemail)}` +
         `&asStudentName=${encodeURIComponent(b.dataset.vname)}`;
-      window.open(url, "_blank", "noopener");
+      openStudentView(url, b.dataset.vname || b.dataset.vemail);
     }));
 }
 
