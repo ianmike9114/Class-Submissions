@@ -46,7 +46,12 @@ export function initGoogleSignIn(buttonElementId, onSignInError) {
   });
 }
 
+// Set when the user deliberately signs out (the Sign out button), so guardPage
+// below can tell an intentional sign-out apart from a transient auth drop.
+let intentionalSignOut = false;
+
 export function signOutUser() {
+  intentionalSignOut = true;
   return signOut(auth);
 }
 
@@ -107,9 +112,19 @@ export async function isTeacherEmail(email) {
 // Call on any page that requires a signed-in user. Redirects to the correct
 // dashboard if the user is on the wrong page, or back to index if signed out.
 export function guardPage(expectedRole) {
+  // Firebase's onAuthStateChanged listener stays live for the whole page life,
+  // and it emits a transient `null` during token refresh or on a flaky
+  // connection. The old code redirected to index.html on ANY null, so a brief
+  // network drop mid-work bounced the user to the login screen (then
+  // browserLocalPersistence signed them straight back in on the next load -
+  // the "always auto-login on refresh" complaint). Only redirect on the very
+  // first emission (genuinely signed out on load) or a deliberate Sign out;
+  // ignore later transient nulls and let Firebase restore the session.
+  let hasAuthed = false;
   return new Promise((resolve) => {
     onAuthStateChanged(auth, async (user) => {
       if (!user) {
+        if (hasAuthed && !intentionalSignOut) return; // transient drop - stay put
         // Preserve any query string (e.g. a join ?code=) across the sign-in
         // hop - a bare redirect used to drop it, which was harmless while
         // sessionStorage (js/student.js) covered the same-browser case, but
@@ -120,6 +135,7 @@ export function guardPage(expectedRole) {
         resolve(null);
         return;
       }
+      hasAuthed = true;
       const role = (await isTeacherEmail(user.email)) ? "teacher" : "student";
       // Teacher/admin "View as student": a teacher opens student.html with an
       // ?asStudentUID= to preview a student's read-only page. Let them stay on

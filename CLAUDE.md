@@ -246,10 +246,14 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   handwriting) can lose noticeably more sharpness to this compression
   than at old 3-photo cap — if ever problem, student can still fall back
   to Drive-link path instead.
-- **No separate "decline leave request without removing student" action.**
-  Teacher's only response to flagged `leaveRequested` is Remove (fulfills
-  it) or leaving it alone (student can Cancel it themselves from their My
-  Classes card). Flag if this ever needs to change.
+- **Teacher can cancel a leave request without removing the student.** A
+  flagged `leaveRequested` enrollment shows a **"Keep in class"** button in
+  Enrolled Students (`js/teacher.js`'s `openEnrolled()`, `data-dismiss-leave`
+  handler) that sets `leaveRequested: false` via `updateDoc` — clearing the
+  subject-card badge and the notification bucket. No `firestore.rules` change
+  (owner update already permitted). The student can still Cancel it themselves
+  from their My Classes card, and Remove still fulfills it by deleting the
+  enrollment.
 - **Deleting subject/section/assignment requires typing its exact name.**
   `js/teacher.js`'s `confirmByTyping()` replaced plain `confirm()` on
   those three cascade deletes only (not lower-stakes "remove one

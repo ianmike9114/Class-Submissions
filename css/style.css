@@ -505,6 +505,38 @@ button.photo-thumb-btn {
   padding: 0;
 }
 
+/* In-app "View as student" modal: a full-viewport panel holding the student's
+   read-only page in an iframe, with a top bar to close it. Sits above
+   everything (same layer as the lightbox). */
+.viewas-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+}
+.viewas-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 1rem;
+  background: var(--blue, #002045);
+  color: #fff;
+  font-weight: 600;
+}
+.viewas-bar #viewas-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#viewas-frame {
+  flex: 1;
+  width: 100%;
+  border: 0;
+}
+
 /* display:block turns the table itself into the horizontal-scroll
    container - every .records-grid table scrolls in its own box on a
    narrow screen instead of forcing the whole page to scroll sideways,
