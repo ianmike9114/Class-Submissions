@@ -373,13 +373,14 @@ async function loadEverything() {
   const classesList = el("classes-list");
   classesList.innerHTML = enrollments.length
     ? enrollments.map((en) => `
-        <span class="card" style="display:inline-block; margin-right:0.5rem;">
-          ${en.subjectName} — ${en.sectionName} (<span id="my-name-${en.id}">${displayStudentName(en.studentName)}</span>)
-          <br><span class="muted" style="font-size:0.85em;">Teacher: ${en.teacherName || "—"}</span>
-          <button type="button" class="secondary" data-edit-my-name="${en.id}" data-raw="${en.studentName}" style="margin-left:0.4rem;">Edit name</button>
-          <button type="button" class="secondary" data-toggle-leave="${en.id}" data-current="${!!en.leaveRequested}" style="margin-left:0.4rem;">${en.leaveRequested ? "Cancel leave request" : "Request to leave"}</button>
-          ${en.leaveRequested ? '<span class="status-pending"> — leave requested</span>' : ""}
-        </span>`).join("")
+        <div class="card">
+          <div><strong>${en.subjectName} — ${en.sectionName}</strong> (<span id="my-name-${en.id}">${displayStudentName(en.studentName)}</span>)</div>
+          <div class="muted" style="font-size:0.85em; margin-top:0.15rem;">Teacher: ${en.teacherName || "—"}${en.leaveRequested ? ' · <span class="status-pending">leave requested</span>' : ""}</div>
+          <div style="display:flex; flex-wrap:wrap; gap:0.4rem; margin-top:0.6rem;">
+            <button type="button" class="secondary" data-edit-my-name="${en.id}" data-raw="${en.studentName}">Edit name</button>
+            <button type="button" class="secondary" data-toggle-leave="${en.id}" data-current="${!!en.leaveRequested}">${en.leaveRequested ? "Cancel leave request" : "Request to leave"}</button>
+          </div>
+        </div>`).join("")
     : (pendingEnrollments.length
         ? '<p class="muted">Your join request is waiting for teacher approval.</p>'
         : '<p class="muted">Not joined to any class yet.</p>');
