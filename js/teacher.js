@@ -388,18 +388,17 @@ async function getMasterLists() {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-// Bulk-creates one invites doc per master-list student not already
+// Creates one invites doc per given {name, email} student not already
 // enrolled in or invited to this section (by lowercased email) - same
 // doc shape as the one-at-a-time "Invite by email" form, just looped.
-async function applyMasterListToSection(listId, sectionId, sectionName, pendingInvites) {
-  const list = (await getDoc(doc(db, "masterLists", listId))).data();
+// Shared by both the master-list apply and the paste-a-list bulk box.
+async function inviteStudentsToSection(students, sectionId, sectionName, pendingInvites) {
   const enrollSnap = await getDocs(ownerScopedQuery("enrollments", where("sectionId", "==", sectionId)));
   const enrolledEmails = new Set(
     enrollSnap.docs.filter((d) => ownedByViewAs(d.data())).map((d) => (d.data().studentEmail || "").toLowerCase())
   );
   const invitedEmails = new Set(pendingInvites.map((inv) => (inv.studentEmail || "").toLowerCase()));
 
-  const students = list.students || [];
   const toInvite = students.filter((s) => s.email && !enrolledEmails.has(s.email.toLowerCase()) && !invitedEmails.has(s.email.toLowerCase()));
   const skippedEnrolled = students.filter((s) => s.email && enrolledEmails.has(s.email.toLowerCase())).length;
   const skippedInvited = students.filter((s) => s.email && invitedEmails.has(s.email.toLowerCase())).length;
@@ -415,11 +414,18 @@ async function applyMasterListToSection(listId, sectionId, sectionName, pendingI
     ownerEmail: state.viewAsEmail,
     createdAt: serverTimestamp(),
   })));
-  // Remembers this section applied this list, so future enrollees can be
-  // synced back into it automatically - see syncEnrolleesToMasterList().
-  await updateDoc(doc(db, "sections", sectionId), { masterListId: listId });
 
   return { invited: toInvite.length, skippedEnrolled, skippedInvited };
+}
+
+// Bulk-invites every student in a saved master list into this section,
+// skipping anyone already enrolled/invited, then links the list to the
+// section so future enrollees sync back into it (see syncEnrolleesToMasterList()).
+async function applyMasterListToSection(listId, sectionId, sectionName, pendingInvites) {
+  const list = (await getDoc(doc(db, "masterLists", listId))).data();
+  const result = await inviteStudentsToSection(list.students || [], sectionId, sectionName, pendingInvites);
+  await updateDoc(doc(db, "sections", sectionId), { masterListId: listId });
+  return result;
 }
 
 // Add-student panel (Show QR / Invite by email / Apply a saved student
@@ -457,6 +463,15 @@ function renderAddStudentPanel(container, sectionId, section, pendingInvites, ma
           <button type="submit">Send invite</button>
         </form>
         <p class="invite-message muted"></p>
+        <details style="margin-top:0.5rem;">
+          <summary class="muted" style="cursor:pointer;">Or paste a whole list</summary>
+          <div style="margin-top:0.5rem;">
+            <p class="muted" style="margin:0 0 0.35rem;">Paste your class list — <strong>Name, name@gmail.com</strong> per line, or name and email on separate lines, or Name/Email columns from a spreadsheet. Numbering like "1." is fine. Invites everyone at once; already-enrolled/invited students are skipped.</p>
+            <textarea class="bulk-invite-paste" rows="6" placeholder="1. Cleiya Marzan&#10;cleiyamarzan@gmail.com&#10;2. Mark Lawrence Orilla&#10;grby.marklwrence@gmail.com"></textarea>
+            <button type="button" class="bulk-invite-btn">Invite everyone pasted</button>
+            <p class="bulk-invite-message muted"></p>
+          </div>
+        </details>
         <div class="invite-pending">
           ${pendingInvites.length ? pendingInvites.map((inv) => `
             <div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.35rem;">
@@ -550,6 +565,25 @@ function renderAddStudentPanel(container, sectionId, section, pendingInvites, ma
       await deleteDoc(doc(db, "invites", b.dataset.cancelInvite));
       await refreshAddStudentPanel(sectionId, container);
     }));
+  const bulkBtn = container.querySelector(".bulk-invite-btn");
+  bulkBtn.addEventListener("click", async () => {
+    const parsed = parseMasterListPaste(container.querySelector(".bulk-invite-paste").value);
+    const msg = container.querySelector(".bulk-invite-message");
+    if (!parsed.length) {
+      msg.textContent = 'No name + email lines found. Use "Name, email" — one per line.';
+      return;
+    }
+    bulkBtn.disabled = true;
+    msg.textContent = "Inviting...";
+    try {
+      const r = await inviteStudentsToSection(parsed, sectionId, section.sectionName, pendingInvites);
+      msg.textContent = `Invited ${r.invited}. Skipped ${r.skippedEnrolled} already enrolled, ${r.skippedInvited} already invited.`;
+      await refreshAddStudentPanel(sectionId, container);
+    } catch (err) {
+      msg.textContent = "Bulk invite failed: " + err.message;
+      bulkBtn.disabled = false;
+    }
+  });
   const applyBtn = container.querySelector(".apply-master-list-btn");
   if (applyBtn) {
     applyBtn.addEventListener("click", async () => {
@@ -3220,24 +3254,35 @@ async function openMasterLists() {
 el("toggle-master-lists").addEventListener("click", openMasterLists);
 el("back-from-master-lists").addEventListener("click", () => { show("view-subjects"); loadSubjects(); });
 
-// Accepts either "Name, email" (one comma-separated line) or a
-// tab-separated paste straight from a spreadsheet's Name/Email columns -
-// matches the two ways a teacher realistically has this data on hand.
+// Accepts three shapes, matching how a teacher realistically has this data:
+//   - "Name, email" (one comma-separated line)
+//   - "Name\temail" (spreadsheet Name/Email columns pasted)
+//   - Name on one line, email on the next (numbered class lists paste this way)
+// Leading "1." / "1)" numbering is stripped off names.
 function parseMasterListPaste(text) {
   const EMAIL_RE = /[^\s,]+@[^\s,]+\.[^\s,]+/;
+  const stripNum = (s) => s.replace(/^\s*\d+[.)]\s*/, "").trim();
   const out = [];
+  let pendingName = ""; // a name-only line waiting for an email on a later line
   for (const rawLine of text.split(/\n/)) {
     const line = rawLine.trim();
     if (!line) continue;
     if (line.includes("\t")) {
       const [name, email] = line.split("\t").map((s) => s.trim());
-      if (name && email) out.push({ name: name.toUpperCase(), email: email.toLowerCase() });
+      if (name && email) out.push({ name: stripNum(name).toUpperCase(), email: email.toLowerCase() });
+      pendingName = "";
       continue;
     }
     const match = line.match(EMAIL_RE);
-    if (!match) continue;
+    if (!match) {
+      pendingName = stripNum(line);
+      continue;
+    }
     const email = match[0].toLowerCase();
-    const name = line.slice(0, match.index).replace(/,\s*$/, "").trim();
+    // Prefer a name on the same line (before the email); else use the
+    // preceding name-only line.
+    const name = stripNum(line.slice(0, match.index).replace(/,\s*$/, "").trim()) || pendingName;
+    pendingName = "";
     if (name) out.push({ name: name.toUpperCase(), email });
   }
   return out;
