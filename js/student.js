@@ -943,7 +943,13 @@ function materialBlock(a) {
     const head = embedded
       ? `<div class="material-viewer-head"><strong>${label}</strong><a href="${url}" target="_blank" rel="noopener">Open &#8599;</a>${openInChromeButton(url)}</div>`
       : `<div class="material-viewer-head"><strong>${label}</strong></div>`;
-    html += `<div class="material-viewer">${head}${body}</div>`;
+    // Explicit escape hatch under the embed - a Drive preview can render blank
+    // or dark (system dark mode) inside its cross-origin frame, which we can't
+    // restyle, so give the student a one-tap way to open the real file.
+    const foot = embedded
+      ? `<div class="muted" style="padding:0.55rem 0.9rem; border-top:1px solid var(--gray-border); font-size:0.9em;">Can't see the preview? <a href="${url}" target="_blank" rel="noopener">Open it directly &#8599;</a>${openInChromeButton(url)}</div>`
+      : "";
+    html += `<div class="material-viewer">${head}${body}${foot}</div>`;
   }
   return html;
 }
