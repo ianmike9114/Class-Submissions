@@ -226,7 +226,7 @@ service cloud.firestore {
       allow update: if canActAsOwner(resource.data)
                     || (isSignedIn()
                         && resource.data.studentUID == request.auth.uid
-                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['studentName', 'leaveRequested']));
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['studentName', 'leaveRequested', 'doneMaterials']));
       allow delete: if canActAsOwner(resource.data);
     }
   }

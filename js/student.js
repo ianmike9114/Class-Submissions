@@ -1,7 +1,7 @@
 import { db, ADMIN_EMAIL, isSuperAdmin } from "./firebase-config.js";
 import { guardPage, signOutUser } from "./auth.js";
 import {
-  collection, addDoc, setDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where, documentId, serverTimestamp,
+  collection, addDoc, setDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where, documentId, arrayUnion, arrayRemove, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js";
 import { runJava } from "./runner.js";
@@ -445,6 +445,7 @@ async function loadEverything() {
   list.innerHTML = '<p id="assignment-empty" class="muted">Pick an assignment from the course outline to open it.</p>';
   el("course-outline-body").innerHTML = "";
   el("course-outline").classList.add("hidden");
+  el("assignment-nav")?.classList.add("hidden"); // nothing open yet on a fresh render
   if (sectionIds.length === 0) return;
 
   // Firestore 'in' queries cap at 30 - fine for a solo class-load use case.
@@ -486,6 +487,12 @@ async function loadEverything() {
 
   const seen = getAssignmentsSeen();
 
+  // Material "done" state lives on the student's own enrollment doc
+  // (doneMaterials: assignmentId[]) - one enrollment per section, and a
+  // material belongs to one section. Already loaded above, so no extra reads.
+  const sectionToEnrollment = new Map(enrollments.map((en) => [en.sectionId, en]));
+  const doneMaterialIds = new Set(enrollments.flatMap((en) => en.doneMaterials || []));
+
   for (const [subjectName, aDocs] of assignmentsBySubject) {
     if (aDocs.length === 0) continue;
     const heading = document.createElement("h3");
@@ -509,12 +516,20 @@ async function loadEverything() {
 
       if (a.type === "material") {
         // Read-only reference material: no due date, no points, no submit
-        // form. Just the title, any instructions, and the embedded material.
+        // form. Just the title, any instructions, the embedded material, and a
+        // student-facing "mark done" toggle (personal progress, not graded).
+        const isDone = doneMaterialIds.has(aDoc.id);
         row.innerHTML = `
           <strong>${a.title}</strong> <span class="status-ai-drafted">Material</span>
+          ${isDone ? '<span class="status-published"> ✓ Done</span>' : ""}
           ${isNew ? '<span class="status-pending"> New</span>' : ""}
           ${a.instructions ? `<p>${a.instructions}</p>` : ""}
-          ${materialBlock(a)}`;
+          ${materialBlock(a)}
+          <div style="margin-top:0.6rem;">
+            <button type="button" class="${isDone ? "secondary" : ""}" data-toggle-done="${aDoc.id}" data-section="${a.sectionId}">
+              ${isDone ? "Undo" : "Mark as done"}
+            </button>
+          </div>`;
       } else if (!subDoc) {
         const instructionsFileBlock = materialBlock(a);
         const uploadFolderBlock = a.uploadFolderLink
@@ -572,6 +587,30 @@ async function loadEverything() {
           ${actionsBlock}`;
       }
       list.appendChild(row);
+
+      // Material "mark done / undo": toggles this assignment id in the
+      // student's own enrollment.doneMaterials. arrayUnion/arrayRemove keeps it
+      // atomic if two tabs race. Fails closed with a friendly message if the
+      // rules allowlist for doneMaterials isn't deployed yet.
+      const doneBtn = row.querySelector("[data-toggle-done]");
+      if (doneBtn) {
+        doneBtn.addEventListener("click", async () => {
+          if (readOnlyBlocked()) return;
+          const en = sectionToEnrollment.get(doneBtn.dataset.section);
+          if (!en) return;
+          const markingDone = !doneMaterialIds.has(aDoc.id);
+          doneBtn.disabled = true;
+          try {
+            await updateDoc(doc(db, "enrollments", en.id), {
+              doneMaterials: markingDone ? arrayUnion(aDoc.id) : arrayRemove(aDoc.id),
+            });
+            loadEverything();
+          } catch (err) {
+            alert("Couldn't save that just yet — please try again in a moment.");
+            doneBtn.disabled = false;
+          }
+        });
+      }
 
       // Graded-work redo request / cancel (published cards only). Flag-only
       // write - firestore.rules lets a student toggle just resubmitRequested
@@ -697,7 +736,7 @@ async function loadEverything() {
     (Array.isArray(sd.data().topics) ? sd.data().topics : []).forEach((t) => { if (!arr.includes(t)) arr.push(t); });
   }
 
-  renderOutline(assignmentsBySubject, subDocsByAssignment, topicOrderBySubject);
+  renderOutline(assignmentsBySubject, subDocsByAssignment, topicOrderBySubject, doneMaterialIds);
   attachSubmitHandlers();
   highlightWithin(el("assignments-list"));
   filterAssignments();
@@ -707,11 +746,12 @@ async function loadEverything() {
 // bar per subject (assignments the student has already submitted / total).
 // Built entirely from data loadEverything() already fetched - no extra
 // Firestore reads. Each leaf jumps to (and briefly highlights) its card.
-function renderOutline(assignmentsBySubject, subDocsByAssignment, topicOrderBySubject) {
+function renderOutline(assignmentsBySubject, subDocsByAssignment, topicOrderBySubject, doneMaterialIds = new Set()) {
   const body = el("course-outline-body");
   const outline = el("course-outline");
   let html = "";
   let anyAssignments = false;
+  navOrder = []; // rebuilt in outline display order; drives Prev/Next
 
   for (const [subjectName, aDocs] of assignmentsBySubject) {
     if (aDocs.length === 0) continue;
@@ -723,6 +763,12 @@ function renderOutline(assignmentsBySubject, subDocsByAssignment, topicOrderBySu
     const gradable = aDocs.filter((d) => d.data().type !== "material");
     const done = gradable.filter((d) => subDocsByAssignment.get(d.id)).length;
     const pct = gradable.length ? Math.round((done / gradable.length) * 100) : 0;
+
+    // Materials aren't graded, but the student can mark them done - show that
+    // progress separately (the "2/2" in the reference design).
+    const materialDocs = aDocs.filter((d) => d.data().type === "material");
+    const materialsDone = materialDocs.filter((d) => doneMaterialIds.has(d.id)).length;
+    const materialsLabel = materialDocs.length ? ` · Materials ${materialsDone}/${materialDocs.length}` : "";
 
     // Group this subject's assignments by lesson/topic.
     const byLesson = new Map();
@@ -739,7 +785,7 @@ function renderOutline(assignmentsBySubject, subDocsByAssignment, topicOrderBySu
     for (const l of byLesson.keys()) if (!orderedLessons.includes(l)) orderedLessons.push(l);
 
     html += `<div class="outline-subject">
-      <div class="outline-subject-head"><strong>${esc(subjectName)}</strong><span class="muted">${done}/${gradable.length}</span></div>
+      <div class="outline-subject-head"><strong>${esc(subjectName)}</strong><span class="muted">${done}/${gradable.length}${materialsLabel}</span></div>
       <div class="outline-progress"><div class="outline-progress-bar" style="width:${pct}%"></div></div>`;
     for (const lesson of orderedLessons) {
       const docs = byLesson.get(lesson);
@@ -749,8 +795,13 @@ function renderOutline(assignmentsBySubject, subDocsByAssignment, topicOrderBySu
         html += `<div class="outline-lesson-head muted">${esc(lesson)}</div>`;
       }
       for (const d of docs) {
-        const submitted = !!subDocsByAssignment.get(d.id);
-        html += `<button type="button" class="outline-item" data-jump="${d.id}">${esc(d.data().title)}${submitted ? ' <span class="outline-item-status">✓</span>' : ""}</button>`;
+        // A leaf is "✓" when the student submitted it (assignment) or marked it
+        // done (material) - so materials get the same completion tick.
+        const complete = d.data().type === "material"
+          ? doneMaterialIds.has(d.id)
+          : !!subDocsByAssignment.get(d.id);
+        navOrder.push({ id: d.id, subject: subjectName });
+        html += `<button type="button" class="outline-item" data-jump="${d.id}">${esc(d.data().title)}${complete ? ' <span class="outline-item-status">✓</span>' : ""}</button>`;
       }
     }
     html += `</div>`;
@@ -776,6 +827,34 @@ el("course-outline").addEventListener("click", (e) => {
   openAssignment(btn.dataset.jump);
 });
 
+// Flat list of {id, subject} in outline display order, rebuilt by
+// renderOutline(). Drives the Prev/Next stepper, which steps within the
+// current subject.
+let navOrder = [];
+
+// Prev/Next bar for the open item, scoped to its subject so "x of N" is
+// meaningful. Re-rendered on every openAssignment(); onclick (not
+// addEventListener) so handlers never stack across renders.
+function renderAssignmentNav(assignmentId) {
+  const nav = el("assignment-nav");
+  if (!nav) return;
+  const idx = navOrder.findIndex((it) => it.id === assignmentId);
+  if (idx === -1) { nav.classList.add("hidden"); nav.innerHTML = ""; return; }
+  const subject = navOrder[idx].subject;
+  const siblings = navOrder.filter((it) => it.subject === subject);
+  const pos = siblings.findIndex((it) => it.id === assignmentId);
+  const prev = siblings[pos - 1];
+  const next = siblings[pos + 1];
+  nav.classList.remove("hidden");
+  nav.style.cssText = "display:flex; align-items:center; justify-content:space-between; gap:0.5rem; margin-top:0.75rem;";
+  nav.innerHTML = `
+    <button type="button" class="secondary" data-nav-prev ${prev ? "" : "disabled"}>&#8249; Prev</button>
+    <span class="muted">${pos + 1} of ${siblings.length}</span>
+    <button type="button" class="secondary" data-nav-next ${next ? "" : "disabled"}>Next &#8250;</button>`;
+  nav.querySelector("[data-nav-prev]").onclick = prev ? () => openAssignment(prev.id) : null;
+  nav.querySelector("[data-nav-next]").onclick = next ? () => openAssignment(next.id) : null;
+}
+
 // Reveal only the chosen assignment's card, hide the rest and the
 // empty-state prompt, and mark its outline item active.
 function openAssignment(assignmentId) {
@@ -797,6 +876,7 @@ function openAssignment(assignmentId) {
   if (window.matchMedia("(max-width: 640px)").matches) {
     el("course-outline").open = false;
   }
+  renderAssignmentNav(assignmentId);
   card.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
