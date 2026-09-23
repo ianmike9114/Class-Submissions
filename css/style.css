@@ -101,7 +101,7 @@ h1, h2, h3, h4, strong, summary { font-family: var(--font-headline); }
 }
 .sidebar-foot #view-as-picker { width: 100%; margin: 0; }
 .sidebar-account { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
-.sidebar-account .hdr-account { max-width: none; }
+.sidebar-account .hdr-account { max-width: 100%; }
 
 .app-main {
   flex: 1 1 auto;
@@ -163,14 +163,28 @@ h1, h2, h3, h4, strong, summary { font-family: var(--font-headline); }
 /* Real display name next to the avatar (image-1 style). Truncates rather than
    pushing the header wider. */
 .hdr-account {
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  line-height: 1.2;
+  min-width: 0;
+  max-width: 14rem;
   color: #dbe4ff;
   font-size: 0.9rem;
   font-weight: 600;
+}
+/* Two stacked lines: friendly display name on top, the actual Gmail below
+   (always shown, so the signed-in account is unmistakable). Each line
+   truncates independently rather than widening the header. */
+.hdr-account .acct-name,
+.hdr-account .acct-mail {
+  display: block;
+  max-width: 100%;
   white-space: nowrap;
-  max-width: 11rem;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.hdr-account .acct-mail { font-size: 0.72rem; font-weight: 500; color: #b9c6ea; }
 
 main {
   max-width: 900px;

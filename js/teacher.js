@@ -624,18 +624,14 @@ function renderAddStudentPanel(container, sectionId, section, pendingInvites, ma
     const btn = form.querySelector("button");
     btn.disabled = true;
     try {
-      await addDoc(collection(db, "invites"), {
-        studentEmail: email,
-        studentName,
-        subjectId: state.subjectId,
-        subjectName: state.subjectName,
-        sectionId,
-        sectionName: section.sectionName,
-        teacherName: state.subjectOwnerName,
-        ownerEmail: state.viewAsEmail,
-        createdAt: serverTimestamp(),
-      });
-      msg.textContent = `Invited ${studentName} — they'll join automatically once they sign in with ${email}.`;
+      // Route through the shared helper so the single form dedupes against
+      // already-enrolled AND already-invited emails, same as bulk invite -
+      // otherwise inviting the same student twice created duplicate docs.
+      const r = await inviteStudentsToSection([{ name: studentName, email }], sectionId, section.sectionName, pendingInvites);
+      if (r.invited) msg.textContent = `Invited ${studentName} — they'll join automatically once they sign in with ${email}.`;
+      else if (r.skippedInvited) msg.textContent = `${studentName} was already invited to this section.`;
+      else if (r.skippedEnrolled) msg.textContent = `${email} is already enrolled in this section.`;
+      else msg.textContent = "Nothing to invite.";
       await refreshAddStudentPanel(sectionId, container);
     } catch (err) {
       msg.textContent = "Invite failed: " + err.message;
@@ -826,7 +822,7 @@ async function getNotifications() {
   // reflect current data, then let the loadSubjects() rollups that follow reuse
   // these same fetches instead of re-scanning the account (see cachedOwnerDocs).
   invalidateReadCache();
-  const [subjectsSnap, sectionsSnap, assignSnap, pendingSnap, leaveSnap, joinSnap, redoSnap] = await Promise.all([
+  const [subjectsSnap, sectionsSnap, assignSnap, pendingSnap, leaveSnap, joinSnap, redoSnap, inviteSnap] = await Promise.all([
     cachedOwnerDocs("subjects", "subjects"),
     cachedOwnerDocs("sections", "sections"),
     cachedOwnerDocs("assignments", "assignments"),
@@ -834,6 +830,7 @@ async function getNotifications() {
     cachedOwnerDocs("enr:leave", "enrollments", where("leaveRequested", "==", true)),
     cachedOwnerDocs("enr:seen", "enrollments", where("seen", "==", false)),
     cachedOwnerDocs("subs:resubmit", "submissions", where("resubmitRequested", "==", true)),
+    cachedOwnerDocs("invites", "invites"),
   ]);
 
   const subjectNames = new Map(subjectsSnap.docs.map((d) => [d.id, d.data().name]));
@@ -939,13 +936,36 @@ async function getNotifications() {
     };
   });
 
+  // "Invited (awaiting sign-in)" - invites the teacher sent that haven't been
+  // consumed yet. Standing state like leaves/pending (clears when the invited
+  // student signs in and applyPendingInvites() deletes the doc, or the teacher
+  // Cancels it), so no seen flag - it just disappears when resolved.
+  const invitesBySection = new Map();
+  inviteSnap.forEach((d) => {
+    if (!ownedByViewAs(d.data())) return; // admin's unfiltered invites query includes every teacher's - narrow to mine/legacy
+    const data = d.data();
+    if (!invitesBySection.has(data.sectionId)) invitesBySection.set(data.sectionId, []);
+    invitesBySection.get(data.sectionId).push(data.studentName);
+  });
+  const invites = [...invitesBySection.entries()].filter(([sectionId]) => sectionAlive(sectionId)).map(([sectionId, students]) => {
+    const section = sections.get(sectionId) || {};
+    return {
+      sectionId,
+      subjectId: section.subjectId,
+      sectionName: section.sectionName || "(deleted section)",
+      subjectName: subjectNames.get(section.subjectId) || "(deleted subject)",
+      students,
+    };
+  });
+
   const totalCount =
     submissions.reduce((sum, s) => sum + s.count, 0) +
     leaves.reduce((sum, l) => sum + l.count, 0) +
     joins.reduce((sum, j) => sum + j.students.length, 0) +
-    redos.reduce((sum, r) => sum + r.count, 0);
+    redos.reduce((sum, r) => sum + r.count, 0) +
+    invites.reduce((sum, i) => sum + i.students.length, 0);
 
-  return { submissions, leaves, joins, redos, totalCount };
+  return { submissions, leaves, joins, redos, invites, totalCount };
 }
 
 async function refreshNotifications() {
@@ -989,14 +1009,14 @@ function positionDropdown(anchorEl, dropdownEl, matchWidth = false) {
 }
 
 function renderNotifDropdown() {
-  const { submissions, leaves, joins, redos = [], error } = lastNotifications;
+  const { submissions, leaves, joins, redos = [], invites = [], error } = lastNotifications;
   const dropdown = el("notif-dropdown");
 
   if (error) {
     dropdown.innerHTML = '<p class="muted" style="padding:0.5rem 0.75rem;">Couldn\'t load notifications.</p>';
     return;
   }
-  if (submissions.length === 0 && leaves.length === 0 && joins.length === 0 && redos.length === 0) {
+  if (submissions.length === 0 && leaves.length === 0 && joins.length === 0 && redos.length === 0 && invites.length === 0) {
     dropdown.innerHTML = '<p class="muted" style="padding:0.5rem 0.75rem;">You\'re all caught up.</p>';
     return;
   }
@@ -1021,12 +1041,20 @@ function renderNotifDropdown() {
     <button class="notif-item" data-goto-assignment="${r.subjectId}|${r.sectionId}|${r.assignmentId}">
       ${r.title} <span class="muted">(${r.subjectName} &rsaquo; ${r.sectionName})</span> — ${r.count} redo request${r.count > 1 ? "s" : ""}
     </button>`).join("");
+  const inviteRows = invites.map((i) => {
+    const names = i.students.map((n) => displayStudentName(n)).join(", ");
+    return `
+    <button class="notif-item" data-goto-invite="${i.subjectId}|${i.sectionId}">
+      ${names} — awaiting sign-in <span class="muted">(${i.subjectName} &rsaquo; ${i.sectionName})</span>
+    </button>`;
+  }).join("");
 
   dropdown.innerHTML =
     (joins.length ? `<div class="notif-group-label">Join requests</div>${joinRows}` : "") +
     (redos.length ? `<div class="notif-group-label">Redo requests</div>${redoRows}` : "") +
     (submissions.length ? `<div class="notif-group-label">Pending submissions</div>${submissionRows}` : "") +
-    (leaves.length ? `<div class="notif-group-label">Leave requests</div>${leaveRows}` : "");
+    (leaves.length ? `<div class="notif-group-label">Leave requests</div>${leaveRows}` : "") +
+    (invites.length ? `<div class="notif-group-label">Invited (awaiting sign-in)</div>${inviteRows}` : "");
 
   dropdown.querySelectorAll("[data-goto-assignment]").forEach((b) =>
     b.addEventListener("click", () => {
@@ -1047,6 +1075,11 @@ function renderNotifDropdown() {
       // it in Enrolled Students (approve sets seen:true then).
       const seenIds = (j?.students || []).filter((s) => s.status !== "pending").map((s) => s.enrollmentId);
       goToNewJoins(subjectId, sectionId, seenIds);
+    }));
+  dropdown.querySelectorAll("[data-goto-invite]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const [subjectId, sectionId] = b.dataset.gotoInvite.split("|");
+      goToInvite(subjectId, sectionId);
     }));
 }
 
@@ -1079,6 +1112,16 @@ async function goToLeaveRequests(subjectId, sectionId) {
   await openSubject(subjectId);
   await openSection(sectionId);
   await openEnrolled(sectionId);
+}
+
+// Opening the section renders the Add-student panel with the pending-invite
+// list (each with a Cancel button), so this lands right where the teacher can
+// act on outstanding invites. No seen flag - an invite clears from the bell on
+// its own once it's consumed (student signs in) or canceled.
+async function goToInvite(subjectId, sectionId) {
+  closeNotifDropdown();
+  await openSubject(subjectId);
+  await openSection(sectionId);
 }
 
 // Names are already visible right on the dropdown row (unlike pending
@@ -4099,6 +4142,7 @@ async function openOverview(force) {
 
 el("go-overview").addEventListener("click", () => openOverview(false));
 el("overview-refresh").addEventListener("click", () => openOverview(true));
+el("subjects-refresh").addEventListener("click", () => loadSubjects());
 el("back-from-overview").addEventListener("click", () => { show("view-subjects"); loadSubjects(); });
 el("overview-student-search").addEventListener("input", () => {
   if (overviewCache) renderOverviewStudents(overviewCache.studentRows);
@@ -4171,7 +4215,13 @@ guardPage("teacher").then(async (user) => {
     em.textContent = (user.email[0] || "?").toUpperCase();
   }
   em.title = user.email;
-  el("account-name").textContent = user.displayName || user.email;
+  // Always surface the actual Gmail (not just the Google display name) so the
+  // signed-in account is unmistakable; full email also on hover.
+  const tAcct = el("account-name");
+  tAcct.title = user.email;
+  tAcct.innerHTML = user.displayName
+    ? `<span class="acct-name">${escAttr(user.displayName)}</span><span class="acct-mail">${escAttr(user.email)}</span>`
+    : `<span class="acct-mail">${escAttr(user.email)}</span>`;
   const isAdmin = isSuperAdmin(user.email);
   // Small role pill next to the account circle - same page serves both
   // regular teachers and the super admin, so it's otherwise not obvious

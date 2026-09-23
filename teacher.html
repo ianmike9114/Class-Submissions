@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=32" />
+  <link rel="stylesheet" href="css/style.css?v=33" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="theme-color" content="#002045" />
   <link rel="apple-touch-icon" href="/icons/icon-192.png" />
@@ -156,6 +156,10 @@
 
     <!-- SUBJECTS -->
     <section id="view-subjects">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:0.75rem; flex-wrap:wrap; margin-bottom:0.75rem;">
+        <h2 style="margin-bottom:0;">My Classes</h2>
+        <button class="secondary" id="subjects-refresh" title="Reload your subjects">&#8635; Refresh</button>
+      </div>
       <details class="card">
         <summary><strong>Add subject</strong></summary>
         <form id="add-subject-form" style="margin-top:0.75rem;">
@@ -453,7 +457,7 @@
     <button type="button" id="photo-lightbox-close" aria-label="Close preview">&times;</button>
   </div>
 
-  <script type="module" src="js/teacher.js?v=73"></script>
+  <script type="module" src="js/teacher.js?v=75"></script>
 
   <!-- PWA: register the service worker (see sw.js). Failure swallowed. -->
   <script>
