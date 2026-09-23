@@ -33,10 +33,15 @@ function showViewAsBanner() {
   b.className = "view-as-bar";
   const who = esc(viewCtx.name || viewCtx.email || viewCtx.uid);
   b.innerHTML = `&#128065; <strong>Viewing as ${who}</strong>` +
-    `${viewCtx.email ? ` (${esc(viewCtx.email)})` : ""} — read-only preview. Submitting, joining, and editing are disabled.`;
+    `${viewCtx.email ? ` (${esc(viewCtx.email)})` : ""} — read-only preview. Submitting, joining, and editing are disabled. ` +
+    `<button type="button" class="secondary" id="view-as-exit" style="margin-left:0.5rem;">&larr; Back to dashboard</button>`;
   // Sticky at the very top of the page so "who am I viewing" is always on
   // screen, not scrolled away with the first card.
   document.body.insertBefore(b, document.body.firstChild);
+  // The teacher/admin is still signed in as themselves; teacher.html's
+  // guardPage("teacher") restores their own dashboard.
+  const exit = document.getElementById("view-as-exit");
+  if (exit) exit.addEventListener("click", () => { location.href = "teacher.html"; });
 }
 
 // Names arrive with inconsistent casing depending on source (roster
@@ -1277,6 +1282,7 @@ function attachSubmitHandlers() {
 }
 
 el("sign-out").addEventListener("click", signOutUser);
+el("student-refresh").addEventListener("click", () => loadEverything());
 wireOpenInChromeButtons(el("assignments-list"));
 
 // ---------- init ----------
@@ -1317,7 +1323,13 @@ guardPage("student").then(async (user) => {
     av.textContent = (user.email[0] || "?").toUpperCase();
   }
   av.title = user.email;
-  el("student-email").textContent = user.displayName || user.email;
+  // Always surface the actual Gmail (not just the Google display name) so the
+  // signed-in account is unmistakable; full email also on hover.
+  const stAcct = el("student-email");
+  stAcct.title = user.email;
+  stAcct.innerHTML = user.displayName
+    ? `<span class="acct-name">${esc(user.displayName)}</span><span class="acct-mail">${esc(user.email)}</span>`
+    : `<span class="acct-mail">${esc(user.email)}</span>`;
 
   // Read-only preview of a specific student (see viewCtx notes up top).
   // Super admin sees the student's whole cross-teacher page; a regular teacher
