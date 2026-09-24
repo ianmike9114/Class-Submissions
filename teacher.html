@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=32" />
+  <link rel="stylesheet" href="css/style.css?v=33" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="theme-color" content="#002045" />
   <link rel="apple-touch-icon" href="/icons/icon-192.png" />
@@ -60,6 +60,7 @@
           <div id="global-search-results" class="notif-dropdown hidden"></div>
         </div>
         <div class="topbar-actions">
+          <button class="secondary" id="refresh-data" title="Reload the current view with fresh data">&#8635;</button>
           <div style="position:relative; display:inline-block;">
             <button class="secondary" id="notif-bell">&#128276;<span id="notif-count" class="notif-badge hidden">0</span></button>
             <div id="notif-dropdown" class="notif-dropdown hidden"></div>
@@ -453,7 +454,7 @@
     <button type="button" id="photo-lightbox-close" aria-label="Close preview">&times;</button>
   </div>
 
-  <script type="module" src="js/teacher.js?v=73"></script>
+  <script type="module" src="js/teacher.js?v=74"></script>
 
   <!-- PWA: register the service worker (see sw.js). Failure swallowed. -->
   <script>

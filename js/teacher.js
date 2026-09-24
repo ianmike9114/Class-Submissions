@@ -1500,11 +1500,16 @@ async function loadSections() {
   // subjectId-only query returned permission-denied for granted teachers and
   // their sections silently never appeared. Same fix as subjects/submissions/
   // enrollments; sections had been missed. Admin path stays unfiltered.
-  const q = ownerScopedQuery("sections", where("subjectId", "==", state.subjectId));
-  const [snap, counts, leaveCounts] = await Promise.all([
-    getDocs(q), getPendingCounts(), getLeaveRequestCounts(),
-  ]);
   const list = el("sections-list");
+  list.innerHTML = '<p class="muted">Loading sections…</p>';
+  // Render the section list off the sections query ALONE, then fill the
+  // pending/leave badges in asynchronously. Previously this awaited the two
+  // account-wide count rollups (all assignments + all pending submissions +
+  // leave enrollments) before drawing a single section, so entering a subject
+  // sat on a blank screen for the whole round-trip - worst on mobile/LTE. The
+  // badges are a non-essential nicety, so they must never gate the list.
+  const q = ownerScopedQuery("sections", where("subjectId", "==", state.subjectId));
+  const snap = await getDocs(q);
   list.innerHTML = "";
   const sectionNames = new Map(); // id -> name, for the delete-confirm prompt below
   snap.forEach((d) => {
@@ -1515,8 +1520,8 @@ async function loadSections() {
     row.innerHTML = `
       <strong id="section-name-${d.id}">${s.sectionName}</strong>
       <span class="muted"> — join code: <code>${s.joinCode}</code></span>
-      ${pendingBadge(counts.bySection.get(d.id))}
-      ${leaveBadge(leaveCounts.bySection.get(d.id))}
+      <span data-pending-badge="${d.id}"></span>
+      <span data-leave-badge="${d.id}"></span>
       <div id="section-edit-${d.id}"></div>
       <div style="margin-top:0.5rem;">
         <button data-open="${d.id}">Open</button>
@@ -1525,6 +1530,18 @@ async function loadSections() {
       </div>`;
     list.appendChild(row);
   });
+  // Badges: best-effort, drawn once the rollups resolve. A failure only leaves
+  // the badges off - the section list itself is already on screen.
+  Promise.all([getPendingCounts(), getLeaveRequestCounts()])
+    .then(([counts, leaveCounts]) => {
+      snap.forEach((d) => {
+        const p = list.querySelector(`[data-pending-badge="${d.id}"]`);
+        if (p) p.innerHTML = pendingBadge(counts.bySection.get(d.id));
+        const lv = list.querySelector(`[data-leave-badge="${d.id}"]`);
+        if (lv) lv.innerHTML = leaveBadge(leaveCounts.bySection.get(d.id));
+      });
+    })
+    .catch((err) => console.error("section badge rollup failed (badges only):", err));
   list.querySelectorAll("[data-open]").forEach((b) =>
     b.addEventListener("click", () => openSection(b.dataset.open)));
   list.querySelectorAll("[data-edit-section]").forEach((b) =>
@@ -3812,6 +3829,26 @@ async function restoreNavState() {
   }
 }
 el("go-home").addEventListener("click", () => { show("view-subjects"); loadSubjects(); });
+
+// In-app refresh: no real-time listeners in this app (see CLAUDE.md), so lists
+// go stale after a student submits/joins. Bust the short read cache and replay
+// whatever view is currently open (restoreNavState reads the saved nav state),
+// so the teacher gets fresh data without a full page reload and stays put.
+el("refresh-data").addEventListener("click", async () => {
+  const btn = el("refresh-data");
+  btn.disabled = true;
+  btn.classList.add("spinning");
+  try {
+    invalidateReadCache();
+    await refreshNotifications();
+    await restoreNavState();
+  } catch (err) {
+    console.error("Refresh failed:", err);
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove("spinning");
+  }
+});
 el("toggle-settings").addEventListener("click", () => show("settings-panel"));
 el("toggle-code-gen").addEventListener("click", () => show("view-code-gen"));
 
