@@ -828,3 +828,8 @@ details.card summary::marker { color: var(--blue); }
      every topic-action control a 44px min in both dimensions. */
   .topic-actions button { min-width: 44px; }
 }
+
+/* Refresh button spin: while a manual refresh is in flight, spin the ↻ icon
+   so the tap has visible feedback (the button is icon-only, no text to swap). */
+@keyframes refresh-spin { to { transform: rotate(360deg); } }
+#refresh-data.spinning { animation: refresh-spin 0.7s linear infinite; }
