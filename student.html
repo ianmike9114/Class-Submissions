@@ -32,13 +32,19 @@
       <span class="status-ai-drafted">Student</span>
       <span id="student-avatar" class="hdr-avatar" title=""></span>
       <span id="student-email" class="hdr-account"></span>
+      <button class="secondary" id="refresh-data" title="Reload your classes and assignments">&#8635; Refresh</button>
       <button class="secondary hidden" id="install-app">&#8681; Install app</button>
       <button class="secondary" id="sign-out">Sign out</button>
     </div>
   </header>
 
   <main>
-    <div class="card" id="join-card">
+    <!-- Manual "Join a class" box hidden by default: students found typing a
+         code confusing. It's revealed only when a QR/deep-link ?code= is being
+         consumed (js/student.js's applyPendingJoinCode), so scan-to-join and its
+         name-picker/status message still work; teacher email invites auto-join
+         with no UI at all. -->
+    <div class="card hidden" id="join-card">
       <h2>Join a class</h2>
       <form id="join-form">
         <label>Join code (given by your teacher)</label>
@@ -77,7 +83,7 @@
     </div>
   </main>
 
-  <script type="module" src="js/student.js?v=42"></script>
+  <script type="module" src="js/student.js?v=43"></script>
 
   <!-- PWA: register the service worker (see sw.js). Failure swallowed. -->
   <script>
