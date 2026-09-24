@@ -61,6 +61,10 @@ function applyPendingJoinCode() {
   if (!code) return;
   sessionStorage.removeItem("pendingJoinCode");
   history.replaceState(null, "", location.pathname);
+  // The join card is hidden for normal use (manual codes confused students),
+  // but a QR/deep-link join needs it visible so the name picker and the
+  // "Request sent / waiting for approval" status message have somewhere to show.
+  el("join-card").classList.remove("hidden");
   el("join-code").value = code;
   el("join-form").requestSubmit();
 }
@@ -347,6 +351,10 @@ async function loadEverything() {
     query(collection(db, "enrollments"), where("studentUID", "==", dataUID()), ...ownerScope())
   );
   const allEnrollments = enrollSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+  // (Archived subjects are hidden below via getArchivedSectionIds — resolved by
+  // section rather than the enrollment's cached subjectId so legacy enrollments
+  // are caught too.)
   // Join-approval gate: a "pending" enrollment isn't live yet - the teacher
   // hasn't approved it. Only approved enrollments (or older ones with no
   // status field at all) unlock the class's assignments. Pending ones show in
@@ -1277,6 +1285,26 @@ function attachSubmitHandlers() {
 }
 
 el("sign-out").addEventListener("click", signOutUser);
+
+// In-app refresh: this page has no real-time listeners (see CLAUDE.md), so a
+// student who's just been approved, or whose grade was just published, would
+// otherwise have to reload the whole page. This re-runs the same data load
+// instead - cheaper than a full reload, and it works while signed in.
+el("refresh-data").addEventListener("click", async () => {
+  const btn = el("refresh-data");
+  const original = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = "&#8635; Refreshing...";
+  try {
+    await loadEverything();
+  } catch (err) {
+    showConnectionError(err);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = original;
+  }
+});
+
 wireOpenInChromeButtons(el("assignments-list"));
 
 // ---------- init ----------
