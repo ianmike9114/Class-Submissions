@@ -59,6 +59,19 @@ service cloud.firestore {
       allow update, delete: if isSuperAdmin();
     }
 
+    // ---------- settings (per-teacher "current term" marker) ----------
+    // Doc id is the owning teacher's email; holds only { currentSchoolYear,
+    // currentTerm } (no PII). A single-doc `get` is open to any signed-in user
+    // because a student must read their own teacher's current-term marker to
+    // hide finished-term classes (see js/student.js getHiddenSectionIds). Only
+    // the owning teacher (or a super admin) may write their own settings doc.
+    match /settings/{ownerEmail} {
+      allow get: if isSignedIn();
+      allow list: if isSuperAdmin();
+      allow create, update, delete: if isSuperAdmin()
+        || (isGrantedTeacher() && request.auth.token.email == ownerEmail);
+    }
+
     // ---------- subjects ----------
     match /subjects/{subjectId} {
       // get: single-doc lookups only - a student resolving a subject after

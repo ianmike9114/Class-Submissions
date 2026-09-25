@@ -87,6 +87,18 @@ function ownerScopedQuery(collectionName, ...wheres) {
 const READ_CACHE_TTL_MS = 3000;
 let readCache = new Map(); // key -> { t, promise }
 function invalidateReadCache() { readCache = new Map(); }
+
+// Reject a promise if it doesn't settle within `ms`. Firestore's SDK retries a
+// failed read indefinitely with no error, so a read on a dead connection can
+// hang forever; racing it against a timeout lets callers show a retry UI
+// instead of a permanent spinner. The underlying request isn't cancelled (the
+// SDK has no cancel), it's just no longer awaited.
+function withTimeout(promise, ms, message = "Timed out") {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms)),
+  ]);
+}
 function cachedOwnerDocs(key, collectionName, ...wheres) {
   // Scope the key to who we're viewing as: admin "view as" swaps whose data
   // ownerScopedQuery returns, and must never serve another teacher's cache.
@@ -1250,6 +1262,34 @@ function renderNotRespondingOverview(data) {
     </div>`).join("");
 }
 
+// The teacher's chosen "current term" lives in settings/{ownerEmail} as
+// { currentSchoolYear, currentTerm }. Read best-effort: a missing doc or a read
+// error yields null, and callers then show ALL terms (never hide by surprise).
+// Needs the settings rules deployed; until then the get simply returns null and
+// the grid behaves exactly as before.
+async function getCurrentTermSetting() {
+  try {
+    const snap = await getDoc(doc(db, "settings", state.viewAsEmail));
+    return snap.exists() ? snap.data() : null;
+  } catch (err) {
+    console.error("current-term setting read failed (showing all terms):", err);
+    return null;
+  }
+}
+
+// Reflect the current setting in the header label + prefill the setter inputs.
+function syncCurrentTermUI(setting) {
+  const label = el("current-term-label");
+  if (!label) return;
+  if (setting && setting.currentSchoolYear && setting.currentTerm) {
+    label.textContent = `SY ${setting.currentSchoolYear} · Term ${setting.currentTerm}`;
+    if (!el("current-term-year").value) el("current-term-year").value = setting.currentSchoolYear;
+    el("current-term-term").value = String(setting.currentTerm);
+  } else {
+    label.textContent = "not set (showing all terms)";
+  }
+}
+
 async function loadSubjects() {
   // Every path back to the Home view calls this - reset the global search
   // box here too, so a stale query/result list from before navigating away
@@ -1259,6 +1299,14 @@ async function loadSubjects() {
   el("global-search-results").classList.add("hidden");
   searchRequestSeq++; // invalidate any in-flight search so it can't repopulate this after the fact
   const showArchived = el("toggle-archived").checked;
+  // Current-term filter: the teacher explicitly sets which SY+term is active,
+  // and the grid then defaults to showing only that term. Best-effort - with no
+  // setting (or "Showing all terms" picked) we fall back to showing every term,
+  // so nothing is ever hidden by surprise (backward-compatible on the live app).
+  const termSetting = await getCurrentTermSetting();
+  syncCurrentTermUI(termSetting);
+  const filterByTerm = el("term-filter").value === "current"
+    && !!(termSetting && termSetting.currentSchoolYear && termSetting.currentTerm);
   // The subject list must render even if the (non-essential) pending / leave
   // count badges can't load. Fetch subjects on their own; make the two badge
   // rollups best-effort - a denied or errored rollup query only drops the
@@ -1280,6 +1328,9 @@ async function loadSubjects() {
     if (!ownedByViewAs(s)) return; // admin's unfiltered subjects query includes every teacher's - narrow to mine/legacy
     subjectNames.set(d.id, s.name);
     if (s.archived && !showArchived) return;
+    if (filterByTerm
+        && (String(s.schoolYear || "") !== String(termSetting.currentSchoolYear)
+            || String(s.term || "") !== String(termSetting.currentTerm))) return;
     const row = document.createElement("div");
     row.className = "card";
     row.innerHTML = `
@@ -1366,6 +1417,24 @@ el("add-subject-form").addEventListener("submit", async (e) => {
   loadSubjects();
 });
 el("toggle-archived").addEventListener("change", loadSubjects);
+el("term-filter").addEventListener("change", loadSubjects);
+el("set-current-term").addEventListener("click", async () => {
+  const currentSchoolYear = el("current-term-year").value.trim();
+  const currentTerm = el("current-term-term").value;
+  if (!currentSchoolYear) { alert("Enter the school year first (e.g. 2026-2027)."); return; }
+  try {
+    // setDoc(merge) creates or updates settings/{ownerEmail}. Requires the
+    // settings rules to be deployed; until then this write is denied and we
+    // surface a friendly message rather than silently failing.
+    await setDoc(doc(db, "settings", state.viewAsEmail),
+      { currentSchoolYear, currentTerm, ownerEmail: state.viewAsEmail }, { merge: true });
+  } catch (err) {
+    alert("Couldn't save the current term: " + err.message);
+    return;
+  }
+  el("term-filter").value = "current";
+  loadSubjects();
+});
 
 // Finds anything the teacher owns matching the typed text - subjects,
 // sections, assignments, and student activity (submissions) - from the
@@ -1509,7 +1578,24 @@ async function loadSections() {
   // sat on a blank screen for the whole round-trip - worst on mobile/LTE. The
   // badges are a non-essential nicety, so they must never gate the list.
   const q = ownerScopedQuery("sections", where("subjectId", "==", state.subjectId));
-  const snap = await getDocs(q);
+  // The sections query is the only thing gating removal of "Loading sections…".
+  // On a slow/offline phone Firestore's SDK retries indefinitely, so without a
+  // timeout this could hang forever and leave the placeholder stuck on screen
+  // (reported in the field). Race it against a timeout and, on any failure,
+  // show a Try-again button instead of a permanent spinner.
+  let snap;
+  try {
+    snap = await withTimeout(getDocs(q), 15000, "Loading sections timed out");
+  } catch (err) {
+    console.error("sections load failed:", err);
+    list.innerHTML = `<p class="muted">Couldn't load sections — check your connection.</p>`;
+    const retry = document.createElement("button");
+    retry.className = "secondary";
+    retry.textContent = "Try again";
+    retry.addEventListener("click", () => loadSections());
+    list.appendChild(retry);
+    return;
+  }
   list.innerHTML = "";
   const sectionNames = new Map(); // id -> name, for the delete-confirm prompt below
   snap.forEach((d) => {
@@ -1721,6 +1807,7 @@ async function openEnrolled(onlySectionId) {
           <button class="secondary" data-edit-enrollment="${r.id}" data-uid="${r.studentUID}" data-raw="${r.studentName}">Edit name</button>
           ${pending ? `<button data-approve-enrollment="${r.id}" title="Approve this student's join request">Approve</button>` : ""}
           ${canViewAsStudent ? `<button class="secondary" data-view-as="${r.studentUID}" data-vemail="${r.studentEmail || ""}" data-vname="${r.studentName || ""}" title="Open this student's page (read-only)">View as</button>` : ""}
+          ${r.leaveRequested && !pending ? `<button class="secondary" data-decline-leave="${r.id}" title="Keep this student in the class and clear their leave request">Keep in class</button>` : ""}
           <button class="danger icon" data-remove-enrollment="${r.id}" data-leave-requested="${!!r.leaveRequested}" title="${pending ? "Reject join request" : "Remove"}" aria-label="Remove enrollment">×</button>
         </td></tr>`; }).join("")}
       </tbody></table>`
@@ -1804,6 +1891,25 @@ async function openEnrolled(onlySectionId) {
       if (!ok) return;
       await deleteDoc(doc(db, "enrollments", b.dataset.removeEnrollment));
       alert("Removed.");
+      openEnrolled(onlySectionId);
+      refreshNotifications();
+    }));
+
+  // Decline a leave request without removing the student: clear the flag but
+  // keep the enrollment (and all their submitted work). The owner is allowed to
+  // write enrollment fields by firestore.rules (canActAsOwner), so no rules
+  // change is needed. The student can always request again from their side.
+  list.querySelectorAll("[data-decline-leave]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const ok = confirm("Keep this student in the class and clear their leave request? They stay enrolled with all their work; they can request to leave again if they want.");
+      if (!ok) return;
+      b.disabled = true;
+      try {
+        await updateDoc(doc(db, "enrollments", b.dataset.declineLeave), { leaveRequested: false });
+      } catch (err) {
+        alert("Couldn't update: " + err.message);
+        return;
+      }
       openEnrolled(onlySectionId);
       refreshNotifications();
     }));
