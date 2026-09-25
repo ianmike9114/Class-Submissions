@@ -6,7 +6,12 @@
 // calling Gemini directly from the browser (see js/gemini.js).
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyB4Xz-u22jxEgipf9tc3RuRo4VIzphJcDI",
@@ -49,7 +54,33 @@ export const GOOGLE_CLIENT_ID = "1077801155399-94fs3d8c4k1guh7h0tg77j8gg3lbthtv.
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+
+// Firestore with a durable on-device (IndexedDB) cache. Why: on a phone,
+// opening a subject waited on a fresh server round-trip every time, and on a
+// flaky/offline link the SDK retried until the load timed out (reported as
+// "Loading sections…" hanging). A persistent local cache warm-starts repeat
+// loads from disk and serves reads from cache when the network is down, instead
+// of spinning. Reads/writes are otherwise unchanged - online reads still return
+// fresh server data (and refresh the cache); this only adds a fallback + warm
+// start, so it's backward-compatible and needs no rules change.
+//
+// persistentMultipleTabManager: the app can be open in several tabs (teacher +
+// a view-as preview, etc.); the multi-tab manager shares one cache across them
+// instead of the older single-tab lock that throws "failed-precondition" when a
+// second tab opens. Guarded: private-mode / storage-blocked / an already-
+// initialized Firestore all fall back to the default in-memory cache so the app
+// still works everywhere, just without the offline warm start.
+function initDb() {
+  try {
+    return initializeFirestore(app, {
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+    });
+  } catch (err) {
+    console.warn("Firestore persistent cache unavailable; using in-memory cache:", err);
+    return getFirestore(app);
+  }
+}
+export const db = initDb();
 
 // Explicit instead of relying on the SDK's implicit default - guarantees
 // the session survives a browser restart (IndexedDB-backed) instead of
