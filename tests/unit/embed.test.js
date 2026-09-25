@@ -6,7 +6,7 @@
 // Pure, no Firebase, no DOM. openInChromeButton() reads navigator.userAgent,
 // which we stub per-case.
 
-import { describe, it, expect, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   extractDriveFileId,
   toEmbedUrl,
@@ -98,6 +98,17 @@ describe("extractFirstEmbeddableUrl", () => {
 });
 
 describe("embedBlockFor", () => {
+  // embedBlockFor's plain-link fallback calls openInChromeButton, which reads
+  // navigator.userAgent. In a real browser navigator always exists; under Node
+  // it only exists on v21+, so stub a non-Android UA to keep this deterministic
+  // across Node versions (the button is Android-only, so it stays absent here).
+  beforeEach(() => {
+    vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (Windows NT 10.0)" });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("returns an iframe for an embeddable link", () => {
     const html = embedBlockFor("https://youtu.be/VID9");
     expect(html).toContain("<iframe");
