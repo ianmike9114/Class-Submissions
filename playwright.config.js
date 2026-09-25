@@ -14,6 +14,10 @@ export default defineConfig({
   testDir: "tests/e2e",
   timeout: 30000,
   fullyParallel: true,
+  // The login smoke loads Google's third-party sign-in widget, which can throw
+  // transiently under load; retry once in CI so an external hiccup doesn't fail
+  // the build (the assertions themselves are deterministic).
+  retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "list" : [["list"]],
   use: {
     baseURL: "http://localhost:8420",

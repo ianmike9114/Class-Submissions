@@ -321,27 +321,57 @@ async function getDocsByIds(collectionName, ids) {
   return docs;
 }
 
-// Returns the set of *section* ids whose subject is archived, resolved via the
-// section doc (sectionId -> subjectId -> archived). Keyed off sectionId, not
-// the enrollment's cached subjectId: on this live system some enrollments
-// predate the subjectId field (or joined via a path that didn't cache it), so
-// keying off subjectId silently missed them. Every enrollment always has a
-// sectionId (it's half the doc id), and the section is the source of truth for
-// which subject it belongs to. Best-effort: any read error returns an empty
-// set, so a hiccup never blanks the dashboard - the class just stays visible.
-async function getArchivedSectionIds(sectionIds) {
+// Returns the set of *section* ids that should be hidden from the student,
+// resolved via the section doc (sectionId -> subject). A section is hidden when
+// its subject is archived OR its subject's (schoolYear, term) doesn't match the
+// owning teacher's "current term" setting (settings/{ownerEmail}). Keyed off
+// sectionId, not the enrollment's cached subjectId: on this live system some
+// enrollments predate the subjectId field (or joined via a path that didn't
+// cache it), so keying off subjectId silently missed them. The section is the
+// source of truth for which subject it belongs to.
+//
+// Backward-compatible / non-destructive: a teacher with no current-term setting
+// (or blank fields) hides nothing by term; the settings read is best-effort, so
+// if the rules aren't deployed yet (or the read fails) archived hiding still
+// works and no class is hidden by term. Any top-level read error returns an
+// empty set, so a hiccup never blanks the dashboard - the class stays visible.
+async function getHiddenSectionIds(sectionIds) {
   try {
     const sectionDocs = await getDocsByIds("sections", sectionIds);
     const sectionToSubject = new Map(sectionDocs.map((d) => [d.id, d.data().subjectId]));
     const subjectDocs = await getDocsByIds("subjects", [...sectionToSubject.values()]);
-    const archivedSubjects = new Set(subjectDocs.filter((d) => d.data().archived === true).map((d) => d.id));
-    const archivedSections = new Set();
-    for (const [sectionId, subjectId] of sectionToSubject) {
-      if (archivedSubjects.has(subjectId)) archivedSections.add(sectionId);
+    const subjectData = new Map(subjectDocs.map((d) => [d.id, d.data()]));
+
+    // The owning teacher's current-term settings, one per distinct owner.
+    // Isolated try/catch so a settings-read failure never disables archived
+    // hiding (which must keep working with or without the settings rules).
+    const ownerEmails = [...new Set([...subjectData.values()].map((s) => s.ownerEmail).filter(Boolean))];
+    const settingByOwner = new Map();
+    try {
+      const settingDocs = await getDocsByIds("settings", ownerEmails);
+      settingDocs.forEach((d) => settingByOwner.set(d.id, d.data()));
+    } catch (err) {
+      console.error("current-term settings read failed (no term hiding):", err);
     }
-    return archivedSections;
+
+    const hiddenSubjects = new Set();
+    for (const [subjectId, s] of subjectData) {
+      if (s.archived === true) { hiddenSubjects.add(subjectId); continue; }
+      const setting = settingByOwner.get(s.ownerEmail);
+      if (setting && setting.currentSchoolYear && setting.currentTerm) {
+        const sameTerm = String(s.schoolYear || "") === String(setting.currentSchoolYear)
+          && String(s.term || "") === String(setting.currentTerm);
+        if (!sameTerm) hiddenSubjects.add(subjectId);
+      }
+    }
+
+    const hiddenSections = new Set();
+    for (const [sectionId, subjectId] of sectionToSubject) {
+      if (hiddenSubjects.has(subjectId)) hiddenSections.add(sectionId);
+    }
+    return hiddenSections;
   } catch (err) {
-    console.error("archived-section lookup failed (showing all classes):", err);
+    console.error("hidden-section lookup failed (showing all classes):", err);
     return new Set();
   }
 }
@@ -352,7 +382,7 @@ async function loadEverything() {
   );
   const allEnrollments = enrollSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-  // (Archived subjects are hidden below via getArchivedSectionIds — resolved by
+  // (Archived + non-current-term subjects are hidden below via getHiddenSectionIds — resolved by
   // section rather than the enrollment's cached subjectId so legacy enrollments
   // are caught too.)
   // Join-approval gate: a "pending" enrollment isn't live yet - the teacher
@@ -362,20 +392,20 @@ async function loadEverything() {
   const pendingEnrollments = allEnrollments.filter((en) => en.status === "pending");
   let enrollments = allEnrollments.filter((en) => en.status !== "pending");
 
-  // Hide archived subjects from the student entirely - a teacher archives
-  // last term's subject to clean up for the new term, and the student
-  // shouldn't keep seeing that class or its work. Resolved by section
-  // (sectionId -> subject -> archived) rather than the enrollment's cached
-  // subjectId, which some legacy enrollments don't have. Filtering both arrays
-  // here hides the class card, its assignments, and its outline group at once,
-  // since everything downstream derives from them.
-  const archivedSectionIds = await getArchivedSectionIds(
+  // Hide classes the student shouldn't keep seeing - archived subjects (a
+  // teacher archives last term's subject to clean up) AND subjects outside the
+  // owning teacher's current term (see getHiddenSectionIds). Resolved by section
+  // (sectionId -> subject) rather than the enrollment's cached subjectId, which
+  // some legacy enrollments don't have. Filtering both arrays here hides the
+  // class card, its assignments, and its outline group at once, since everything
+  // downstream derives from them.
+  const hiddenSectionIds = await getHiddenSectionIds(
     allEnrollments.map((en) => en.sectionId)
   );
-  if (archivedSectionIds.size) {
-    enrollments = enrollments.filter((en) => !archivedSectionIds.has(en.sectionId));
+  if (hiddenSectionIds.size) {
+    enrollments = enrollments.filter((en) => !hiddenSectionIds.has(en.sectionId));
     for (let i = pendingEnrollments.length - 1; i >= 0; i--) {
-      if (archivedSectionIds.has(pendingEnrollments[i].sectionId)) pendingEnrollments.splice(i, 1);
+      if (hiddenSectionIds.has(pendingEnrollments[i].sectionId)) pendingEnrollments.splice(i, 1);
     }
   }
 

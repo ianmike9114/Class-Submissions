@@ -246,10 +246,32 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   handwriting) can lose noticeably more sharpness to this compression
   than at old 3-photo cap — if ever problem, student can still fall back
   to Drive-link path instead.
-- **No separate "decline leave request without removing student" action.**
-  Teacher's only response to flagged `leaveRequested` is Remove (fulfills
-  it) or leaving it alone (student can Cancel it themselves from their My
-  Classes card). Flag if this ever needs to change.
+- **Teacher can decline a leave request without removing the student.**
+  On a flagged `leaveRequested` row in Enrolled Students, `js/teacher.js`'s
+  `openEnrolled()` renders a **"Keep in class"** button
+  (`data-decline-leave`) beside the ✕ Remove; its handler writes
+  `leaveRequested: false` on that enrollment (owner write already allowed by
+  `firestore.rules`'s `canActAsOwner`, so **no rules change**). The student
+  keeps their enrollment and all submitted work, and can request to leave
+  again. (Previously the only responses were Remove or ignore; added by
+  request.) The student's own "Cancel leave request" toggle
+  (`js/student.js`) still exists too.
+
+- **Per-teacher "current term" filter (`settings/{ownerEmail}` collection).**
+  A teacher picks the active `{ currentSchoolYear, currentTerm }` from the
+  subjects grid ("Set the current term"); it's stored in `settings/{their
+  email}`. The grid's "Showing current term / all terms" dropdown then hides
+  subjects outside that term (`js/teacher.js`'s `loadSubjects()` +
+  `getCurrentTermSetting()`), and students stop seeing prior-term classes:
+  `js/student.js`'s `getHiddenSectionIds()` (renamed from
+  `getArchivedSectionIds`) now hides sections whose subject is archived **or**
+  outside the owning teacher's current term, reading that teacher's `settings`
+  doc. **Backward-compatible:** no setting (or blank fields) hides nothing by
+  term; every read is best-effort. **`firestore.rules` adds a `settings`
+  match block** (single-doc `get` open to any signed-in user — students read
+  their teacher's marker; write owner/super-admin only) — **must `firebase
+  deploy --only firestore:rules`**, else the teacher's "Set as current" write
+  is denied and the feature stays dark (grid/students just show all terms).
 - **Deleting subject/section/assignment requires typing its exact name.**
   `js/teacher.js`'s `confirmByTyping()` replaced plain `confirm()` on
   those three cascade deletes only (not lower-stakes "remove one

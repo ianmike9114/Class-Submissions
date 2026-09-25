@@ -185,6 +185,34 @@
       <label style="display:flex; align-items:center; gap:0.4rem; font-weight:normal;">
         <input type="checkbox" id="toggle-archived" style="width:auto;" /> Show archived
       </label>
+      <div class="card" id="current-term-card" style="margin:0.6rem 0; padding:0.75rem;">
+        <div style="display:flex; flex-wrap:wrap; align-items:center; gap:0.5rem;">
+          <strong>Current term:</strong>
+          <span id="current-term-label" class="muted">not set</span>
+          <select id="term-filter" style="width:auto; margin-left:auto;">
+            <option value="current">Showing current term</option>
+            <option value="all">Showing all terms</option>
+          </select>
+        </div>
+        <details style="margin-top:0.5rem;">
+          <summary class="muted">Set the current term</summary>
+          <div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.5rem; align-items:flex-end;">
+            <div>
+              <label>School Year</label>
+              <input id="current-term-year" placeholder="e.g. 2026-2027" />
+            </div>
+            <div>
+              <label>Term</label>
+              <select id="current-term-term">
+                <option value="1">Term 1</option>
+                <option value="2">Term 2</option>
+                <option value="3">Term 3</option>
+              </select>
+            </div>
+            <button type="button" id="set-current-term">Set as current</button>
+          </div>
+        </details>
+      </div>
       <div id="subjects-list"></div>
     </section>
 
@@ -454,7 +482,7 @@
     <button type="button" id="photo-lightbox-close" aria-label="Close preview">&times;</button>
   </div>
 
-  <script type="module" src="js/teacher.js?v=74"></script>
+  <script type="module" src="js/teacher.js?v=75"></script>
 
   <!-- PWA: register the service worker (see sw.js). Failure swallowed. -->
   <script>

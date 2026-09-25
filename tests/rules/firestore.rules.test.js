@@ -241,6 +241,48 @@ describe("enrollments: self-enroll + limited self-edit", () => {
   });
 });
 
+describe("settings: per-teacher current-term marker", () => {
+  it("a teacher can write their OWN settings doc (id == their email)", async () => {
+    await assertSucceeds(
+      setDoc(doc(ctxFor("ua", TEACHER_A), "settings", TEACHER_A), {
+        currentSchoolYear: "2026-2027",
+        currentTerm: "2",
+        ownerEmail: TEACHER_A,
+      })
+    );
+  });
+  it("a teacher CANNOT write another teacher's settings doc", async () => {
+    await assertFails(
+      setDoc(doc(ctxFor("ub", TEACHER_B), "settings", TEACHER_A), {
+        currentSchoolYear: "2026-2027",
+        currentTerm: "2",
+        ownerEmail: TEACHER_A,
+      })
+    );
+  });
+  it("a non-teacher signed-in user cannot write a settings doc", async () => {
+    await assertFails(
+      setDoc(doc(ctxFor("stud", "student@x.com"), "settings", "student@x.com"), {
+        currentSchoolYear: "2026-2027",
+        currentTerm: "2",
+      })
+    );
+  });
+  it("any signed-in user can GET a teacher's settings (students read it to filter terms)", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "settings", TEACHER_A), {
+        currentSchoolYear: "2026-2027",
+        currentTerm: "2",
+        ownerEmail: TEACHER_A,
+      });
+    });
+    await assertSucceeds(getDoc(doc(ctxFor("stud", "s1@x.com"), "settings", TEACHER_A)));
+  });
+  it("an unauthenticated user cannot read settings", async () => {
+    await assertFails(getDoc(doc(anon(), "settings", TEACHER_A)));
+  });
+});
+
 describe("unauthenticated access is denied", () => {
   it("anon cannot read a subject or submission", async () => {
     await assertFails(getDoc(doc(anon(), "subjects", "subjA")));
