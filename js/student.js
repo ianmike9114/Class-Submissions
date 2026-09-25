@@ -21,6 +21,13 @@ function el(id) { return document.getElementById(id); }
 // signed-in uid so they hit the target student's rows.
 let viewCtx = null; // { uid, email, name, readOnly } when active
 function dataUID() { return viewCtx ? viewCtx.uid : currentUser.uid; }
+
+// Assignment id -> submission doc id for graded/returned work the student
+// hasn't seen yet (submission.resultSeen === false). Drives the "new result"
+// badges in the course outline; cleared per-item when the student opens that
+// assignment (openAssignment), which also writes resultSeen:true on their own
+// submission. Rebuilt on every loadEverything().
+let unseenResultSubs = new Map();
 function readOnlyBlocked() {
   if (viewCtx && viewCtx.readOnly) {
     alert("Read-only preview — you're viewing this student's page as admin. Actions are disabled.");
@@ -539,6 +546,21 @@ async function loadEverything() {
     if (!subDocsByAssignment.has(assignmentId)) subDocsByAssignment.set(assignmentId, d);
   });
 
+  // Graded/returned work the student hasn't acknowledged yet gets a "new
+  // result" badge in the outline. Absent resultSeen (older submissions, before
+  // this feature) counts as already-seen, so nothing pre-existing lights up.
+  // Skipped in a teacher's read-only preview - a preview must not imply, or
+  // clear, what the real student has seen.
+  unseenResultSubs = new Map();
+  if (!viewCtx) {
+    mySubsSnap.forEach((d) => {
+      const s = d.data();
+      if ((s.status === "published" || s.status === "returned") && s.resultSeen === false) {
+        unseenResultSubs.set(s.assignmentId, d.id);
+      }
+    });
+  }
+
   const seen = getAssignmentsSeen();
 
   // Material "done" state lives on the student's own enrollment doc
@@ -855,7 +877,12 @@ function renderOutline(assignmentsBySubject, subDocsByAssignment, topicOrderBySu
           ? doneMaterialIds.has(d.id)
           : !!subDocsByAssignment.get(d.id);
         navOrder.push({ id: d.id, subject: subjectName });
-        html += `<button type="button" class="outline-item" data-jump="${d.id}">${esc(d.data().title)}${complete ? ' <span class="outline-item-status">✓</span>' : ""}</button>`;
+        // A "new result" chip when the teacher just graded/returned this and the
+        // student hasn't opened it yet - cleared when they do (openAssignment).
+        const newResult = unseenResultSubs.has(d.id)
+          ? ' <span class="status-pending result-new-badge">🔔 new result</span>'
+          : "";
+        html += `<button type="button" class="outline-item" data-jump="${d.id}">${esc(d.data().title)}${complete ? ' <span class="outline-item-status">✓</span>' : ""}${newResult}</button>`;
       }
     }
     html += `</div>`;
@@ -863,6 +890,19 @@ function renderOutline(assignmentsBySubject, subDocsByAssignment, topicOrderBySu
 
   body.innerHTML = html;
   outline.classList.toggle("hidden", !anyAssignments);
+  updateOutlineResultBadge();
+}
+
+// Show a count chip on the "Course outline" summary so a student with a new
+// grade sees it even while the outline is collapsed (mobile). Derived from
+// unseenResultSubs; cleared as items are opened.
+function updateOutlineResultBadge() {
+  const summary = el("course-outline")?.querySelector("summary");
+  if (!summary) return;
+  const n = unseenResultSubs.size;
+  summary.innerHTML = n > 0
+    ? `Course outline <span class="status-pending">🔔 ${n} new result${n > 1 ? "s" : ""}</span>`
+    : "Course outline";
 }
 
 // Minimal HTML-escape for text interpolated into the outline markup
@@ -921,6 +961,18 @@ function openAssignment(assignmentId) {
   const body = el("course-outline-body");
   body.querySelectorAll(".outline-item.active").forEach((b) => b.classList.remove("active"));
   body.querySelector(`[data-jump="${assignmentId}"]`)?.classList.add("active");
+
+  // Opening a freshly-graded/returned assignment counts as seeing it: clear its
+  // "new result" chip and record it on the student's own submission so it stays
+  // cleared next load. Best-effort (offline-safe); never during a teacher's
+  // read-only preview - previewing a student must not wipe their real badges.
+  const unseenSubId = unseenResultSubs.get(assignmentId);
+  if (unseenSubId && !viewCtx) {
+    unseenResultSubs.delete(assignmentId);
+    body.querySelector(`[data-jump="${assignmentId}"] .result-new-badge`)?.remove();
+    updateOutlineResultBadge();
+    updateDoc(doc(db, "submissions", unseenSubId), { resultSeen: true }).catch(() => {});
+  }
   // On a phone the outline sits above the detail panel (a real collapsible
   // <details> there), so opening an assignment should take the student
   // straight to it: collapse the outline and scroll the card to the top so

@@ -175,7 +175,14 @@ service cloud.firestore {
                         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['link', 'code', 'codeOutput', 'photoPages', 'status', 'submittedAt']))
                     || (isSignedIn()
                         && resource.data.studentUID == request.auth.uid
-                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['resubmitRequested']));
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['resubmitRequested']))
+                    // A student may mark their OWN result as seen (clears the
+                    // "new result" badge on their dashboard) at any status,
+                    // including published - this flag ONLY, never the score,
+                    // status, or link. Mirrors the resubmitRequested clause.
+                    || (isSignedIn()
+                        && resource.data.studentUID == request.auth.uid
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['resultSeen']));
       // A student may retract their own submission, but only while it's
       // still pending - once published (graded), it's owner-only, same
       // as any other change to a graded submission.
