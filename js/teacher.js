@@ -1277,16 +1277,57 @@ async function getCurrentTermSetting() {
   }
 }
 
+// The site-wide term a super admin can set (settings/__global__). When present
+// it overrides every teacher's own setting for students (see js/student.js's
+// getHiddenSectionIds) and drives this grid's filter too, so the admin's own
+// view matches what students get. Best-effort: null on miss/error.
+async function getGlobalTermSetting() {
+  try {
+    const snap = await getDoc(doc(db, "settings", "__global__"));
+    return snap.exists() ? snap.data() : null;
+  } catch (err) {
+    console.error("global current-term read failed:", err);
+    return null;
+  }
+}
+
 // Reflect the current setting in the header label + prefill the setter inputs.
-function syncCurrentTermUI(setting) {
+// globalActive: the effective setting comes from the site-wide admin override,
+// so the label says so and the admin's "apply to all teachers" box is pre-ticked.
+function syncCurrentTermUI(setting, globalActive = false) {
   const label = el("current-term-label");
   if (!label) return;
+  const globalBox = el("current-term-global");
+  if (globalBox) globalBox.checked = globalActive;
   if (setting && setting.currentSchoolYear && setting.currentTerm) {
-    label.textContent = `SY ${setting.currentSchoolYear} · Term ${setting.currentTerm}`;
+    label.textContent = `SY ${setting.currentSchoolYear} · Term ${setting.currentTerm}${globalActive ? " (all teachers)" : ""}`;
     if (!el("current-term-year").value) el("current-term-year").value = setting.currentSchoolYear;
     el("current-term-term").value = String(setting.currentTerm);
   } else {
     label.textContent = "not set (showing all terms)";
+  }
+}
+
+// Make it obvious whether the term filter is actually doing anything for
+// students. When it's ON, confirm what they see and how many other-term classes
+// are hidden from them. When it's OFF but this teacher's classes span more than
+// one term, warn loudly - that's the "why do students still see finished-term
+// classes?" case (no current term set, or "all terms" chosen). One quiet term,
+// or nothing to hide, shows no hint.
+function renderTermFilterHint(filterByTerm, termSetting, termCount, hiddenByTerm) {
+  const hint = el("term-filter-hint");
+  if (!hint) return;
+  if (filterByTerm && termSetting) {
+    hint.style.cssText = "margin:0.5rem 0 0; color:#0a6b2e;";
+    hint.textContent = hiddenByTerm > 0
+      ? `✓ Students see only SY ${termSetting.currentSchoolYear} · Term ${termSetting.currentTerm}. ${hiddenByTerm} other-term class${hiddenByTerm > 1 ? "es are" : " is"} hidden from them.`
+      : `✓ Students see only SY ${termSetting.currentSchoolYear} · Term ${termSetting.currentTerm}. No other-term classes to hide.`;
+  } else if (termCount > 1) {
+    hint.style.cssText = "margin:0.5rem 0 0; padding:0.5rem 0.6rem; border-radius:6px; background:#fff3d6; color:#8a5a00;";
+    hint.textContent = `⚠ Term filter is OFF — students see ALL ${termCount} terms. Set a current term below to hide finished ones.`;
+  } else {
+    hint.style.cssText = "margin:0;";
+    hint.textContent = "";
   }
 }
 
@@ -1303,8 +1344,13 @@ async function loadSubjects() {
   // and the grid then defaults to showing only that term. Best-effort - with no
   // setting (or "Showing all terms" picked) we fall back to showing every term,
   // so nothing is ever hidden by surprise (backward-compatible on the live app).
-  const termSetting = await getCurrentTermSetting();
-  syncCurrentTermUI(termSetting);
+  // Effective setting = the site-wide admin override if one exists, else this
+  // teacher's own. The admin override is what students get (js/student.js), so
+  // the grid mirrors it here too. globalActive drives the label/checkbox.
+  const [ownSetting, globalSetting] = await Promise.all([getCurrentTermSetting(), getGlobalTermSetting()]);
+  const globalActive = !!(globalSetting && globalSetting.currentSchoolYear && globalSetting.currentTerm);
+  const termSetting = globalActive ? globalSetting : ownSetting;
+  syncCurrentTermUI(termSetting, globalActive);
   const filterByTerm = el("term-filter").value === "current"
     && !!(termSetting && termSetting.currentSchoolYear && termSetting.currentTerm);
   // The subject list must render even if the (non-essential) pending / leave
@@ -1323,14 +1369,20 @@ async function loadSubjects() {
   const list = el("subjects-list");
   list.innerHTML = "";
   const subjectNames = new Map(); // id -> name, for the delete-confirm prompt below
+  // For the term-filter hint below: how many distinct (SY·term) buckets this
+  // teacher's live (non-archived) subjects span, and how many the active filter
+  // is hiding from students right now.
+  const termsPresent = new Set();
+  let hiddenByTerm = 0;
   snap.forEach((d) => {
     const s = d.data();
     if (!ownedByViewAs(s)) return; // admin's unfiltered subjects query includes every teacher's - narrow to mine/legacy
     subjectNames.set(d.id, s.name);
+    if (!s.archived) termsPresent.add(`${s.schoolYear || "—"}·${s.term || "—"}`);
     if (s.archived && !showArchived) return;
     if (filterByTerm
         && (String(s.schoolYear || "") !== String(termSetting.currentSchoolYear)
-            || String(s.term || "") !== String(termSetting.currentTerm))) return;
+            || String(s.term || "") !== String(termSetting.currentTerm))) { hiddenByTerm++; return; }
     const row = document.createElement("div");
     row.className = "card";
     row.innerHTML = `
@@ -1352,6 +1404,7 @@ async function loadSubjects() {
       </div>`;
     list.appendChild(row);
   });
+  renderTermFilterHint(filterByTerm, termSetting, termsPresent.size, hiddenByTerm);
   list.querySelectorAll("[data-open]").forEach((b) =>
     b.addEventListener("click", () => openSubject(b.dataset.open)));
   list.querySelectorAll("[data-edit-year]").forEach((b) =>
@@ -1422,17 +1475,36 @@ el("set-current-term").addEventListener("click", async () => {
   const currentSchoolYear = el("current-term-year").value.trim();
   const currentTerm = el("current-term-term").value;
   if (!currentSchoolYear) { alert("Enter the school year first (e.g. 2026-2027)."); return; }
+  // Super-admin-only: the "apply to all teachers" box writes a site-wide
+  // settings/__global__ that overrides every teacher's own term for students.
+  // Unchecking it (as admin) clears that global doc, falling students back to
+  // per-teacher settings. The checkbox is hidden for regular teachers, so this
+  // is always false for them.
+  const applyGlobal = isSuperAdmin(currentUser.email) && el("current-term-global").checked;
   try {
     // setDoc(merge) creates or updates settings/{ownerEmail}. Requires the
     // settings rules to be deployed; until then this write is denied and we
     // surface a friendly message rather than silently failing.
     await setDoc(doc(db, "settings", state.viewAsEmail),
       { currentSchoolYear, currentTerm, ownerEmail: state.viewAsEmail }, { merge: true });
+    if (isSuperAdmin(currentUser.email)) {
+      if (applyGlobal) {
+        await setDoc(doc(db, "settings", "__global__"),
+          { currentSchoolYear, currentTerm, ownerEmail: state.viewAsEmail }, { merge: true });
+      } else {
+        // Admin turned global off (or left it off): clear any existing override.
+        // deleteDoc on a missing doc is a harmless no-op.
+        await deleteDoc(doc(db, "settings", "__global__"));
+      }
+    }
   } catch (err) {
     alert("Couldn't save the current term: " + err.message);
     return;
   }
   el("term-filter").value = "current";
+  alert(applyGlobal
+    ? `Set. Students site-wide now see only SY ${currentSchoolYear} · Term ${currentTerm}.`
+    : "Current term saved.");
   loadSubjects();
 });
 
@@ -4340,6 +4412,7 @@ guardPage("teacher").then(async (user) => {
   if (isAdmin) {
     el("admin-teachers-section").classList.remove("hidden");
     el("go-overview").classList.remove("hidden");
+    el("current-term-global-label").classList.remove("hidden"); // super-admin-only global term switch
     loadTeachers();
     renderViewAsPicker();
   }
