@@ -22,7 +22,8 @@ const JAVA_COMPILER = "openjdk-jdk-21+35";
 // `public` modifier from top-level type declarations makes it compile, and
 // Wandbox still auto-runs whichever class has main(). This only touches
 // `public class/interface/enum`, never `public static`/`public void`/etc.
-function stripTopLevelPublic(src) {
+// Exported for unit tests; internal callers below use it directly.
+export function stripTopLevelPublic(src) {
   return src.replace(/\bpublic\s+(class|interface|enum|record)\b/g, "$1");
 }
 

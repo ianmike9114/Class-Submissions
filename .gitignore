@@ -7,3 +7,9 @@ firestore-debug.log
 .DS_Store
 .vercel
 .env*
+
+# dev-only test tooling (see package.json)
+test-results/
+playwright-report/
+.playwright/
+ui-debug.log
