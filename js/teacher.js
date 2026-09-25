@@ -1277,12 +1277,30 @@ async function getCurrentTermSetting() {
   }
 }
 
+// The site-wide term a super admin can set (settings/__global__). When present
+// it overrides every teacher's own setting for students (see js/student.js's
+// getHiddenSectionIds) and drives this grid's filter too, so the admin's own
+// view matches what students get. Best-effort: null on miss/error.
+async function getGlobalTermSetting() {
+  try {
+    const snap = await getDoc(doc(db, "settings", "__global__"));
+    return snap.exists() ? snap.data() : null;
+  } catch (err) {
+    console.error("global current-term read failed:", err);
+    return null;
+  }
+}
+
 // Reflect the current setting in the header label + prefill the setter inputs.
-function syncCurrentTermUI(setting) {
+// globalActive: the effective setting comes from the site-wide admin override,
+// so the label says so and the admin's "apply to all teachers" box is pre-ticked.
+function syncCurrentTermUI(setting, globalActive = false) {
   const label = el("current-term-label");
   if (!label) return;
+  const globalBox = el("current-term-global");
+  if (globalBox) globalBox.checked = globalActive;
   if (setting && setting.currentSchoolYear && setting.currentTerm) {
-    label.textContent = `SY ${setting.currentSchoolYear} · Term ${setting.currentTerm}`;
+    label.textContent = `SY ${setting.currentSchoolYear} · Term ${setting.currentTerm}${globalActive ? " (all teachers)" : ""}`;
     if (!el("current-term-year").value) el("current-term-year").value = setting.currentSchoolYear;
     el("current-term-term").value = String(setting.currentTerm);
   } else {
@@ -1326,8 +1344,13 @@ async function loadSubjects() {
   // and the grid then defaults to showing only that term. Best-effort - with no
   // setting (or "Showing all terms" picked) we fall back to showing every term,
   // so nothing is ever hidden by surprise (backward-compatible on the live app).
-  const termSetting = await getCurrentTermSetting();
-  syncCurrentTermUI(termSetting);
+  // Effective setting = the site-wide admin override if one exists, else this
+  // teacher's own. The admin override is what students get (js/student.js), so
+  // the grid mirrors it here too. globalActive drives the label/checkbox.
+  const [ownSetting, globalSetting] = await Promise.all([getCurrentTermSetting(), getGlobalTermSetting()]);
+  const globalActive = !!(globalSetting && globalSetting.currentSchoolYear && globalSetting.currentTerm);
+  const termSetting = globalActive ? globalSetting : ownSetting;
+  syncCurrentTermUI(termSetting, globalActive);
   const filterByTerm = el("term-filter").value === "current"
     && !!(termSetting && termSetting.currentSchoolYear && termSetting.currentTerm);
   // The subject list must render even if the (non-essential) pending / leave
@@ -1452,17 +1475,36 @@ el("set-current-term").addEventListener("click", async () => {
   const currentSchoolYear = el("current-term-year").value.trim();
   const currentTerm = el("current-term-term").value;
   if (!currentSchoolYear) { alert("Enter the school year first (e.g. 2026-2027)."); return; }
+  // Super-admin-only: the "apply to all teachers" box writes a site-wide
+  // settings/__global__ that overrides every teacher's own term for students.
+  // Unchecking it (as admin) clears that global doc, falling students back to
+  // per-teacher settings. The checkbox is hidden for regular teachers, so this
+  // is always false for them.
+  const applyGlobal = isSuperAdmin(currentUser.email) && el("current-term-global").checked;
   try {
     // setDoc(merge) creates or updates settings/{ownerEmail}. Requires the
     // settings rules to be deployed; until then this write is denied and we
     // surface a friendly message rather than silently failing.
     await setDoc(doc(db, "settings", state.viewAsEmail),
       { currentSchoolYear, currentTerm, ownerEmail: state.viewAsEmail }, { merge: true });
+    if (isSuperAdmin(currentUser.email)) {
+      if (applyGlobal) {
+        await setDoc(doc(db, "settings", "__global__"),
+          { currentSchoolYear, currentTerm, ownerEmail: state.viewAsEmail }, { merge: true });
+      } else {
+        // Admin turned global off (or left it off): clear any existing override.
+        // deleteDoc on a missing doc is a harmless no-op.
+        await deleteDoc(doc(db, "settings", "__global__"));
+      }
+    }
   } catch (err) {
     alert("Couldn't save the current term: " + err.message);
     return;
   }
   el("term-filter").value = "current";
+  alert(applyGlobal
+    ? `Set. Students site-wide now see only SY ${currentSchoolYear} · Term ${currentTerm}.`
+    : "Current term saved.");
   loadSubjects();
 });
 
@@ -4370,6 +4412,7 @@ guardPage("teacher").then(async (user) => {
   if (isAdmin) {
     el("admin-teachers-section").classList.remove("hidden");
     el("go-overview").classList.remove("hidden");
+    el("current-term-global-label").classList.remove("hidden"); // super-admin-only global term switch
     loadTeachers();
     renderViewAsPicker();
   }

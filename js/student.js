@@ -354,10 +354,25 @@ async function getHiddenSectionIds(sectionIds) {
       console.error("current-term settings read failed (no term hiding):", err);
     }
 
+    // Site-wide "current term" a super admin can set (settings/__global__). When
+    // present it OVERRIDES every teacher's own setting: students see ONLY that
+    // SY+term across all classes, regardless of owner. Absent -> fall back to the
+    // per-owner settings above. Best-effort, so a read failure just drops the
+    // global override (per-owner hiding still applies).
+    let globalTerm = null;
+    try {
+      const g = await getDoc(doc(db, "settings", "__global__"));
+      if (g.exists()) globalTerm = g.data();
+    } catch (err) {
+      console.error("global current-term read failed (per-owner still applies):", err);
+    }
+    const globalActive = !!(globalTerm && globalTerm.currentSchoolYear && globalTerm.currentTerm);
+
     const hiddenSubjects = new Set();
     for (const [subjectId, s] of subjectData) {
       if (s.archived === true) { hiddenSubjects.add(subjectId); continue; }
-      const setting = settingByOwner.get(s.ownerEmail);
+      // Global wins when set; otherwise this subject's owning teacher's setting.
+      const setting = globalActive ? globalTerm : settingByOwner.get(s.ownerEmail);
       if (setting && setting.currentSchoolYear && setting.currentTerm) {
         const sameTerm = String(s.schoolYear || "") === String(setting.currentSchoolYear)
           && String(s.term || "") === String(setting.currentTerm);
