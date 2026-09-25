@@ -42,8 +42,11 @@ test("login page loads, reaches signed-out state, no uncaught errors", async ({ 
 
   await expect(page.locator("h1")).toHaveText("Class Submissions");
   // The page starts on "Checking your sign-in…" then, once Firebase reports no
-  // user (local, no network needed), reveals the sign-in prompt.
-  await expect(page.locator("#signin-prompt")).toBeVisible();
+  // user, reveals the sign-in prompt. The page GUARANTEES this reveal by a 5s
+  // fallback timer (index.html) even if auth-init is slow; on a mobile UA that
+  // init runs slower, so the reveal can land right at ~5s. Wait longer than the
+  // app's own 5s fallback here, or the assertion races that timer and flakes.
+  await expect(page.locator("#signin-prompt")).toBeVisible({ timeout: 10000 });
   await expect(page.locator("#auth-checking")).toBeHidden();
 
   expect(errors, `uncaught page errors: ${errors.join(" | ")}`).toEqual([]);
