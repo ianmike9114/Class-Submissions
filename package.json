@@ -1,0 +1,22 @@
+{
+  "name": "deped-student-lms-devtools",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "DEV-ONLY tooling (tests, emulator, version-bump) for the DepEd Student LMS. NOT deployed: GitHub Pages serves the static site directly and ignores this file. The shipped app has no build step and no runtime npm dependencies.",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-lms-rules \"vitest run --config vitest.rules.config.js\"",
+    "emu": "firebase emulators:start --only firestore,auth",
+    "e2e": "playwright test",
+    "bump": "node scripts/bump-version.mjs"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "@playwright/test": "^1.48.0",
+    "firebase": "^12.19.0",
+    "firebase-tools": "^13.0.0",
+    "vitest": "^2.1.0"
+  }
+}

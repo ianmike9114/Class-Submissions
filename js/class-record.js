@@ -1,7 +1,8 @@
 // Client-side only Class Record (.xlsx) roster reader - no backend, no upload.
 // Uses the global `XLSX` from the SheetJS CDN script tag in teacher.html.
 
-function cellRef(colLetter, row) {
+// Exported for unit tests; loadWorkbook() below uses it directly.
+export function cellRef(colLetter, row) {
   return `${colLetter.trim().toUpperCase()}${row}`;
 }
 
