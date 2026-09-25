@@ -282,18 +282,21 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   their teacher's marker; write owner/super-admin only) — **must `firebase
   deploy --only firestore:rules`**, else the teacher's "Set as current" write
   is denied and the feature stays dark (grid/students just show all terms).
-  **Site-wide admin override (`settings/__global__`).** A super admin can tick
+  **Site-wide admin override (`settings/all-teachers`).** A super admin can tick
   "Apply to ALL teachers" next to "Set as current" (`#current-term-global`,
-  revealed only for `isSuperAdmin`); it writes a single `settings/__global__`
-  doc. When present it **overrides every teacher's own setting**: `js/student.js`'s
-  `getHiddenSectionIds()` reads `__global__` first and, if set, hides any subject
+  revealed only for `isSuperAdmin`); it writes a single `settings/all-teachers`
+  doc. (The id is a plain string, deliberately **not** a `__…__` sentinel —
+  Firestore rejects any doc id matching `__.*__` as reserved; real teacher
+  settings docs are keyed by email, so `all-teachers` can't collide with one.)
+  When present it **overrides every teacher's own setting**: `js/student.js`'s
+  `getHiddenSectionIds()` reads `all-teachers` first and, if set, hides any subject
   whose (SY, term) ≠ it for **all** owners, so students site-wide see only that
   term regardless of which teacher owns the class. `js/teacher.js`'s
   `getGlobalTermSetting()` + `loadSubjects()` make the admin's own grid mirror
-  the override. Unticking the box (as admin) `deleteDoc`s `__global__`, falling
+  the override. Unticking the box (as admin) `deleteDoc`s `all-teachers`, falling
   everyone back to per-teacher settings. **No rules change** — the existing
   `settings` block already lets `isSuperAdmin()` write/delete any id (incl.
-  `__global__`) and any signed-in user `get` it.
+  `all-teachers`) and any signed-in user `get` it.
 - **Deleting subject/section/assignment requires typing its exact name.**
   `js/teacher.js`'s `confirmByTyping()` replaced plain `confirm()` on
   those three cascade deletes only (not lower-stakes "remove one
