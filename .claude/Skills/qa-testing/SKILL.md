@@ -54,20 +54,47 @@ is buried inside a Firebase/DOM function (e.g. the grouping inside
 `getNotifications()` in `js/teacher.js`), extract it to a pure helper + `export`
 it first (additive), then test the helper.
 
-### 2. End-to-end / functional (Playwright + emulator)
+### 2a. firestore.rules integration (Firestore emulator) — the real functional/security layer
 
 ```bash
-npm run emu       # shell 1: Firestore + Auth emulator
-npm run e2e       # shell 2: Playwright against http://localhost:8420
+npm run test:rules   # firebase emulators:exec wraps vitest; starts the emulator
 ```
 
-Specs in `tests/e2e/` drive the real pages at the repo's documented preview
-(`python -m http.server 8420`) with Firebase pointed at the **emulator**. Core
-flows that must never break: student joins by code → submits a link → pending;
-teacher grades → publishes → student sees score; role routing sends teacher vs
-student to the right page. Auth uses the emulator's test-token sign-in (the real
-Google Identity widget can't run headless). Confirm during a run that the
-Firebase console shows **no** new production reads/writes.
+`tests/rules/firestore.rules.test.js` runs the **actual `firestore.rules`**
+against the Firestore emulator via `@firebase/rules-unit-testing`
+(`assertSucceeds`/`assertFails`). Because rules ARE the access control, this is
+the highest-value functional coverage and it is deterministic (no DOM). It
+verifies: multi-teacher isolation (teacher B can't read teacher A's
+submissions), owner-stamped creates, student self-scope (own uid only,
+field-limited edits, no score tampering, no edits once published), self-enroll,
+and the super-admin/teachers allowlist. Talks **only** to the local emulator.
+`assertFails` cases log `PERMISSION_DENIED` to stderr on success — that's the
+rule correctly rejecting, not a failure. Config: `vitest.rules.config.js`
+(serial, since tests share one emulator + `clearFirestore`).
+
+### 2b. Page smoke (Playwright)
+
+```bash
+npm run e2e                    # bundled Chromium (CI: npx playwright install chromium)
+PW_CHANNEL=msedge npm run e2e  # use an installed system browser if the bundled download is blocked
+```
+
+`tests/e2e/smoke.spec.js` loads the three real pages at the repo's documented
+preview (`python -m http.server 8420`, started by Playwright's `webServer`) on
+desktop + mobile viewports and asserts the modules parse/run with no uncaught
+errors and the login page reaches its signed-out state. It **aborts all requests
+to the production Firebase data/auth backends** (`firestore.googleapis.com`,
+`identitytoolkit`, `securetoken`), so a run can never touch real data. Set
+`PW_CHANNEL` (msedge/chrome) when `npx playwright install` can't fetch the
+bundled browser.
+
+**Full DOM click-through of the dashboards is NOT built** (join→submit→grade→
+publish through the UI): the app has no `data-testid` hooks, so such tests would
+be brittle. Add hooks + flows incrementally; the rules suite already covers the
+underlying behavior. If you drive real sign-in, use the **Auth emulator**
+(`npm run emu`) — the Google Identity widget can't run headless, and rules key
+off email/uid not `sign_in_provider`, so an emulator email/password user
+exercises the same role routing.
 
 ### 3. "Load" → Spark quota budget (the real deploy-safety artifact)
 
