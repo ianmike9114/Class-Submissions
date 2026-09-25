@@ -163,6 +163,23 @@ el("photo-lightbox-close").addEventListener("click", () => el("photo-lightbox").
 el("photo-lightbox").addEventListener("click", (e) => {
   if (e.target.id === "photo-lightbox") el("photo-lightbox").classList.add("hidden");
 });
+
+// "View as student": load the student's read-only page (student.html?asStudentUID=...)
+// in an in-dashboard iframe overlay instead of a new tab, so the teacher never
+// leaves their dashboard. The teacher stays signed in as themselves the whole
+// time (js/student.js renders read-only via viewCtx), so "Back" is just closing
+// the overlay - no real account switch happened.
+function openViewAsOverlay(url) {
+  el("view-as-frame").src = url;
+  el("view-as-overlay").classList.remove("hidden");
+}
+function closeViewAsOverlay() {
+  el("view-as-overlay").classList.add("hidden");
+  // Blank the iframe so the previewed student page stops running in the
+  // background once the teacher is back on their own dashboard.
+  el("view-as-frame").src = "about:blank";
+}
+el("view-as-back").addEventListener("click", closeViewAsOverlay);
 document.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-photo-src]");
   if (btn) openPhotoLightbox(btn.dataset.photoSrc, btn.title);
@@ -1840,7 +1857,7 @@ async function openEnrolled(onlySectionId) {
         `&asStudentEmail=${encodeURIComponent(b.dataset.vemail)}` +
         `&asStudentName=${encodeURIComponent(b.dataset.vname)}` +
         `&asOwner=${encodeURIComponent(state.viewAsEmail)}`;
-      window.open(url, "_blank", "noopener");
+      openViewAsOverlay(url);
     }));
 
   const linkSelect = el("master-list-link-select");
@@ -3107,6 +3124,7 @@ async function loadSubmissions() {
         status: "returned",
         resubmitRequested: false,
         returnedAt: Date.now(),
+        resultSeen: false, // student gets a "new result" badge next time they open
       });
       alert("Reopened — the student can now edit and resubmit.");
       loadSubmissions();
@@ -3234,6 +3252,7 @@ async function openReview(submissionId) {
       },
       status: "published",
       publishedAt: Date.now(),
+      resultSeen: false, // student gets a "new result" badge next time they open
     });
     alert("Published — the student can now see their grade and feedback.");
     loadSubmissions();
@@ -3257,6 +3276,7 @@ async function openReview(submissionId) {
       },
       status: "returned",
       returnedAt: Date.now(),
+      resultSeen: false, // student gets a "new result" badge next time they open
     });
     alert("Returned for revision — the student can now redo and resubmit.");
     loadSubmissions();
@@ -4218,7 +4238,7 @@ function renderOverviewStudents(studentRows) {
       const url = `student.html?asStudentUID=${encodeURIComponent(b.dataset.viewAs)}` +
         `&asStudentEmail=${encodeURIComponent(b.dataset.vemail)}` +
         `&asStudentName=${encodeURIComponent(b.dataset.vname)}`;
-      window.open(url, "_blank", "noopener");
+      openViewAsOverlay(url);
     }));
 }
 

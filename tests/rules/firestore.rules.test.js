@@ -211,6 +211,41 @@ describe("submissions: student edits are field-limited and status-gated", () => 
       })
     );
   });
+
+  // "New result" badge: a student may flip resultSeen on their own submission
+  // (even once published), but ONLY that field.
+  async function seedPublished(id) {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "submissions", id), {
+        ownerEmail: TEACHER_A,
+        studentUID: "student1",
+        status: "published",
+        finalGrade: { score: 90 },
+        resultSeen: false,
+      });
+    });
+  }
+  it("student can mark their own published result as seen (resultSeen only)", async () => {
+    await seedPublished("pub2");
+    await assertSucceeds(
+      updateDoc(doc(ctxFor("student1", "s1@x.com"), "submissions", "pub2"), { resultSeen: true })
+    );
+  });
+  it("student CANNOT piggyback a score change on a resultSeen update", async () => {
+    await seedPublished("pub3");
+    await assertFails(
+      updateDoc(doc(ctxFor("student1", "s1@x.com"), "submissions", "pub3"), {
+        resultSeen: true,
+        finalGrade: { score: 100 },
+      })
+    );
+  });
+  it("a different student cannot mark someone else's result seen", async () => {
+    await seedPublished("pub4");
+    await assertFails(
+      updateDoc(doc(ctxFor("student2", "s2@x.com"), "submissions", "pub4"), { resultSeen: true })
+    );
+  });
 });
 
 describe("enrollments: self-enroll + limited self-edit", () => {

@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=34" />
+  <link rel="stylesheet" href="css/style.css?v=35" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="theme-color" content="#002045" />
   <link rel="apple-touch-icon" href="/icons/icon-192.png" />
@@ -482,7 +482,20 @@
     <button type="button" id="photo-lightbox-close" aria-label="Close preview">&times;</button>
   </div>
 
-  <script type="module" src="js/teacher.js?v=76"></script>
+  <!-- "View as student" opens the student's read-only page in this in-dashboard
+       overlay (an iframe of the same student.html?asStudentUID=... URL) instead
+       of a new browser tab, so the teacher never leaves their dashboard. Back
+       closes it - View-as never actually re-auths as the student (the teacher
+       stays signed in as themselves; js/student.js just renders read-only via
+       viewCtx), so closing IS "back to my account". -->
+  <div id="view-as-overlay" class="hidden">
+    <div class="view-as-overlay-bar">
+      <button type="button" class="secondary" id="view-as-back">&#8592; Back to my dashboard</button>
+    </div>
+    <iframe id="view-as-frame" title="Student preview" src="about:blank"></iframe>
+  </div>
+
+  <script type="module" src="js/teacher.js?v=77"></script>
 
   <!-- PWA: register the service worker (see sw.js). Failure swallowed. -->
   <script>

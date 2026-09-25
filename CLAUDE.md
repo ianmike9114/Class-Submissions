@@ -376,6 +376,33 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   section/assignment cascade deletes). No `firestore.rules` change
   needed — delete rule on `submissions` already lets `canActAsOwner`
   delete regardless of `status`.
+- **"View as student" opens in an in-dashboard iframe overlay, not a new
+  tab.** The teacher's **View as** buttons (Enrolled Students rows +
+  admin Overview table, `js/teacher.js`) used to `window.open(...,"_blank")`
+  the student page. They now call `openViewAsOverlay(url)`, which loads the
+  exact same `student.html?asStudentUID=...` URL into `teacher.html`'s
+  `#view-as-overlay` iframe; a **Back to my dashboard** button
+  (`closeViewAsOverlay()`) hides it and blanks the iframe `src`. The teacher
+  never actually re-auths as the student — `guardPage` keeps them signed in as
+  themselves and `js/student.js` renders read-only via `viewCtx`, so "back to
+  my account" is just closing the overlay. Same-origin iframe (no `X-Frame`/CSP
+  headers set on Vercel), so framing the own student page is allowed.
+- **Student "new result" badge on newly graded/returned work (in-app, not
+  email).** Real email to a student's Gmail needs a server/Blaze (banned), and
+  the optional EmailJS box only fires on *new assignments*; so grade/return
+  notification is **in-app**. `js/teacher.js`'s publish, return, and allow-redo
+  writes now stamp `resultSeen: false` on the submission. `js/student.js` builds
+  `unseenResultSubs` (published/returned submissions with `resultSeen === false`)
+  and shows a "🔔 new result" chip on the affected course-outline items plus a
+  count on the outline `<summary>` (`updateOutlineResultBadge()`). Opening that
+  assignment (`openAssignment()`) clears the chip and writes `resultSeen: true`
+  on the student's own submission — **best-effort, and skipped when `viewCtx` is
+  set** so a teacher previewing a student never wipes their badges. **Backward-
+  compatible:** submissions with no `resultSeen` field count as already-seen, so
+  pre-existing graded work never lights up. **`firestore.rules` gained a
+  narrow `resultSeen`-only student update clause** on `submissions` (student may
+  flip that one field on their own submission at any status, including
+  published) — **must `firebase deploy --only firestore:rules`**.
 - **`css/style.css` had zero `@media` queries until mobile-layout fix
   below** — most of app tolerated narrow screens by accident
   (inputs/selects/textareas globally full-width, `.card`/`main` no fixed
