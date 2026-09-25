@@ -1290,6 +1290,29 @@ function syncCurrentTermUI(setting) {
   }
 }
 
+// Make it obvious whether the term filter is actually doing anything for
+// students. When it's ON, confirm what they see and how many other-term classes
+// are hidden from them. When it's OFF but this teacher's classes span more than
+// one term, warn loudly - that's the "why do students still see finished-term
+// classes?" case (no current term set, or "all terms" chosen). One quiet term,
+// or nothing to hide, shows no hint.
+function renderTermFilterHint(filterByTerm, termSetting, termCount, hiddenByTerm) {
+  const hint = el("term-filter-hint");
+  if (!hint) return;
+  if (filterByTerm && termSetting) {
+    hint.style.cssText = "margin:0.5rem 0 0; color:#0a6b2e;";
+    hint.textContent = hiddenByTerm > 0
+      ? `✓ Students see only SY ${termSetting.currentSchoolYear} · Term ${termSetting.currentTerm}. ${hiddenByTerm} other-term class${hiddenByTerm > 1 ? "es are" : " is"} hidden from them.`
+      : `✓ Students see only SY ${termSetting.currentSchoolYear} · Term ${termSetting.currentTerm}. No other-term classes to hide.`;
+  } else if (termCount > 1) {
+    hint.style.cssText = "margin:0.5rem 0 0; padding:0.5rem 0.6rem; border-radius:6px; background:#fff3d6; color:#8a5a00;";
+    hint.textContent = `⚠ Term filter is OFF — students see ALL ${termCount} terms. Set a current term below to hide finished ones.`;
+  } else {
+    hint.style.cssText = "margin:0;";
+    hint.textContent = "";
+  }
+}
+
 async function loadSubjects() {
   // Every path back to the Home view calls this - reset the global search
   // box here too, so a stale query/result list from before navigating away
@@ -1323,14 +1346,20 @@ async function loadSubjects() {
   const list = el("subjects-list");
   list.innerHTML = "";
   const subjectNames = new Map(); // id -> name, for the delete-confirm prompt below
+  // For the term-filter hint below: how many distinct (SY·term) buckets this
+  // teacher's live (non-archived) subjects span, and how many the active filter
+  // is hiding from students right now.
+  const termsPresent = new Set();
+  let hiddenByTerm = 0;
   snap.forEach((d) => {
     const s = d.data();
     if (!ownedByViewAs(s)) return; // admin's unfiltered subjects query includes every teacher's - narrow to mine/legacy
     subjectNames.set(d.id, s.name);
+    if (!s.archived) termsPresent.add(`${s.schoolYear || "—"}·${s.term || "—"}`);
     if (s.archived && !showArchived) return;
     if (filterByTerm
         && (String(s.schoolYear || "") !== String(termSetting.currentSchoolYear)
-            || String(s.term || "") !== String(termSetting.currentTerm))) return;
+            || String(s.term || "") !== String(termSetting.currentTerm))) { hiddenByTerm++; return; }
     const row = document.createElement("div");
     row.className = "card";
     row.innerHTML = `
@@ -1352,6 +1381,7 @@ async function loadSubjects() {
       </div>`;
     list.appendChild(row);
   });
+  renderTermFilterHint(filterByTerm, termSetting, termsPresent.size, hiddenByTerm);
   list.querySelectorAll("[data-open]").forEach((b) =>
     b.addEventListener("click", () => openSubject(b.dataset.open)));
   list.querySelectorAll("[data-edit-year]").forEach((b) =>
