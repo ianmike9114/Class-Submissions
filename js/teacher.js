@@ -1277,13 +1277,13 @@ async function getCurrentTermSetting() {
   }
 }
 
-// The site-wide term a super admin can set (settings/__global__). When present
+// The site-wide term a super admin can set (settings/all-teachers). When present
 // it overrides every teacher's own setting for students (see js/student.js's
 // getHiddenSectionIds) and drives this grid's filter too, so the admin's own
 // view matches what students get. Best-effort: null on miss/error.
 async function getGlobalTermSetting() {
   try {
-    const snap = await getDoc(doc(db, "settings", "__global__"));
+    const snap = await getDoc(doc(db, "settings", "all-teachers"));
     return snap.exists() ? snap.data() : null;
   } catch (err) {
     console.error("global current-term read failed:", err);
@@ -1476,7 +1476,7 @@ el("set-current-term").addEventListener("click", async () => {
   const currentTerm = el("current-term-term").value;
   if (!currentSchoolYear) { alert("Enter the school year first (e.g. 2026-2027)."); return; }
   // Super-admin-only: the "apply to all teachers" box writes a site-wide
-  // settings/__global__ that overrides every teacher's own term for students.
+  // settings/all-teachers that overrides every teacher's own term for students.
   // Unchecking it (as admin) clears that global doc, falling students back to
   // per-teacher settings. The checkbox is hidden for regular teachers, so this
   // is always false for them.
@@ -1489,12 +1489,12 @@ el("set-current-term").addEventListener("click", async () => {
       { currentSchoolYear, currentTerm, ownerEmail: state.viewAsEmail }, { merge: true });
     if (isSuperAdmin(currentUser.email)) {
       if (applyGlobal) {
-        await setDoc(doc(db, "settings", "__global__"),
+        await setDoc(doc(db, "settings", "all-teachers"),
           { currentSchoolYear, currentTerm, ownerEmail: state.viewAsEmail }, { merge: true });
       } else {
         // Admin turned global off (or left it off): clear any existing override.
         // deleteDoc on a missing doc is a harmless no-op.
-        await deleteDoc(doc(db, "settings", "__global__"));
+        await deleteDoc(doc(db, "settings", "all-teachers"));
       }
     }
   } catch (err) {
