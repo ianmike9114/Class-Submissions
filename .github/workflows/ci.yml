@@ -1,0 +1,63 @@
+name: CI
+
+# Dev-only quality gate. GitHub Pages / Vercel serve the static site directly
+# and ignore all of this - CI runs the test tiers described in
+# .claude/Skills/qa-testing. Everything stays local to the runner; no job ever
+# touches production Firebase (the rules suite uses the local emulator, the
+# Playwright smoke aborts all prod Firebase requests).
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unit:
+    name: Unit (Vitest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  rules:
+    name: firestore.rules (emulator)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      # Firestore emulator needs a JRE.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      # Cache the downloaded emulator jars between runs.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ runner.os }}
+      - run: npm ci
+      - run: npm run test:rules
+
+  e2e:
+    name: Page smoke (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # Static preview server uses Python's http.server (see playwright.config.js).
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e
