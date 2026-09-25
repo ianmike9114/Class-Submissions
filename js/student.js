@@ -1093,29 +1093,38 @@ function compressImage(file, maxLen = PER_PHOTO_MAX_LEN) {
       const img = new Image();
       img.onerror = () => reject(new Error("Couldn't read that photo."));
       img.onload = () => {
-        let { width, height } = img;
-        const maxDim = 1280;
-        if (width > maxDim || height > maxDim) {
-          const scale = maxDim / Math.max(width, height);
-          width = Math.round(width * scale);
-          height = Math.round(height * scale);
-        }
+        // Try progressively smaller max dimensions; at each, drop JPEG quality
+        // to a floor. Accept the first result that fits under MAX_DATA_URL_LEN.
+        // Dense document/handwriting photos (e.g. a full ADM page) can exceed
+        // the per-photo size cap even at 1280px + minimum quality, so stepping
+        // the DIMENSIONS down - not just quality - is what makes them fit
+        // instead of failing outright. Only ever shrinks, never upscales.
         const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        const ctx = canvas.getContext("2d");
+        for (const maxDim of [1280, 1024, 800, 640]) {
+          let { width, height } = img;
+          if (width > maxDim || height > maxDim) {
+            const scale = maxDim / Math.max(width, height);
+            width = Math.round(width * scale);
+            height = Math.round(height * scale);
+          }
+          canvas.width = width;
+          canvas.height = height;
+          ctx.clearRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
 
-        let quality = 0.8;
-        let dataUrl = canvas.toDataURL("image/jpeg", quality);
-        while (dataUrl.length > MAX_DATA_URL_LEN && quality > 0.3) {
-          quality -= 0.1;
-          dataUrl = canvas.toDataURL("image/jpeg", quality);
+          let quality = 0.8;
+          let dataUrl = canvas.toDataURL("image/jpeg", quality);
+          while (dataUrl.length > MAX_DATA_URL_LEN && quality > 0.3) {
+            quality -= 0.1;
+            dataUrl = canvas.toDataURL("image/jpeg", quality);
+          }
+          if (dataUrl.length <= MAX_DATA_URL_LEN) {
+            resolve(dataUrl);
+            return;
+          }
         }
-        if (dataUrl.length > MAX_DATA_URL_LEN) {
-          reject(new Error("Photo is too large even after compression - try a simpler/lighter shot."));
-          return;
-        }
-        resolve(dataUrl);
+        reject(new Error("Photo is too large even after compression - try a simpler/lighter shot."));
       };
       img.src = reader.result;
     };

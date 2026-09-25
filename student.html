@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=33" />
+  <link rel="stylesheet" href="css/style.css?v=34" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="theme-color" content="#002045" />
   <link rel="apple-touch-icon" href="/icons/icon-192.png" />
@@ -39,17 +39,23 @@
   </header>
 
   <main>
-    <!-- Manual "Join a class" box hidden by default: students found typing a
-         code confusing. It's revealed only when a QR/deep-link ?code= is being
-         consumed (js/student.js's applyPendingJoinCode), so scan-to-join and its
-         name-picker/status message still work; teacher email invites auto-join
-         with no UI at all. -->
+    <!-- "Join a class" card hidden by default; revealed only when a QR/deep-link
+         ?code= is consumed (js/student.js's applyPendingJoinCode), so scan-to-join
+         still works and its name-picker/status message have somewhere to show.
+         The manual code-entry field itself is permanently hidden (wrapped below):
+         classes are joined by teacher bulk-invite (auto-join) or QR now, never by
+         a student typing a code. The input stays in the DOM because a QR join
+         fills and submits it programmatically. -->
     <div class="card hidden" id="join-card">
       <h2>Join a class</h2>
       <form id="join-form">
-        <label>Join code (given by your teacher)</label>
-        <input id="join-code" required placeholder="e.g. AB12CD" />
-        <button type="submit">Join</button>
+        <!-- hidden: no manual code typing; QR deep-link fills #join-code and
+             submits this form itself (applyPendingJoinCode). -->
+        <div class="hidden">
+          <label>Join code (given by your teacher)</label>
+          <input id="join-code" required placeholder="e.g. AB12CD" />
+          <button type="submit">Join</button>
+        </div>
       </form>
       <p id="join-message" class="muted"></p>
       <div id="join-name-picker"></div>
@@ -83,7 +89,7 @@
     </div>
   </main>
 
-  <script type="module" src="js/student.js?v=44"></script>
+  <script type="module" src="js/student.js?v=45"></script>
 
   <!-- PWA: register the service worker (see sw.js). Failure swallowed. -->
   <script>
