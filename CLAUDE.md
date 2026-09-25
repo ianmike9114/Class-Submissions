@@ -167,7 +167,14 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   transmutation math. Teacher confirmed raw per-assignment totals enough;
   they finalize grades themselves in real Class Record. Don't build
   weighted/transmuted grade computation without being asked.
-- No roster CSV import — students self-enroll via section join-code only.
+- No roster CSV import — students get in by teacher bulk-invite (auto-join) or
+  QR scan; there is no longer a **manual join-code entry box**. The "Join a
+  class" card's code field is permanently hidden (`student.html`'s `#join-card`
+  wraps it in a `hidden` div) because teachers use bulk email invites now and
+  typing a code confused students; a QR/`?code=` deep link still fills and
+  submits that hidden field programmatically (`js/student.js`'s
+  `applyPendingJoinCode`), so scan-to-join and its roster name-picker/status
+  message still work. Don't re-expose the code box without being asked.
 - **No Class Record `.xlsx` export.** Removed by request — teacher
   finalizes and encodes all final grades themselves in real Class Record;
   app deliberately doesn't write scores into it. `js/class-record.js` now
@@ -239,13 +246,16 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   "document" assignments, as alternative to pasting link — not general
   file-upload feature. Capped at `MAX_PHOTOS` (10) pages per submission —
   not unlimited (shared 1MiB Firestore doc budget across however many
-  pages added). `js/student.js`'s `compressImage()` resizes each photo to
-  max 1280px and drops JPEG quality until under `PER_PHOTO_MAX_LEN`
-  (100,000 chars/photo, so 10 photos stay under 1MiB cap alongside rest
-  of submission's fields). Very detailed/high-res photos (e.g. dense
-  handwriting) can lose noticeably more sharpness to this compression
-  than at old 3-photo cap — if ever problem, student can still fall back
-  to Drive-link path instead.
+  pages added). `js/student.js`'s `compressImage()` keeps each photo under
+  `PER_PHOTO_MAX_LEN` (100,000 chars/photo, so 10 photos stay under 1MiB cap
+  alongside rest of submission's fields) by **stepping the max dimension down**
+  (1280 → 1024 → 800 → 640px), dropping JPEG quality to a 0.3 floor at each
+  size, and accepting the first that fits. Earlier it tried only 1280px + the
+  quality floor and then gave up — dense document/handwriting photos (e.g. a
+  full ADM page) overflowed even compressed, so the student hit "Photo is too
+  large even after compression" and couldn't submit. The dimension ladder makes
+  those fit at the cost of more sharpness loss on the densest shots; student can
+  still fall back to the Drive-link path instead.
 - **Teacher can decline a leave request without removing the student.**
   On a flagged `leaveRequested` row in Enrolled Students, `js/teacher.js`'s
   `openEnrolled()` renders a **"Keep in class"** button
