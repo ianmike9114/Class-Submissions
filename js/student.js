@@ -1,7 +1,7 @@
 import { db, ADMIN_EMAIL, isSuperAdmin } from "./firebase-config.js";
 import { guardPage, signOutUser } from "./auth.js";
 import {
-  collection, addDoc, setDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where, documentId, arrayUnion, arrayRemove, serverTimestamp,
+  collection, addDoc, setDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where, arrayUnion, arrayRemove, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js";
 import { runJava } from "./runner.js";
@@ -306,19 +306,22 @@ function ownerScope() {
   return viewCtx && viewCtx.owner ? [where("ownerEmail", "==", viewCtx.owner)] : [];
 }
 
-// Small helper: fetch docs from a collection by id, batched by 30 (Firestore
-// `in` cap), returning the raw snapshot docs. A student is in a handful of
-// sections/subjects, so this is a couple of small reads.
+// Small helper: fetch docs from a collection by id, returning the snapshot docs
+// that exist. Uses single-doc GETs (one per id), NOT a `where(documentId(),"in")`
+// LIST query - firestore.rules only allows students a single-doc `get` on
+// subjects/sections/settings (LIST is owner-only). A LIST here was silently
+// denied for every real student, so getHiddenSectionIds() below threw and fell
+// back to hiding nothing - which is why finished-term classes kept showing to
+// students even with a current term set (it only "worked" in the super admin's
+// own view, where LIST is allowed). A student is in a handful of
+// sections/subjects, so per-id gets are a couple of small reads. Best-effort per
+// id so one missing/denied doc never sinks the whole lookup.
 async function getDocsByIds(collectionName, ids) {
   const unique = [...new Set(ids.filter(Boolean))];
-  const docs = [];
-  for (let i = 0; i < unique.length; i += 30) {
-    const snap = await getDocs(
-      query(collection(db, collectionName), where(documentId(), "in", unique.slice(i, i + 30)))
-    );
-    snap.forEach((d) => docs.push(d));
-  }
-  return docs;
+  const snaps = await Promise.all(
+    unique.map((id) => getDoc(doc(db, collectionName, id)).catch(() => null))
+  );
+  return snaps.filter((s) => s && s.exists());
 }
 
 // Returns the set of *section* ids that should be hidden from the student,

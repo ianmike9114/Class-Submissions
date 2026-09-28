@@ -89,6 +89,36 @@ beforeEach(async () => {
       status: "pending",
       link: "https://youtu.be/x",
     });
+    await setDoc(doc(db, "sections", "secA"), {
+      ownerEmail: TEACHER_A,
+      subjectId: "subjA",
+      sectionName: "STEM",
+    });
+    await setDoc(doc(db, "settings", TEACHER_A), {
+      ownerEmail: TEACHER_A,
+      currentSchoolYear: "2026-2027",
+      currentTerm: "2",
+    });
+  });
+});
+
+// Regression: the student-side term-hide (getHiddenSectionIds) resolves
+// sectionId -> subject -> owner-setting using SINGLE-DOC gets, because a student
+// is not the owner and LIST on these collections is owner-only. A `where(
+// documentId(),"in")` LIST here was silently denied for real students, so the
+// hide fell back to showing everything. These lock the get-allowed / list-denied
+// contract that fix depends on.
+describe("student term-hide reads: single-doc get allowed, list denied", () => {
+  const stud = () => ctxFor("student1", "s1@x.com");
+  it("a student CAN get a subject / section / settings doc by id", async () => {
+    await assertSucceeds(getDoc(doc(stud(), "subjects", "subjA")));
+    await assertSucceeds(getDoc(doc(stud(), "sections", "secA")));
+    await assertSucceeds(getDoc(doc(stud(), "settings", TEACHER_A)));
+  });
+  it("a student CANNOT list subjects / sections / settings (why the old `in` query failed)", async () => {
+    await assertFails(getDocs(query(collection(stud(), "subjects"), where("__name__", "==", "subjA"))));
+    await assertFails(getDocs(query(collection(stud(), "sections"), where("__name__", "==", "secA"))));
+    await assertFails(getDocs(collection(stud(), "settings")));
   });
 });
 
