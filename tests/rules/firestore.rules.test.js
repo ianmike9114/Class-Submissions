@@ -283,6 +283,92 @@ describe("settings: per-teacher current-term marker", () => {
   });
 });
 
+describe("submissionAttempts: returned-version history", () => {
+  it("the owning teacher can create an attempt snapshot stamped with their email", async () => {
+    await assertSucceeds(
+      addDoc(collection(ctxFor("ua", TEACHER_A), "submissionAttempts"), {
+        ownerEmail: TEACHER_A,
+        submissionId: "subA_stud1",
+        assignmentId: "asgnA",
+        studentUID: "student1",
+        score: 5,
+        returnedAt: 1,
+      })
+    );
+  });
+  it("a teacher CANNOT create an attempt stamped as another owner", async () => {
+    await assertFails(
+      addDoc(collection(ctxFor("ua", TEACHER_A), "submissionAttempts"), {
+        ownerEmail: TEACHER_B,
+        submissionId: "x",
+        assignmentId: "y",
+        studentUID: "z",
+      })
+    );
+  });
+  it("a student cannot create an attempt snapshot", async () => {
+    await assertFails(
+      addDoc(collection(ctxFor("student1", "s1@x.com"), "submissionAttempts"), {
+        ownerEmail: TEACHER_A,
+        submissionId: "subA_stud1",
+        assignmentId: "asgnA",
+        studentUID: "student1",
+      })
+    );
+  });
+  it("owner reads their attempts; another teacher is denied (isolation)", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "submissionAttempts", "att1"), {
+        ownerEmail: TEACHER_A,
+        submissionId: "subA_stud1",
+        assignmentId: "asgnA",
+        studentUID: "student1",
+      });
+    });
+    await assertSucceeds(
+      getDocs(query(collection(ctxFor("ua", TEACHER_A), "submissionAttempts"), where("ownerEmail", "==", TEACHER_A)))
+    );
+    await assertFails(
+      getDocs(query(collection(ctxFor("ub", TEACHER_B), "submissionAttempts"), where("ownerEmail", "==", TEACHER_A)))
+    );
+  });
+  it("the owning student can read their own attempt history", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "submissionAttempts", "att2"), {
+        ownerEmail: TEACHER_A,
+        submissionId: "subA_stud1",
+        assignmentId: "asgnA",
+        studentUID: "student1",
+      });
+    });
+    await assertSucceeds(getDoc(doc(ctxFor("student1", "s1@x.com"), "submissionAttempts", "att2")));
+    await assertFails(getDoc(doc(ctxFor("student2", "s2@x.com"), "submissionAttempts", "att2")));
+  });
+  it("an attempt snapshot is immutable (no update)", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "submissionAttempts", "att3"), {
+        ownerEmail: TEACHER_A,
+        submissionId: "subA_stud1",
+        assignmentId: "asgnA",
+        studentUID: "student1",
+        score: 1,
+      });
+    });
+    await assertFails(updateDoc(doc(ctxFor("ua", TEACHER_A), "submissionAttempts", "att3"), { score: 99 }));
+  });
+  it("the owner can delete an attempt (cascade cleanup)", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "submissionAttempts", "att4"), {
+        ownerEmail: TEACHER_A,
+        submissionId: "subA_stud1",
+        assignmentId: "asgnA",
+        studentUID: "student1",
+      });
+    });
+    await assertSucceeds(deleteDoc(doc(ctxFor("ua", TEACHER_A), "submissionAttempts", "att4")));
+  });
+});
+
 describe("unauthenticated access is denied", () => {
   it("anon cannot read a subject or submission", async () => {
     await assertFails(getDoc(doc(anon(), "subjects", "subjA")));

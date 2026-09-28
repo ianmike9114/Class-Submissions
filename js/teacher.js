@@ -297,6 +297,10 @@ async function deleteWhere(collectionName, field, value) {
 
 async function cascadeDeleteAssignment(assignmentId) {
   await deleteWhere("submissions", "assignmentId", assignmentId);
+  // Returned-version snapshots (see openReview's Return-for-revision handler)
+  // share the same ownerEmail as their submission, so ownerScopedQuery reaches
+  // them; best-effort so a missing collection/rule never blocks the delete.
+  await deleteWhere("submissionAttempts", "assignmentId", assignmentId).catch(() => {});
   await deleteDoc(doc(db, "assignments", assignmentId));
 }
 
@@ -1331,6 +1335,26 @@ function renderTermFilterHint(filterByTerm, termSetting, termCount, hiddenByTerm
   }
 }
 
+// Lists, by name, exactly which classes the active term filter hides from vs
+// shows to students. Lets the teacher spot a mislabeled class and fix it with
+// "Edit Year/Term". Renders nothing when the filter is off (the hint above
+// already covers that case). Populates #term-preview (a plain div, so nested
+// lists are valid, unlike the #term-filter-hint <p>).
+function renderTermPreview(filterByTerm, hiddenNames, visibleNames) {
+  const box = el("term-preview");
+  if (!box) return;
+  if (!filterByTerm) { box.innerHTML = ""; return; }
+  const nameList = (names) => names.length
+    ? `<ul style="margin:0.2rem 0 0 1.1rem; padding:0;">${names.map((n) => `<li>${escAttr(n)}</li>`).join("")}</ul>`
+    : `<span class="muted"> none</span>`;
+  box.innerHTML = `
+    <div style="margin-top:0.6rem; font-size:0.85rem;">
+      <div><strong style="color:#0a6b2e;">Visible to students (${visibleNames.length}):</strong>${nameList(visibleNames)}</div>
+      <div style="margin-top:0.4rem;"><strong style="color:#b91c1c;">Hidden from students (${hiddenNames.length}):</strong>${nameList(hiddenNames)}</div>
+      <p class="muted" style="margin:0.4rem 0 0;">Wrong bucket? Open the class and use <strong>Edit Year/Term</strong> to set its real school year &amp; term.</p>
+    </div>`;
+}
+
 async function loadSubjects() {
   // Every path back to the Home view calls this - reset the global search
   // box here too, so a stale query/result list from before navigating away
@@ -1374,15 +1398,24 @@ async function loadSubjects() {
   // is hiding from students right now.
   const termsPresent = new Set();
   let hiddenByTerm = 0;
+  // Which live classes the active term filter hides from / shows to students,
+  // by name - so the teacher can eyeball whether every class landed in the
+  // right bucket (a current class mistakenly tagged an old term, or an old
+  // class with a blank term, jumps out here). Only meaningful when the filter
+  // is on. Archived classes are excluded (they're hidden separately).
+  const hiddenTermNames = [];
+  const visibleTermNames = [];
   snap.forEach((d) => {
     const s = d.data();
     if (!ownedByViewAs(s)) return; // admin's unfiltered subjects query includes every teacher's - narrow to mine/legacy
     subjectNames.set(d.id, s.name);
     if (!s.archived) termsPresent.add(`${s.schoolYear || "—"}·${s.term || "—"}`);
+    const termMismatch = filterByTerm
+      && (String(s.schoolYear || "") !== String(termSetting.currentSchoolYear)
+          || String(s.term || "") !== String(termSetting.currentTerm));
+    if (filterByTerm && !s.archived) (termMismatch ? hiddenTermNames : visibleTermNames).push(s.name);
     if (s.archived && !showArchived) return;
-    if (filterByTerm
-        && (String(s.schoolYear || "") !== String(termSetting.currentSchoolYear)
-            || String(s.term || "") !== String(termSetting.currentTerm))) { hiddenByTerm++; return; }
+    if (termMismatch) { hiddenByTerm++; return; }
     const row = document.createElement("div");
     row.className = "card";
     row.innerHTML = `
@@ -1405,6 +1438,7 @@ async function loadSubjects() {
     list.appendChild(row);
   });
   renderTermFilterHint(filterByTerm, termSetting, termsPresent.size, hiddenByTerm);
+  renderTermPreview(filterByTerm, hiddenTermNames, visibleTermNames);
   list.querySelectorAll("[data-open]").forEach((b) =>
     b.addEventListener("click", () => openSubject(b.dataset.open)));
   list.querySelectorAll("[data-edit-year]").forEach((b) =>
@@ -3194,6 +3228,8 @@ async function loadSubmissions() {
       if (!ok) return;
       b.disabled = true;
       await deleteDoc(doc(db, "submissions", b.dataset.deleteSub));
+      // Also drop any archived returned-version snapshots for this submission.
+      await deleteWhere("submissionAttempts", "submissionId", b.dataset.deleteSub).catch(() => {});
       alert("Deleted.");
       loadSubmissions();
     }));
@@ -3253,6 +3289,46 @@ async function runAiCheck(submissionId) {
   }
 }
 
+// Renders the archived returned-versions for one submission into
+// #attempts-${submissionId}. Read only on demand (details expand), owner-scoped
+// like every other teacher read; sorted newest-first client-side so no
+// composite index is needed. Best-effort: any read error shows a friendly line
+// rather than breaking the review card.
+async function renderPreviousAttempts(submissionId, assignmentId) {
+  const host = el(`attempts-${submissionId}`);
+  if (!host) return;
+  try {
+    const snap = await getDocs(ownerScopedQuery("submissionAttempts", where("submissionId", "==", submissionId)));
+    const attempts = snap.docs.map((d) => d.data()).sort((a, b) => (b.returnedAt || 0) - (a.returnedAt || 0));
+    if (attempts.length === 0) {
+      host.innerHTML = `<p class="muted">No previous attempts yet — the first time you return this for revision, the version you send back is saved here.</p>`;
+      return;
+    }
+    host.innerHTML = attempts.map((att, i) => {
+      const when = att.returnedAt ? new Date(att.returnedAt).toLocaleString() : "";
+      const embedUrl = att.link ? toEmbedUrl(att.link) : null;
+      const work = (att.photoPages && att.photoPages.length > 0)
+        ? `<div class="photo-thumbs">${att.photoPages.map((p, n) => `<a href="${p}" target="_blank" rel="noopener"><img src="${p}" /></a>`).join("")}</div>`
+        : att.code
+          ? codeBlockHtml(att.code, "java") + (att.codeOutput ? `<div class="muted">Saved output</div><pre class="code-output">${escAttr(att.codeOutput)}</pre>` : "")
+          : att.link
+            ? (embedUrl
+              ? `<iframe src="${embedUrl}" class="submission-preview"></iframe>`
+              : `<div class="muted"><a href="${att.link}" target="_blank" rel="noopener">${att.link}</a></div>`)
+            : `<div class="muted">(no work saved)</div>`;
+      return `<div class="card" style="margin-bottom:0.5rem;">
+        <strong>Attempt ${attempts.length - i}</strong> <span class="muted">returned ${when}</span>
+        <div class="muted">Returned with: ${att.score ?? "—"}${att.feedback ? " · " + escAttr(att.feedback) : ""}</div>
+        ${work}
+      </div>`;
+    }).join("");
+    highlightWithin(host);
+  } catch (err) {
+    host.innerHTML = `<p class="muted">Couldn't load previous attempts right now.</p>`;
+    console.error("previous-attempts read failed:", err);
+  }
+}
+
 async function openReview(submissionId) {
   const ref = doc(db, "submissions", submissionId);
   const snap = await getDoc(ref);
@@ -3279,7 +3355,24 @@ async function openReview(submissionId) {
       <button data-publish="${submissionId}">Publish to student</button>
       <button type="button" class="secondary" data-return="${submissionId}">Return for revision</button>
       <div class="muted" style="margin-top:0.4rem; font-size:0.85em;">Return for revision unlocks editing for the student to redo the work; Publish finalizes the grade and locks it.</div>
+      <details data-attempts="${submissionId}" style="margin-top:0.6rem;">
+        <summary class="muted" style="cursor:pointer;">Previous attempts</summary>
+        <div id="attempts-${submissionId}" style="margin-top:0.5rem;"><p class="muted">Loading…</p></div>
+      </details>
     </div>`;
+
+  // Load the returned-version history only when the teacher expands it (keeps
+  // it off the normal review read path). Fires once, then leaves the rendered
+  // list in place.
+  const attemptsDetails = container.querySelector(`[data-attempts="${submissionId}"]`);
+  if (attemptsDetails) {
+    attemptsDetails.addEventListener("toggle", () => {
+      if (attemptsDetails.open && !attemptsDetails.dataset.loaded) {
+        attemptsDetails.dataset.loaded = "true";
+        renderPreviousAttempts(submissionId, s.assignmentId);
+      }
+    }, { once: false });
+  }
 
   // <input max> only styles the field - it doesn't block typing or block a
   // programmatic .value read, so an over-max score would otherwise save
@@ -3322,11 +3415,33 @@ async function openReview(submissionId) {
     const btn = container.querySelector(`[data-return]`);
     btn.disabled = true;
     btn.textContent = "Saving...";
-    await updateDoc(ref, {
-      finalGrade: {
+    const feedback = el(`feedback-${submissionId}`).value;
+    // Archive the version being sent back BEFORE the student overwrites it on
+    // resubmit, so both attempts survive (shown under "Previous attempts" on
+    // this card, see renderPreviousAttempts). Best-effort: a missing collection
+    // rule (not yet deployed) must never block the return itself. Each attempt
+    // is its own doc, so photo pages stay under the 1MiB per-doc cap.
+    try {
+      await addDoc(collection(db, "submissionAttempts"), {
+        submissionId,
+        assignmentId: s.assignmentId,
+        studentUID: s.studentUID,
+        studentName: s.studentName || "",
+        ownerEmail: s.ownerEmail || a.ownerEmail || ADMIN_EMAIL,
+        link: s.link || "",
+        code: s.code || "",
+        codeOutput: s.codeOutput || "",
+        photoPages: s.photoPages || (s.photoData ? [s.photoData] : []),
         score,
-        feedback: el(`feedback-${submissionId}`).value,
-      },
+        feedback,
+        submittedAt: s.submittedAt || null,
+        returnedAt: Date.now(),
+      });
+    } catch (err) {
+      console.error("couldn't archive returned attempt (returning anyway):", err);
+    }
+    await updateDoc(ref, {
+      finalGrade: { score, feedback },
       status: "returned",
       returnedAt: Date.now(),
     });
