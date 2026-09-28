@@ -185,6 +185,27 @@ service cloud.firestore {
                         && (resource.data.status == "pending" || resource.data.status == "returned"));
     }
 
+    // ---------- submissionAttempts (immutable history of returned versions) ----------
+    // When a teacher returns a submission for revision, a snapshot of the version
+    // being sent back is archived here BEFORE the student overwrites it on resubmit,
+    // so both attempts can be seen later (see js/teacher.js's Return-for-revision
+    // handler + the review card's "Previous attempts" list). One doc per returned
+    // attempt; snapshots are never edited (no update rule). The owning teacher (or
+    // super admin) creates and may delete them (cascade cleanup when the parent
+    // assignment/section/subject or the submission itself is deleted). Read is
+    // owner-scoped like submissions, plus the student may read their own history.
+    // Direct ownerEmail comparison on the owner read branch - see the submissions
+    // read rule above for why canActAsOwner() can't be used for LIST queries.
+    match /submissionAttempts/{attemptId} {
+      allow read: if isSignedIn()
+                  && (resource.data.studentUID == request.auth.uid
+                      || isSuperAdmin()
+                      || (isGrantedTeacher() && resource.data.ownerEmail == request.auth.token.email));
+      allow create: if isSuperAdmin()
+                    || (isGrantedTeacher() && request.resource.data.ownerEmail == request.auth.token.email);
+      allow delete: if canActAsOwner(resource.data);
+    }
+
     // ---------- invites (teacher adds a student by Gmail; consumed/deleted
     // on auto-join at sign-in - see js/student.js's applyPendingInvites()) ----------
     match /invites/{inviteId} {

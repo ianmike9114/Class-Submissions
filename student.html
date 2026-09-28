@@ -61,6 +61,13 @@
       <div id="join-name-picker"></div>
     </div>
 
+    <!-- Pinned "Needs resubmission" callout - filled by js/student.js's
+         renderNeedsResubmission() when the teacher has returned any of this
+         student's work. Stays hidden when there's nothing to resubmit so it
+         never adds clutter. Placed at the very top so a returned assignment
+         can't be mistaken for "already submitted / done". -->
+    <div id="needs-resubmission" class="hidden"></div>
+
     <h2>My classes</h2>
     <div id="waiting-approval" class="card hidden" style="border-color:var(--amber, #f6b73c);"></div>
     <div id="classes-list"></div>
@@ -89,7 +96,7 @@
     </div>
   </main>
 
-  <script type="module" src="js/student.js?v=48"></script>
+  <script type="module" src="js/student.js?v=49"></script>
 
   <!-- PWA: register the service worker (see sw.js). Failure swallowed. -->
   <script>

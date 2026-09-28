@@ -635,7 +635,7 @@ async function loadEverything() {
           : isPastDue(a)
           ? `<div class="muted" style="margin-top:0.5rem;">Deadline passed — locked, no more changes.</div>`
           : `<div style="margin-top:0.5rem;">
-               <button type="button" class="secondary" data-edit-submission="${subDoc.id}">Edit submission</button>
+               <button type="button" class="${s.status === "returned" ? "" : "secondary"}" data-edit-submission="${subDoc.id}">${s.status === "returned" ? "Resubmit" : "Edit submission"}</button>
                <button type="button" class="danger" data-remove-submission="${subDoc.id}">Remove submission</button>
              </div>
              <div data-edit-container="${subDoc.id}"></div>`;
@@ -806,6 +806,7 @@ async function loadEverything() {
   }
 
   renderOutline(assignmentsBySubject, subDocsByAssignment, topicOrderBySubject, doneMaterialIds);
+  renderNeedsResubmission(assignmentsBySubject, subDocsByAssignment);
   attachSubmitHandlers();
   highlightWithin(el("assignments-list"));
   filterAssignments();
@@ -878,6 +879,55 @@ function renderOutline(assignmentsBySubject, subDocsByAssignment, topicOrderBySu
 
   body.innerHTML = html;
   outline.classList.toggle("hidden", !anyAssignments);
+}
+
+// Pinned "Needs resubmission" callout at the very top of the dashboard.
+// Returned work is easy to miss when it sits inline in a collapsed outline -
+// students saw "submitted" and assumed they were done. This pulls every
+// returned assignment OUT into its own red-bordered block with the teacher's
+// note and a single "Resubmit" button that opens the assignment and its edit
+// form in one tap. Built entirely from data loadEverything() already fetched -
+// no extra Firestore reads. Hidden when there's nothing to resubmit.
+function renderNeedsResubmission(assignmentsBySubject, subDocsByAssignment) {
+  const box = el("needs-resubmission");
+  if (!box) return;
+  const returned = [];
+  for (const [subjectName, aDocs] of assignmentsBySubject) {
+    for (const aDoc of aDocs) {
+      const sub = subDocsByAssignment.get(aDoc.id);
+      if (sub && sub.data().status === "returned") {
+        returned.push({ assignmentId: aDoc.id, title: aDoc.data().title, subjectName, note: sub.data().finalGrade?.feedback || "" });
+      }
+    }
+  }
+  if (returned.length === 0) {
+    box.classList.add("hidden");
+    box.innerHTML = "";
+    return;
+  }
+  box.classList.remove("hidden");
+  box.className = "card";
+  box.style.borderColor = "#b91c1c";
+  box.innerHTML = `
+    <h2 style="margin-top:0;">Needs resubmission <span class="status-returned">${returned.length}</span></h2>
+    <p class="muted">Your teacher sent these back for changes. They are <strong>not done yet</strong> — fix them and resubmit.</p>
+    ${returned.map((r) => `
+      <div class="card" style="border-color:#b91c1c; margin-bottom:0.6rem;">
+        <strong>${esc(r.title)}</strong> <span class="muted">${esc(r.subjectName)}</span>
+        ${r.note ? `<p class="muted">Teacher note: ${esc(r.note)}</p>` : ""}
+        <div style="margin-top:0.5rem;">
+          <button type="button" data-resubmit-jump="${r.assignmentId}">Resubmit</button>
+        </div>
+      </div>`).join("")}`;
+  box.querySelectorAll("[data-resubmit-jump]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const id = b.dataset.resubmitJump;
+      openAssignment(id);
+      // Open the card's edit form straight away so the student lands on the
+      // fields to change, not just the read-only card.
+      const card = el("assignments-list").querySelector(`[data-assignment-id="${id}"]`);
+      card?.querySelector("[data-edit-submission]")?.click();
+    }));
 }
 
 // Minimal HTML-escape for text interpolated into the outline markup
