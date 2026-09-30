@@ -348,7 +348,14 @@ async function getHiddenSectionIds(sectionIds) {
     // The owning teacher's current-term settings, one per distinct owner.
     // Isolated try/catch so a settings-read failure never disables archived
     // hiding (which must keep working with or without the settings rules).
-    const ownerEmails = [...new Set([...subjectData.values()].map((s) => s.ownerEmail).filter(Boolean))];
+    // ADMIN_EMAIL is always included: a super admin's current-term setting acts
+    // as the school-wide default for any subject whose own teacher never set a
+    // term (see the per-subject loop below). Without this, classes owned by
+    // teachers who never opened their term panel had no governing setting and so
+    // always showed to students - even when the admin had already retired that
+    // term - which is exactly the mismatch students reported (admin's grid hides
+    // the finished term, the student's dashboard still shows other teachers' copies of it).
+    const ownerEmails = [...new Set([ADMIN_EMAIL, ...[...subjectData.values()].map((s) => s.ownerEmail).filter(Boolean)])];
     const settingByOwner = new Map();
     try {
       const settingDocs = await getDocsByIds("settings", ownerEmails);
@@ -374,9 +381,19 @@ async function getHiddenSectionIds(sectionIds) {
     const hiddenSubjects = new Set();
     for (const [subjectId, s] of subjectData) {
       if (s.archived === true) { hiddenSubjects.add(subjectId); continue; }
-      // Global wins when set; otherwise this subject's owning teacher's setting.
-      const setting = globalActive ? globalTerm : settingByOwner.get(s.ownerEmail);
+      // Effective term setting, most specific first: site-wide override wins,
+      // else this subject's owning teacher's own setting, else the super admin's
+      // setting as a school-wide default (adminFallback) for owners who set none.
+      const ownSetting = globalActive ? globalTerm : settingByOwner.get(s.ownerEmail);
+      const adminFallback = !ownSetting;
+      const setting = ownSetting || (globalActive ? null : settingByOwner.get(ADMIN_EMAIL));
       if (setting && setting.currentSchoolYear && setting.currentTerm) {
+        // On the admin fallback path only, never term-hide a subject that hasn't
+        // declared its own SY/term - a teacher who never set terms shouldn't have
+        // ALL their classes vanish for students just because the admin set one.
+        // The owner-has-own-setting and global-override paths keep prior behavior
+        // (a blank term there still counts as a mismatch, as before).
+        if (adminFallback && (!String(s.schoolYear || "") || !String(s.term || ""))) continue;
         const sameTerm = String(s.schoolYear || "") === String(setting.currentSchoolYear)
           && String(s.term || "") === String(setting.currentTerm);
         if (!sameTerm) hiddenSubjects.add(subjectId);

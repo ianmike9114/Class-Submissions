@@ -195,7 +195,14 @@
           </select>
         </div>
         <p id="term-filter-hint" style="margin:0.5rem 0 0;"></p>
-        <div id="term-preview"></div>
+        <!-- Visible/Hidden-to-students breakdown folded away: the card opens as
+             just "Current term: … [filter]" + the one-line hint, and the full
+             per-subject list is one click in. Inner #term-preview id is unchanged
+             so renderTermPreview() still targets it. -->
+        <details id="term-preview-wrap" style="margin-top:0.4rem;">
+          <summary class="muted">Which classes students can see</summary>
+          <div id="term-preview"></div>
+        </details>
         <details style="margin-top:0.5rem;">
           <summary class="muted">Set the current term</summary>
           <div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.5rem; align-items:flex-end;">
@@ -488,7 +495,7 @@
     <button type="button" id="photo-lightbox-close" aria-label="Close preview">&times;</button>
   </div>
 
-  <script type="module" src="js/teacher.js?v=80"></script>
+  <script type="module" src="js/teacher.js?v=81"></script>
 
   <!-- PWA: register the service worker (see sw.js). Failure swallowed. -->
   <script>
