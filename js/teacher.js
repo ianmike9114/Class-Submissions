@@ -1343,6 +1343,11 @@ function renderTermFilterHint(filterByTerm, termSetting, termCount, hiddenByTerm
 function renderTermPreview(filterByTerm, hiddenNames, visibleNames) {
   const box = el("term-preview");
   if (!box) return;
+  // The breakdown lives in a collapsible #term-preview-wrap (teacher.html); hide
+  // the whole wrapper (summary included) when there's nothing to show, so an empty
+  // "Which classes students can see" toggle never dangles with no content behind it.
+  const wrap = el("term-preview-wrap");
+  if (wrap) wrap.classList.toggle("hidden", !filterByTerm);
   if (!filterByTerm) { box.innerHTML = ""; return; }
   const nameList = (names) => names.length
     ? `<ul style="margin:0.2rem 0 0 1.1rem; padding:0;">${names.map((n) => `<li>${escAttr(n)}</li>`).join("")}</ul>`
