@@ -326,6 +326,16 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   — those don't wipe whole tree of records). Teacher asked for stronger
   protection against misclicks; mistaken click can't accidentally retype
   name, unlike clearing OK/Cancel dialog.
+- **Never download whole `submissions` just to count or search.** Submission
+  docs carry base64 photo pages (up to ~1 MB each), so an all-submissions read
+  pulls megabytes. Home's "N missing" badge (`getMissingWorkCounts()`) counts
+  submitters server-side with `getCountFromServer` (one owner-scoped count per
+  past-due assignment); the header search (`searchGlobally()`) fetches its
+  corpus once via `getSearchCorpus()` (cleared by `invalidateReadCache()`) and is
+  debounced 250ms. Both replaced reads that made the teacher Home slow (and,
+  for search, re-downloaded every submission site-wide on each keystroke for
+  the super admin). Remaining full reads (photo-ZIP panel, Overview's
+  not-responding list) genuinely need the docs or are off the Home path.
 - **Notification bell has third bucket, "new joins".** `js/student.js`'s
   `enroll()` stamps every new enrollment with `seen: false`;
   `js/teacher.js`'s `getNotifications()` queries `seen == false`
