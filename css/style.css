@@ -1069,3 +1069,47 @@ details.assign-group[open] > summary.assign-group-head {
   .assign-actions > button { flex: 1 1 auto; }
   details.assign-group > summary.assign-group-head { padding: 0.7rem 1rem; }
 }
+
+/* ---- Student page header ----------------------------------------------
+   The student page kept a plain <header> after the teacher page moved to the
+   sidebar/topbar shell, and lost its desktop styling with it: the title sat
+   flush-left with no bar, and the name (.hdr-account, light text meant for a
+   navy background) was near-invisible. Restore a sticky navy bar matching the
+   teacher sidebar; scoped to body.student-page so .topbar is untouched. */
+body.student-page > header {
+  position: sticky;
+  top: 0;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem max(1rem, calc((100% - 1180px) / 2 + 1rem));
+  background: var(--blue);
+  color: #fff;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08);
+}
+body.student-page > header h1 { margin: 0; font-size: 1.25rem; color: #fff; }
+body.student-page > header > div {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+body.student-page > header .status-ai-drafted { background: rgba(255, 255, 255, 0.15); color: #fff; }
+body.student-page > header button.secondary {
+  background: transparent;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  padding: 0.4rem 0.8rem;
+}
+body.student-page > header button.secondary:hover { background: rgba(255, 255, 255, 0.12); }
+
+@media (max-width: 640px) {
+  /* Phone: title on its own row, avatar/name/actions wrap below it. The
+     generic header rules above stack it as a column; keep the padding tight. */
+  /* Not sticky on phones: stacked, it's ~140px - too much to pin over content. */
+  body.student-page > header { position: static; padding: 0.6rem 1rem; }
+  body.student-page > header h1 { font-size: 1.1rem; text-align: center; }
+  body.student-page > header .hdr-account { max-width: 9rem; }
+}
