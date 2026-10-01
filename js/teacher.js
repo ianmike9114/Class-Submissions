@@ -1,7 +1,7 @@
 import { db, ADMIN_EMAIL, isSuperAdmin } from "./firebase-config.js";
 import { guardPage, signOutUser } from "./auth.js";
 import {
-  collection, addDoc, doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, query, where, serverTimestamp,
+  collection, addDoc, doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, getCountFromServer, query, where, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getGeminiKey, setGeminiKey, runRubricCheck, generateCodeExample } from "./gemini.js";
 import { getEmailConfig, saveEmailConfig, notifySection } from "./notify.js";
@@ -86,7 +86,7 @@ function ownerScopedQuery(collectionName, ...wheres) {
 // functions is what lets them share a fetch.
 const READ_CACHE_TTL_MS = 3000;
 let readCache = new Map(); // key -> { t, promise }
-function invalidateReadCache() { readCache = new Map(); }
+function invalidateReadCache() { readCache = new Map(); searchCorpus = null; }
 
 // Reject a promise if it doesn't settle within `ms`. Firestore's SDK retries a
 // failed read indefinitely with no error, so a read on a dead connection can
@@ -406,14 +406,23 @@ function joinWaitingBadge(count) {
 // ---------- missing-work counts (enrolled students who haven't submitted a past-due assignment) ----------
 // Per subject: for each assignment (not a material) whose due date has passed,
 // count approved-enrolled students in its section who have no submission for
-// it, and sum those. Heaviest rollup (adds one all-submissions read), so it's
-// only called from loadSubjects(), not the per-section getPendingCounts path.
+// it, and sum those. Called only from loadSubjects() (the Home grid).
+//
+// Submitters are counted SERVER-SIDE with getCountFromServer (one tiny count
+// query per past-due assignment) instead of downloading every submission doc.
+// Submission docs carry the students' photo pages (base64, up to ~1 MB each),
+// so the old all-submissions read pulled megabytes on every Home load just to
+// count them - the "Home loads slowly" report. A count query returns only a
+// number and bills 1 read per 1000 matches. Owner-scoped (ownerEmail ==) like
+// every rollup, which firestore.rules' submissions read rule permits for both
+// granted teachers and the super admin; two equality filters need no
+// composite index. A student has at most one submission per assignment, so
+// the doc count equals distinct submitters.
 async function getMissingWorkCounts() {
-  const [sectionsSnap, assignSnap, enrollSnap, subSnap] = await Promise.all([
+  const [sectionsSnap, assignSnap, enrollSnap] = await Promise.all([
     cachedOwnerDocs("sections", "sections"),
     cachedOwnerDocs("assignments", "assignments"),
     cachedOwnerDocs("enrollments", "enrollments"),
-    cachedOwnerDocs("subs:all", "submissions"),
   ]);
   const sectionToSubject = new Map(sectionsSnap.docs.map((d) => [d.id, d.data().subjectId]));
 
@@ -426,27 +435,24 @@ async function getMissingWorkCounts() {
     enrolledBySection.set(e.sectionId, (enrolledBySection.get(e.sectionId) || 0) + 1);
   });
 
-  // Distinct submitters per assignment.
-  const submittersByAssignment = new Map();
-  subSnap.forEach((d) => {
-    const s = d.data();
-    if (!ownedByViewAs(s)) return;
-    if (!submittersByAssignment.has(s.assignmentId)) submittersByAssignment.set(s.assignmentId, new Set());
-    submittersByAssignment.get(s.assignmentId).add(s.studentUID);
-  });
-
   const now = new Date();
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 
-  const bySubject = new Map();
-  assignSnap.forEach((d) => {
+  // Only past-due graded assignments in a section that has students need a count.
+  const targets = assignSnap.docs.filter((d) => {
     const a = d.data();
-    if (!ownedByViewAs(a)) return;
-    if (a.type === "material") return;            // materials have no submissions
-    if (!a.dueDate || a.dueDate > today) return;  // only assignments actually past due
-    const expected = enrolledBySection.get(a.sectionId) || 0;
-    const submitted = submittersByAssignment.get(d.id)?.size || 0;
-    const missing = Math.max(0, expected - submitted);
+    return ownedByViewAs(a) && a.type !== "material" && a.dueDate && a.dueDate <= today
+      && (enrolledBySection.get(a.sectionId) || 0) > 0;
+  });
+  const counts = await Promise.all(targets.map((d) =>
+    getCountFromServer(query(collection(db, "submissions"),
+      where("ownerEmail", "==", state.viewAsEmail), where("assignmentId", "==", d.id)))
+      .then((snap) => snap.data().count)));
+
+  const bySubject = new Map();
+  targets.forEach((d, i) => {
+    const a = d.data();
+    const missing = Math.max(0, (enrolledBySection.get(a.sectionId) || 0) - counts[i]);
     if (!missing) return;
     const subjectId = sectionToSubject.get(a.sectionId);
     if (subjectId) bySubject.set(subjectId, (bySubject.get(subjectId) || 0) + missing);
@@ -1592,6 +1598,28 @@ el("set-current-term").addEventListener("click", async () => {
 // the current query's results.
 let searchRequestSeq = 0;
 const SEARCH_GROUP_LIMIT = 8; // suggestion-style - not a full results page
+// Search corpus, fetched ONCE and reused for every keystroke until the next
+// refresh/mutation (invalidateReadCache() clears it). It used to re-download
+// all subjects/sections/assignments/submissions on every character typed -
+// and submissions carry base64 photo pages, so each keystroke pulled
+// megabytes (for the super admin, every teacher's). Keyed by viewAsEmail so
+// switching "View as" never serves another teacher's corpus. A failed fetch
+// is evicted so the next keystroke retries.
+let searchCorpus = null; // { key, promise }
+function getSearchCorpus() {
+  const key = state.viewAsEmail;
+  if (searchCorpus && searchCorpus.key === key) return searchCorpus.promise;
+  const promise = Promise.all([
+    getDocs(ownerScopedQuery("subjects")),
+    getDocs(ownerScopedQuery("sections")),
+    getDocs(ownerScopedQuery("assignments")),
+    getDocs(ownerScopedQuery("submissions")),
+  ]);
+  promise.catch(() => { if (searchCorpus?.promise === promise) searchCorpus = null; });
+  searchCorpus = { key, promise };
+  return promise;
+}
+
 async function searchGlobally() {
   const queryText = el("global-student-search").value;
   const results = el("global-search-results");
@@ -1604,12 +1632,14 @@ async function searchGlobally() {
   results.classList.remove("hidden");
   positionDropdown(el("global-student-search"), results, true);
 
-  const [subjectsSnap, sectionsSnap, assignmentsSnap, submissionsSnap] = await Promise.all([
-    getDocs(ownerScopedQuery("subjects")),
-    getDocs(ownerScopedQuery("sections")),
-    getDocs(ownerScopedQuery("assignments")),
-    getDocs(ownerScopedQuery("submissions")),
-  ]);
+  let subjectsSnap, sectionsSnap, assignmentsSnap, submissionsSnap;
+  try {
+    [subjectsSnap, sectionsSnap, assignmentsSnap, submissionsSnap] = await getSearchCorpus();
+  } catch (err) {
+    console.error("search read failed:", err);
+    if (requestId === searchRequestSeq) results.innerHTML = `<p class="muted" style="padding:0.5rem 0.75rem;">Search couldn't load — try again.</p>`;
+    return;
+  }
   if (requestId !== searchRequestSeq) return;
 
   const subjects = subjectsSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter(ownedByViewAs);
@@ -1693,7 +1723,13 @@ async function searchGlobally() {
       await openAssignment(assignmentId);
     }));
 }
-el("global-student-search").addEventListener("input", searchGlobally);
+// Debounced: wait for a short typing pause before searching, so a burst of
+// keystrokes runs one search instead of one per character.
+let searchDebounce = null;
+el("global-student-search").addEventListener("input", () => {
+  clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(searchGlobally, 250);
+});
 
 // ---------- sections ----------
 async function openSubject(subjectId) {
