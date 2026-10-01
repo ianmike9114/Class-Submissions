@@ -324,10 +324,22 @@ async function getDocsByIds(collectionName, ids) {
   return snaps.filter((s) => s && s.exists());
 }
 
+// Term labels are free text on subjects ("2", "Term 2", "2nd") and SY may use
+// a hyphen, en dash, or stray spaces - compare normalized forms so a cosmetic
+// difference never makes a current class look like a past one (or vice versa).
+function normTerm(v) {
+  const m = String(v ?? "").match(/\d+/);
+  return m ? m[0] : String(v ?? "").trim().toLowerCase();
+}
+function normYear(v) {
+  return String(v ?? "").replace(/\s+/g, "").replace(/[‐-―]/g, "-");
+}
+
 // Returns the set of *section* ids that should be hidden from the student,
 // resolved via the section doc (sectionId -> subject). A section is hidden when
 // its subject is archived OR its subject's (schoolYear, term) doesn't match the
-// owning teacher's "current term" setting (settings/{ownerEmail}). Keyed off
+// effective current term: settings/all-teachers, else the super admin's
+// settings/{ADMIN_EMAIL}, else (no admin term) the owner's settings/{ownerEmail}. Keyed off
 // sectionId, not the enrollment's cached subjectId: on this live system some
 // enrollments predate the subjectId field (or joined via a path that didn't
 // cache it), so keying off subjectId silently missed them. The section is the
@@ -348,13 +360,8 @@ async function getHiddenSectionIds(sectionIds) {
     // The owning teacher's current-term settings, one per distinct owner.
     // Isolated try/catch so a settings-read failure never disables archived
     // hiding (which must keep working with or without the settings rules).
-    // ADMIN_EMAIL is always included: a super admin's current-term setting acts
-    // as the school-wide default for any subject whose own teacher never set a
-    // term (see the per-subject loop below). Without this, classes owned by
-    // teachers who never opened their term panel had no governing setting and so
-    // always showed to students - even when the admin had already retired that
-    // term - which is exactly the mismatch students reported (admin's grid hides
-    // the finished term, the student's dashboard still shows other teachers' copies of it).
+    // ADMIN_EMAIL is always included: the super admin's current term is the
+    // school-wide term for every owner's classes (see schoolTerm below).
     const ownerEmails = [...new Set([ADMIN_EMAIL, ...[...subjectData.values()].map((s) => s.ownerEmail).filter(Boolean)])];
     const settingByOwner = new Map();
     try {
@@ -378,24 +385,25 @@ async function getHiddenSectionIds(sectionIds) {
     }
     const globalActive = !!(globalTerm && globalTerm.currentSchoolYear && globalTerm.currentTerm);
 
+    // Effective term, school-wide first: the site-wide override
+    // (settings/all-teachers), else the SUPER ADMIN's own current term
+    // (settings/{ADMIN_EMAIL}) - the admin's term wins for every teacher's
+    // classes, so a teacher who left an old term saved (or never set one) can't
+    // make a finished term show to students. Only when the admin has set no term
+    // does an owner's own setting apply. Under any active term a subject with a
+    // blank SY/term counts as a mismatch and is hidden - the teacher grid lists
+    // those as "No term set" so they get fixed via Edit Year/Term.
+    const adminSetting = settingByOwner.get(ADMIN_EMAIL);
+    const adminActive = !!(adminSetting && adminSetting.currentSchoolYear && adminSetting.currentTerm);
+    const schoolTerm = globalActive ? globalTerm : (adminActive ? adminSetting : null);
+
     const hiddenSubjects = new Set();
     for (const [subjectId, s] of subjectData) {
       if (s.archived === true) { hiddenSubjects.add(subjectId); continue; }
-      // Effective term setting, most specific first: site-wide override wins,
-      // else this subject's owning teacher's own setting, else the super admin's
-      // setting as a school-wide default (adminFallback) for owners who set none.
-      const ownSetting = globalActive ? globalTerm : settingByOwner.get(s.ownerEmail);
-      const adminFallback = !ownSetting;
-      const setting = ownSetting || (globalActive ? null : settingByOwner.get(ADMIN_EMAIL));
+      const setting = schoolTerm || settingByOwner.get(s.ownerEmail);
       if (setting && setting.currentSchoolYear && setting.currentTerm) {
-        // On the admin fallback path only, never term-hide a subject that hasn't
-        // declared its own SY/term - a teacher who never set terms shouldn't have
-        // ALL their classes vanish for students just because the admin set one.
-        // The owner-has-own-setting and global-override paths keep prior behavior
-        // (a blank term there still counts as a mismatch, as before).
-        if (adminFallback && (!String(s.schoolYear || "") || !String(s.term || ""))) continue;
-        const sameTerm = String(s.schoolYear || "") === String(setting.currentSchoolYear)
-          && String(s.term || "") === String(setting.currentTerm);
+        const sameTerm = normYear(s.schoolYear) === normYear(setting.currentSchoolYear)
+          && normTerm(s.term) === normTerm(setting.currentTerm);
         if (!sameTerm) hiddenSubjects.add(subjectId);
       }
     }
@@ -460,15 +468,28 @@ async function loadEverything() {
   }
 
   const classesList = el("classes-list");
+  // Compact card grid (one column on phones): subject, section, teacher, and
+  // the student's own roster name on its own line. The rarely-used actions
+  // (Edit name / Request to leave) live in a "⋯" <details> menu so they don't
+  // dominate every card.
   classesList.innerHTML = enrollments.length
     ? enrollments.map((en) => `
-        <div class="card">
-          <div><strong>${en.subjectName} — ${en.sectionName}</strong> (<span id="my-name-${en.id}">${displayStudentName(en.studentName)}</span>)</div>
-          <div class="muted" style="font-size:0.85em; margin-top:0.15rem;">Teacher: ${en.teacherName || "—"}${en.leaveRequested ? ' · <span class="status-pending">leave requested</span>' : ""}</div>
-          <div style="display:flex; flex-wrap:wrap; gap:0.4rem; margin-top:0.6rem;">
-            <button type="button" class="secondary" data-edit-my-name="${en.id}" data-raw="${en.studentName}">Edit name</button>
-            <button type="button" class="secondary" data-toggle-leave="${en.id}" data-current="${!!en.leaveRequested}">${en.leaveRequested ? "Cancel leave request" : "Request to leave"}</button>
+        <div class="card class-card">
+          <div class="class-card-head">
+            <div class="class-card-title">
+              <strong>${esc(en.subjectName)}</strong>
+              <div class="class-card-section">${esc(en.sectionName)}</div>
+            </div>
+            <details class="menu">
+              <summary aria-label="Class options" title="Class options">&#8943;</summary>
+              <div class="menu-panel">
+                <button type="button" data-edit-my-name="${en.id}" data-raw="${esc(en.studentName)}">Edit my name</button>
+                <button type="button" data-toggle-leave="${en.id}" data-current="${!!en.leaveRequested}">${en.leaveRequested ? "Cancel leave request" : "Request to leave"}</button>
+              </div>
+            </details>
           </div>
+          <div class="muted class-card-meta">Teacher: ${esc(en.teacherName || "—")}${en.leaveRequested ? ' · <span class="status-pending">leave requested</span>' : ""}</div>
+          <div class="muted class-card-meta">As: <span id="my-name-${en.id}">${esc(displayStudentName(en.studentName))}</span></div>
         </div>`).join("")
     : (pendingEnrollments.length
         ? '<p class="muted">Your join request is waiting for teacher approval.</p>'
@@ -477,9 +498,10 @@ async function loadEverything() {
   classesList.querySelectorAll("[data-edit-my-name]").forEach((b) =>
     b.addEventListener("click", () => {
       const enrollmentId = b.dataset.editMyName;
+      b.closest("details.menu")?.removeAttribute("open");
       const nameEl = el(`my-name-${enrollmentId}`);
       const current = b.dataset.raw;
-      nameEl.innerHTML = `<input id="edit-my-name-input-${enrollmentId}" value="${current}" style="width:auto; display:inline-block; margin-bottom:0;" />`;
+      nameEl.innerHTML = `<input id="edit-my-name-input-${enrollmentId}" value="${esc(current)}" style="width:auto; max-width:100%; display:inline-block; margin-bottom:0;" />`;
       const input = el(`edit-my-name-input-${enrollmentId}`);
       input.focus();
       input.select();
@@ -531,7 +553,7 @@ async function loadEverything() {
   // Detail-panel mode: start every render with nothing open and the
   // empty-state prompt showing. Cards are appended after this and stay
   // hidden (CSS .outline-mode) until an outline item opens one.
-  list.innerHTML = '<p id="assignment-empty" class="muted">Pick an assignment from the course outline to open it.</p>';
+  list.innerHTML = '<div id="assignment-empty" class="muted">Pick an assignment from the course outline to open it.</div>';
   el("course-outline-body").innerHTML = "";
   el("course-outline").classList.add("hidden");
   el("assignment-nav")?.classList.add("hidden"); // nothing open yet on a fresh render
@@ -826,21 +848,51 @@ async function loadEverything() {
   }
 
   renderOutline(assignmentsBySubject, subDocsByAssignment, topicOrderBySubject, doneMaterialIds);
+  renderUpNext(assignmentsBySubject, subDocsByAssignment, doneMaterialIds);
   renderNeedsResubmission(assignmentsBySubject, subDocsByAssignment);
   attachSubmitHandlers();
   highlightWithin(el("assignments-list"));
   filterAssignments();
 }
 
-// Course-outline sidebar: Subject -> Lesson -> assignment, with a progress
-// bar per subject (assignments the student has already submitted / total).
-// Built entirely from data loadEverything() already fetched - no extra
-// Firestore reads. Each leaf jumps to (and briefly highlights) its card.
+// One status per outline item / Up-next row, in student words. Returns
+// { key, label } where key picks the chip colour (.chip-<key>).
+function itemStatus(a, subDoc, isMaterialDone) {
+  if (a.type === "material") return isMaterialDone ? { key: "done", label: "Done ✓" } : { key: "material", label: "Read" };
+  if (subDoc) {
+    const st = subDoc.data().status;
+    if (st === "published") return { key: "done", label: "Graded ✓" };
+    if (st === "returned") return { key: "returned", label: "Fix & resubmit" };
+    return { key: "submitted", label: "Submitted" };
+  }
+  if (isPastDue(a)) return { key: "missing", label: "Missing" };
+  if (a.dueDate) {
+    const days = Math.ceil((new Date(a.dueDate + "T23:59:59+08:00").getTime() - Date.now()) / 86400000);
+    if (days <= 3) return { key: "soon", label: days <= 0 ? "Due today" : `Due in ${days}d` };
+  }
+  return { key: "todo", label: "To do" };
+}
+
+// "Sep 26" from "2026-09-26" - compact due date for outline rows.
+function shortDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso + "T00:00:00+08:00");
+  return isNaN(d) ? iso : d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "Asia/Manila" });
+}
+
+// Course-outline sidebar: Subject -> Lesson -> item, each level a <details>
+// dropdown so a student with many classes sees a short list of subjects and
+// opens only the one they need. The subject summary carries the progress
+// bar; each item shows a type icon (material vs graded work - two "Module 2"s
+// are no longer indistinguishable), a short due date, and one status chip.
+// Built entirely from data loadEverything() already fetched - no extra reads.
 function renderOutline(assignmentsBySubject, subDocsByAssignment, topicOrderBySubject, doneMaterialIds = new Set()) {
   const body = el("course-outline-body");
   const outline = el("course-outline");
+  const isPhone = window.matchMedia("(max-width: 640px)").matches;
   let html = "";
   let anyAssignments = false;
+  let openedOne = false;
   navOrder = []; // rebuilt in outline display order; drives Prev/Next
 
   for (const [subjectName, aDocs] of assignmentsBySubject) {
@@ -854,11 +906,10 @@ function renderOutline(assignmentsBySubject, subDocsByAssignment, topicOrderBySu
     const done = gradable.filter((d) => subDocsByAssignment.get(d.id)).length;
     const pct = gradable.length ? Math.round((done / gradable.length) * 100) : 0;
 
-    // Materials aren't graded, but the student can mark them done - show that
-    // progress separately (the "2/2" in the reference design).
+    // Materials aren't graded, but the student can mark them done - shown as
+    // its own chip so it never mixes into the graded progress.
     const materialDocs = aDocs.filter((d) => d.data().type === "material");
     const materialsDone = materialDocs.filter((d) => doneMaterialIds.has(d.id)).length;
-    const materialsLabel = materialDocs.length ? ` · Materials ${materialsDone}/${materialDocs.length}` : "";
 
     // Group this subject's assignments by lesson/topic.
     const byLesson = new Map();
@@ -874,31 +925,99 @@ function renderOutline(assignmentsBySubject, subDocsByAssignment, topicOrderBySu
     for (const t of managed) if (byLesson.has(t)) orderedLessons.push(t);
     for (const l of byLesson.keys()) if (!orderedLessons.includes(l)) orderedLessons.push(l);
 
-    html += `<div class="outline-subject">
-      <div class="outline-subject-head"><strong>${esc(subjectName)}</strong><span class="muted">${done}/${gradable.length}${materialsLabel}</span></div>
-      <div class="outline-progress"><div class="outline-progress-bar" style="width:${pct}%"></div></div>`;
+    // Desktop opens the first subject that still has open graded work (or
+    // unread materials); phones start fully collapsed.
+    const hasOpenWork = gradable.some((d) => !subDocsByAssignment.get(d.id) && !isPastDue(d.data()))
+      || materialsDone < materialDocs.length;
+    const openSubject = !isPhone && !openedOne && hasOpenWork;
+    if (openSubject) openedOne = true;
+
+    html += `<details class="outline-subject" data-subject="${esc(subjectName)}"${openSubject ? " open" : ""}>
+      <summary class="outline-subject-head">
+        <span class="outline-subject-row">
+          <strong class="outline-subject-name">${esc(subjectName)}</strong>
+          <span class="outline-subject-counts">
+            ${gradable.length ? `<span class="chip chip-${pct === 100 ? "done" : "todo"}" title="Graded work submitted">${done}/${gradable.length}</span>` : ""}
+            ${materialDocs.length ? `<span class="chip chip-material" title="Materials read">&#128196; ${materialsDone}/${materialDocs.length}</span>` : ""}
+          </span>
+        </span>
+        <span class="outline-progress"><span class="outline-progress-bar" style="width:${pct}%"></span></span>
+      </summary>`;
+    // A lone "General" group renders flat (no lesson dropdown) - labelling it
+    // would just be noise.
+    const flat = byLesson.size === 1 && orderedLessons[0] === "General";
     for (const lesson of orderedLessons) {
       const docs = byLesson.get(lesson);
-      // Only label the lesson when the teacher actually set one - a lone
-      // "General" group would just be noise.
-      if (byLesson.size > 1 || lesson !== "General") {
-        html += `<div class="outline-lesson-head muted">${esc(lesson)}</div>`;
+      if (!flat) {
+        html += `<details class="outline-lesson" open>
+          <summary class="outline-lesson-head"><span>${esc(lesson)}</span><span class="muted">${docs.length}</span></summary>`;
       }
       for (const d of docs) {
-        // A leaf is "✓" when the student submitted it (assignment) or marked it
-        // done (material) - so materials get the same completion tick.
-        const complete = d.data().type === "material"
-          ? doneMaterialIds.has(d.id)
-          : !!subDocsByAssignment.get(d.id);
+        const a = d.data();
+        const isMaterial = a.type === "material";
+        const st = itemStatus(a, subDocsByAssignment.get(d.id), doneMaterialIds.has(d.id));
         navOrder.push({ id: d.id, subject: subjectName });
-        html += `<button type="button" class="outline-item" data-jump="${d.id}">${esc(d.data().title)}${complete ? ' <span class="outline-item-status">✓</span>' : ""}</button>`;
+        html += `<button type="button" class="outline-item" data-jump="${d.id}" data-title="${esc(a.title)}">
+          <span class="outline-item-icon" title="${isMaterial ? "Material (read)" : "Assignment (submit)"}" aria-hidden="true">${isMaterial ? "&#128196;" : "&#9998;"}</span>
+          <span class="outline-item-main">
+            <span class="outline-item-title">${esc(a.title)}</span>
+            <span class="outline-item-meta">${isMaterial ? "Material" : (a.dueDate ? `Due ${esc(shortDate(a.dueDate))}` : "Assignment")}</span>
+          </span>
+          <span class="chip chip-${st.key}">${st.label}</span>
+        </button>`;
       }
+      if (!flat) html += `</details>`;
     }
-    html += `</div>`;
+    html += `</details>`;
   }
 
   body.innerHTML = html;
   outline.classList.toggle("hidden", !anyAssignments);
+}
+
+// Fills the (otherwise blank) detail panel with "Up next": unsubmitted,
+// still-open assignments sorted by due date, then unread materials. Uses the
+// wide right column on desktop instead of a lone "pick something" line. It
+// hides as soon as an item is opened (openAssignment hides #assignment-empty).
+function renderUpNext(assignmentsBySubject, subDocsByAssignment, doneMaterialIds) {
+  const box = el("assignment-empty");
+  if (!box) return;
+  const todo = [];
+  const toRead = [];
+  for (const [subjectName, aDocs] of assignmentsBySubject) {
+    for (const d of aDocs) {
+      const a = d.data();
+      if (a.type === "material") { if (!doneMaterialIds.has(d.id)) toRead.push({ d, a, subjectName }); continue; }
+      if (!subDocsByAssignment.get(d.id) && !isPastDue(a)) todo.push({ d, a, subjectName });
+    }
+  }
+  todo.sort((x, y) => (x.a.dueDate || "9999").localeCompare(y.a.dueDate || "9999"));
+  const rows = [...todo, ...toRead].slice(0, 8);
+  if (!rows.length) {
+    box.className = "muted";
+    box.innerHTML = "You're all caught up. Pick anything from the course outline to review it.";
+    return;
+  }
+  box.className = "card up-next";
+  box.innerHTML = `
+    <h3 style="margin-top:0;">Up next</h3>
+    <p class="muted" style="margin-top:0;">Your open work, soonest due first. Or pick anything from the course outline.</p>
+    <div class="up-next-list">
+      ${rows.map(({ d, a, subjectName }) => {
+        const st = itemStatus(a, null, false);
+        return `<div class="up-next-row">
+          <span class="outline-item-icon" aria-hidden="true">${a.type === "material" ? "&#128196;" : "&#9998;"}</span>
+          <div class="up-next-main">
+            <strong>${esc(a.title)}</strong>
+            <div class="muted">${esc(subjectName)}${a.lesson ? ` · ${esc(a.lesson)}` : ""}${a.dueDate ? ` · due ${esc(shortDate(a.dueDate))}` : ""}</div>
+          </div>
+          <span class="chip chip-${st.key}">${st.label}</span>
+          <button type="button" data-upnext-jump="${d.id}">Open</button>
+        </div>`;
+      }).join("")}
+    </div>`;
+  box.querySelectorAll("[data-upnext-jump]").forEach((b) =>
+    b.addEventListener("click", () => openAssignment(b.dataset.upnextJump)));
 }
 
 // Pinned "Needs resubmission" callout at the very top of the dashboard.
@@ -1005,7 +1124,14 @@ function openAssignment(assignmentId) {
   el("assignment-empty")?.classList.add("hidden");
   const body = el("course-outline-body");
   body.querySelectorAll(".outline-item.active").forEach((b) => b.classList.remove("active"));
-  body.querySelector(`[data-jump="${assignmentId}"]`)?.classList.add("active");
+  const item = body.querySelector(`[data-jump="${assignmentId}"]`);
+  if (item) {
+    item.classList.add("active");
+    // Expand the item's subject + lesson dropdowns so the active row is visible.
+    for (let p = item.parentElement; p && p !== body; p = p.parentElement) {
+      if (p.tagName === "DETAILS") p.open = true;
+    }
+  }
   // On a phone the outline sits above the detail panel (a real collapsible
   // <details> there), so opening an assignment should take the student
   // straight to it: collapse the outline and scroll the card to the top so
@@ -1028,14 +1154,33 @@ function filterAssignments() {
     const subjectName = (group.querySelector(".outline-subject-head strong")?.textContent || "").toLowerCase();
     let anyVisible = false;
     group.querySelectorAll(".outline-item").forEach((item) => {
-      const match = !q || item.textContent.trim().toLowerCase().includes(q) || subjectName.includes(q);
+      // Match on the title (data-title), not textContent - that now also
+      // carries the status chip/due text, which would give false hits.
+      const title = (item.dataset.title || "").toLowerCase();
+      const match = !q || title.includes(q) || subjectName.includes(q);
       item.classList.toggle("hidden", !match);
       if (match) anyVisible = true;
     });
+    // Hide lesson dropdowns left empty, and expand everything with a hit
+    // while searching so matches aren't buried inside closed dropdowns.
+    group.querySelectorAll(".outline-lesson").forEach((lesson) => {
+      const any = !!lesson.querySelector(".outline-item:not(.hidden)");
+      lesson.classList.toggle("hidden", !any);
+      if (q && any) lesson.open = true;
+    });
     group.classList.toggle("hidden", !anyVisible);
+    if (q && anyVisible) group.open = true;
   });
 }
 el("assignment-search").addEventListener("input", filterAssignments);
+
+// "⋯" overflow menus are plain <details>: close any open one when the user
+// clicks elsewhere (or opens another), so they behave like a dropdown.
+document.addEventListener("click", (e) => {
+  document.querySelectorAll("details.menu[open]").forEach((m) => {
+    if (!m.contains(e.target)) m.removeAttribute("open");
+  });
+});
 
 // Show the teacher's lesson material inline on the assignment card.
 // Teachers attach it either in the dedicated "Instructions file" field
