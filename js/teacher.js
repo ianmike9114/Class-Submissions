@@ -1295,16 +1295,40 @@ async function getGlobalTermSetting() {
   }
 }
 
+// The super admin's own current term (settings/{ADMIN_EMAIL}) is the
+// SCHOOL-WIDE term: it wins over every teacher's own setting for students (see
+// js/student.js's getHiddenSectionIds), so each grid mirrors it too. Best-effort.
+async function getAdminTermSetting() {
+  try {
+    const snap = await getDoc(doc(db, "settings", ADMIN_EMAIL));
+    return snap.exists() ? snap.data() : null;
+  } catch (err) {
+    console.error("admin current-term read failed:", err);
+    return null;
+  }
+}
+
+// Term labels are free text on older subjects ("2", "Term 2") and SY may use an
+// en dash or spaces - compare normalized forms (same helpers as js/student.js).
+function normTerm(v) {
+  const m = String(v ?? "").match(/\d+/);
+  return m ? m[0] : String(v ?? "").trim().toLowerCase();
+}
+function normYear(v) {
+  return String(v ?? "").replace(/\s+/g, "").replace(/[‐-―]/g, "-");
+}
+function termIsSet(t) { return !!(t && t.currentSchoolYear && t.currentTerm); }
+
 // Reflect the current setting in the header label + prefill the setter inputs.
 // globalActive: the effective setting comes from the site-wide admin override,
 // so the label says so and the admin's "apply to all teachers" box is pre-ticked.
-function syncCurrentTermUI(setting, globalActive = false) {
+function syncCurrentTermUI(setting, globalActive = false, adminWide = false) {
   const label = el("current-term-label");
   if (!label) return;
   const globalBox = el("current-term-global");
   if (globalBox) globalBox.checked = globalActive;
   if (setting && setting.currentSchoolYear && setting.currentTerm) {
-    label.textContent = `SY ${setting.currentSchoolYear} · Term ${setting.currentTerm}${globalActive ? " (all teachers)" : ""}`;
+    label.textContent = `SY ${setting.currentSchoolYear} · Term ${setting.currentTerm}${globalActive || adminWide ? " (school-wide, set by admin)" : ""}`;
     if (!el("current-term-year").value) el("current-term-year").value = setting.currentSchoolYear;
     el("current-term-term").value = String(setting.currentTerm);
   } else {
@@ -1340,7 +1364,7 @@ function renderTermFilterHint(filterByTerm, termSetting, termCount, hiddenByTerm
 // "Edit Year/Term". Renders nothing when the filter is off (the hint above
 // already covers that case). Populates #term-preview (a plain div, so nested
 // lists are valid, unlike the #term-filter-hint <p>).
-function renderTermPreview(filterByTerm, hiddenNames, visibleNames) {
+function renderTermPreview(filterByTerm, hiddenNames, visibleNames, noTermNames = []) {
   const box = el("term-preview");
   if (!box) return;
   // The breakdown lives in a collapsible #term-preview-wrap (teacher.html); hide
@@ -1356,6 +1380,7 @@ function renderTermPreview(filterByTerm, hiddenNames, visibleNames) {
     <div style="margin-top:0.6rem; font-size:0.85rem;">
       <div><strong style="color:#0a6b2e;">Visible to students (${visibleNames.length}):</strong>${nameList(visibleNames)}</div>
       <div style="margin-top:0.4rem;"><strong style="color:#b91c1c;">Hidden from students (${hiddenNames.length}):</strong>${nameList(hiddenNames)}</div>
+      ${noTermNames.length ? `<div style="margin-top:0.4rem;"><strong style="color:#8a5a00;">No term set — hidden from students (${noTermNames.length}):</strong>${nameList(noTermNames)}</div>` : ""}
       <p class="muted" style="margin:0.4rem 0 0;">Wrong bucket? Open the class and use <strong>Edit Year/Term</strong> to set its real school year &amp; term.</p>
     </div>`;
 }
@@ -1376,10 +1401,14 @@ async function loadSubjects() {
   // Effective setting = the site-wide admin override if one exists, else this
   // teacher's own. The admin override is what students get (js/student.js), so
   // the grid mirrors it here too. globalActive drives the label/checkbox.
-  const [ownSetting, globalSetting] = await Promise.all([getCurrentTermSetting(), getGlobalTermSetting()]);
-  const globalActive = !!(globalSetting && globalSetting.currentSchoolYear && globalSetting.currentTerm);
-  const termSetting = globalActive ? globalSetting : ownSetting;
-  syncCurrentTermUI(termSetting, globalActive);
+  // Order matches what students get: site-wide override, else the super admin's
+  // own term (school-wide), else this teacher's own (only when admin set none).
+  const [ownSetting, globalSetting, adminSetting] = await Promise.all([
+    getCurrentTermSetting(), getGlobalTermSetting(), getAdminTermSetting()]);
+  const globalActive = termIsSet(globalSetting);
+  const adminWide = !globalActive && termIsSet(adminSetting);
+  const termSetting = globalActive ? globalSetting : (adminWide ? adminSetting : ownSetting);
+  syncCurrentTermUI(termSetting, globalActive, adminWide && !isSuperAdmin(currentUser.email));
   const filterByTerm = el("term-filter").value === "current"
     && !!(termSetting && termSetting.currentSchoolYear && termSetting.currentTerm);
   // The subject list must render even if the (non-essential) pending / leave
@@ -1410,15 +1439,21 @@ async function loadSubjects() {
   // is on. Archived classes are excluded (they're hidden separately).
   const hiddenTermNames = [];
   const visibleTermNames = [];
+  const noTermNames = [];
   snap.forEach((d) => {
     const s = d.data();
     if (!ownedByViewAs(s)) return; // admin's unfiltered subjects query includes every teacher's - narrow to mine/legacy
     subjectNames.set(d.id, s.name);
     if (!s.archived) termsPresent.add(`${s.schoolYear || "—"}·${s.term || "—"}`);
     const termMismatch = filterByTerm
-      && (String(s.schoolYear || "") !== String(termSetting.currentSchoolYear)
-          || String(s.term || "") !== String(termSetting.currentTerm));
-    if (filterByTerm && !s.archived) (termMismatch ? hiddenTermNames : visibleTermNames).push(s.name);
+      && (normYear(s.schoolYear) !== normYear(termSetting.currentSchoolYear)
+          || normTerm(s.term) !== normTerm(termSetting.currentTerm));
+    if (filterByTerm && !s.archived) {
+      // A class with no SY/term is hidden from students under any active term -
+      // list it separately so its teacher sees why and fixes it (Edit Year/Term).
+      if (!String(s.schoolYear || "").trim() || !String(s.term || "").trim()) noTermNames.push(s.name);
+      else (termMismatch ? hiddenTermNames : visibleTermNames).push(s.name);
+    }
     if (s.archived && !showArchived) return;
     if (termMismatch) { hiddenByTerm++; return; }
     const row = document.createElement("div");
@@ -1443,7 +1478,7 @@ async function loadSubjects() {
     list.appendChild(row);
   });
   renderTermFilterHint(filterByTerm, termSetting, termsPresent.size, hiddenByTerm);
-  renderTermPreview(filterByTerm, hiddenTermNames, visibleTermNames);
+  renderTermPreview(filterByTerm, hiddenTermNames, visibleTermNames, noTermNames);
   list.querySelectorAll("[data-open]").forEach((b) =>
     b.addEventListener("click", () => openSubject(b.dataset.open)));
   list.querySelectorAll("[data-edit-year]").forEach((b) =>
@@ -1541,9 +1576,9 @@ el("set-current-term").addEventListener("click", async () => {
     return;
   }
   el("term-filter").value = "current";
-  alert(applyGlobal
+  alert(applyGlobal || state.viewAsEmail === ADMIN_EMAIL
     ? `Set. Students site-wide now see only SY ${currentSchoolYear} · Term ${currentTerm}.`
-    : "Current term saved.");
+    : "Current term saved. (If the admin has set a school-wide term, that one applies to students.)");
   loadSubjects();
 });
 
@@ -2250,6 +2285,14 @@ function renderActivitiesSummary(assignments) {
     </details>`;
 }
 
+// "⋯" overflow menus are plain <details>: close any open one when the user
+// clicks elsewhere (or opens another), so they behave like a dropdown.
+document.addEventListener("click", (e) => {
+  document.querySelectorAll("details.menu[open]").forEach((m) => {
+    if (!m.contains(e.target)) m.removeAttribute("open");
+  });
+});
+
 async function loadAssignments() {
   const q = query(collection(db, "assignments"), where("sectionId", "==", state.sectionId));
   const [snap, counts] = await Promise.all([getDocs(q), getPendingCounts()]);
@@ -2260,40 +2303,84 @@ async function loadAssignments() {
   list.innerHTML = "";
   const assignmentTitles = new Map(); // id -> title, for the delete-confirm prompt below
   const assignmentData = new Map();   // id -> full data, for the Share-to-group button
-  snap.forEach((d) => {
+
+  // Group by lesson/topic (the section's managed topic order first, then any
+  // unmanaged lessons, "General" last) so a long section reads as a short list
+  // of collapsible topics instead of one tall stack of cards. Within a topic,
+  // oldest first (creation order), so "Module 1" sits above "Module 2".
+  const toMs = (v) => Number(v?.toMillis ? v.toMillis() : v) || 0; // number or Firestore Timestamp
+  const byLesson = new Map();
+  snap.docs
+    .slice()
+    .sort((x, y) => toMs(x.data().createdAt) - toMs(y.data().createdAt))
+    .forEach((d) => {
+      const lesson = (d.data().lesson || "").trim() || "General";
+      if (!byLesson.has(lesson)) byLesson.set(lesson, []);
+      byLesson.get(lesson).push(d);
+    });
+  const orderedLessons = state.topics.filter((t) => byLesson.has(t));
+  for (const l of byLesson.keys()) if (!orderedLessons.includes(l) && l !== "General") orderedLessons.push(l);
+  if (byLesson.has("General")) orderedLessons.push("General");
+
+  if (snap.empty) list.innerHTML = '<p class="muted">No assignments or materials yet — add one above.</p>';
+
+  // Compact row: type badge + title + one meta line + pending chip on the
+  // left, ONE primary action on the right, and the rest (Share / Copy /
+  // Delete) folded into a "⋯" menu - replaces the old four-button wall.
+  // Teacher-entered text is escaped (escAttr) everywhere it's interpolated.
+  const rowHtml = (d) => {
     const a = d.data();
-    assignmentTitles.set(d.id, a.title);
-    assignmentData.set(d.id, a);
-    const row = document.createElement("div");
-    row.className = "card";
-    if (a.type === "material") {
-      // Read-only material: no due/points/pending/submissions - just the
-      // content and Open/Delete.
-      row.innerHTML = `
-        <strong>${a.title}</strong> <span class="status-ai-drafted">Material</span>
-        ${a.instructions ? `<p class="muted">${a.instructions}</p>` : ""}
-        ${a.instructionsLink ? `<div class="muted"><a href="${a.instructionsLink}" target="_blank" rel="noopener">Material file</a></div>` : ""}
-        <div style="margin-top:0.5rem;">
-          <button data-open="${d.id}">Open</button>
-          <button class="danger icon" data-delete-assignment="${d.id}" title="Delete material" aria-label="Delete material">×</button>
-        </div>`;
-    } else {
-      row.innerHTML = `
-        <strong>${a.title}</strong> <span class="muted">due ${a.dueDate || "no date"}</span>
-        ${pendingBadge(counts.byAssignment.get(d.id))}
-        ${a.instructions ? `<p class="muted">${a.instructions}</p>` : ""}
-        ${a.instructionsLink ? `<div class="muted"><a href="${a.instructionsLink}" target="_blank" rel="noopener">Instructions file</a></div>` : ""}
-        ${a.uploadFolderLink ? `<div class="muted"><a href="${a.uploadFolderLink}" target="_blank" rel="noopener">Upload folder</a></div>` : ""}
-        <div class="muted">Allowed: ${a.allowedFileTypes} — ${a.totalPoints} points</div>
-        <div style="margin-top:0.5rem;">
-          <button data-open="${d.id}">Open submissions</button>
-          <button class="secondary" data-share="${d.id}">&#128227; Share to group</button>
-          <button class="secondary" data-copy="${d.id}">&#10697; Copy</button>
-          <button class="danger icon" data-delete-assignment="${d.id}" title="Delete assignment" aria-label="Delete assignment">×</button>
-        </div>`;
-    }
-    list.appendChild(row);
-  });
+    const isMaterial = a.type === "material";
+    const links = [
+      a.instructionsLink ? `<a class="chip chip-link" href="${escAttr(a.instructionsLink)}" target="_blank" rel="noopener">${isMaterial ? "Material file" : "Instructions file"}</a>` : "",
+      !isMaterial && a.uploadFolderLink ? `<a class="chip chip-link" href="${escAttr(a.uploadFolderLink)}" target="_blank" rel="noopener">Upload folder</a>` : "",
+    ].join("");
+    const meta = isMaterial
+      ? "Reading material · not graded"
+      : [a.dueDate ? `Due ${escAttr(a.dueDate)}` : "No due date",
+         a.totalPoints !== undefined && a.totalPoints !== "" ? `${escAttr(a.totalPoints)} pts` : "",
+         a.allowedFileTypes ? escAttr(a.allowedFileTypes) : ""].filter(Boolean).join(" · ");
+    return `
+      <div class="assign-row">
+        <div class="assign-main">
+          <div class="assign-title">
+            <span class="chip ${isMaterial ? "chip-material" : "chip-todo"}">${isMaterial ? "&#128196; Material" : "&#9998; Assignment"}</span>
+            <strong>${escAttr(a.title || "(untitled)")}</strong>
+            ${isMaterial ? "" : pendingBadge(counts.byAssignment.get(d.id))}
+          </div>
+          <div class="muted assign-meta">${meta}</div>
+          ${a.instructions ? `<p class="muted assign-desc">${escAttr(a.instructions)}</p>` : ""}
+          ${links ? `<div class="assign-links">${links}</div>` : ""}
+        </div>
+        <div class="assign-actions">
+          <button type="button" data-open="${d.id}">${isMaterial ? "Open" : "Open submissions"}</button>
+          <details class="menu">
+            <summary aria-label="More actions" title="More actions">&#8943;</summary>
+            <div class="menu-panel">
+              ${isMaterial ? "" : `<button type="button" data-share="${d.id}">&#128227; Share to group</button>
+              <button type="button" data-copy="${d.id}">&#10697; Copy announcement</button>`}
+              <button type="button" class="menu-danger" data-delete-assignment="${d.id}">Delete ${isMaterial ? "material" : "assignment"}</button>
+            </div>
+          </details>
+        </div>
+      </div>`;
+  };
+
+  for (const lesson of orderedLessons) {
+    const docs = byLesson.get(lesson);
+    docs.forEach((d) => { assignmentTitles.set(d.id, d.data().title); assignmentData.set(d.id, d.data()); });
+    const graded = docs.filter((d) => d.data().type !== "material").length;
+    const group = document.createElement("details");
+    group.className = "card assign-group";
+    group.open = true;
+    group.innerHTML = `
+      <summary class="assign-group-head">
+        <strong>${escAttr(lesson)}</strong>
+        <span class="muted">${graded} assignment${graded === 1 ? "" : "s"} · ${docs.length - graded} material${docs.length - graded === 1 ? "" : "s"}</span>
+      </summary>
+      ${docs.map(rowHtml).join("")}`;
+    list.appendChild(group);
+  }
   // Bulk-deadline picker: one checkbox per graded assignment in this section
   // (materials excluded - they have no due date). Rebuilt on every load so it
   // always mirrors the current assignment set.
@@ -2307,6 +2394,7 @@ async function loadAssignments() {
     b.addEventListener("click", () => copyAnnouncement(buildAssignmentAnnouncement(assignmentData.get(b.dataset.copy)))));
   list.querySelectorAll("[data-delete-assignment]").forEach((b) =>
     b.addEventListener("click", async () => {
+      b.closest("details.menu")?.removeAttribute("open");
       const ok = confirmByTyping(
         "Delete this assignment? This also deletes every submission already made for it.",
         assignmentTitles.get(b.dataset.deleteAssignment) || ""
@@ -4532,7 +4620,8 @@ guardPage("teacher").then(async (user) => {
   if (isAdmin) {
     el("admin-teachers-section").classList.remove("hidden");
     el("go-overview").classList.remove("hidden");
-    el("current-term-global-label").classList.remove("hidden"); // super-admin-only global term switch
+    // "Apply to ALL teachers" checkbox stays hidden: the admin's own current
+    // term is school-wide by default now (getAdminTermSetting).
     loadTeachers();
     renderViewAsPicker();
   }

@@ -297,6 +297,28 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   everyone back to per-teacher settings. **No rules change** — the existing
   `settings` block already lets `isSuperAdmin()` write/delete any id (incl.
   `all-teachers`) and any signed-in user `get` it.
+  **Admin term wins school-wide (supersedes the checkbox).** The super admin's
+  own `settings/{ADMIN_EMAIL}` term now governs every teacher's classes for
+  students: effective order is `all-teachers` → admin's setting → owner's own
+  (owner's only when the admin set none). Under an active term a subject with a
+  **blank SY/term is hidden** (the term preview lists those as "No term set" so
+  their teacher fixes them via Edit Year/Term). Term/SY compare normalized
+  (`normTerm()`/`normYear()` in both JS files: "Term 2" == "2", dash/space
+  variants equal). `js/teacher.js`'s `getAdminTermSetting()` makes every grid
+  mirror it; the "Apply to ALL teachers" checkbox is now permanently hidden and
+  an admin "Set as current" (as self) clears any stale `all-teachers`. Added
+  after students kept seeing Term 1 classes whose teachers had an old term saved
+  or no term on the subject. Patterns + debug order:
+  `.claude/Skills/lms-layout-expert/SKILL.md`.
+- **Organized layout (dropdowns, chips, ⋯ menus).** Student `My classes` is a
+  `.class-grid` of cards (Edit name / Request to leave in a `<details class="menu">`);
+  the course outline is subject → lesson `<details>` dropdowns with a type icon,
+  short due date and one status chip per item (`renderOutline()`/`itemStatus()`),
+  and the empty detail pane shows **Up next** (`renderUpNext()`). Student `main` is
+  1180px wide (`body.student-page`). Teacher section assignments (`loadAssignments()`)
+  are grouped by lesson in `state.topics` order, as compact `.assign-row`s with one
+  primary button and Share/Copy/Delete in a `⋯` menu. Styles: bottom block of
+  `css/style.css`. See `lms-layout-expert` skill.
 - **Deleting subject/section/assignment requires typing its exact name.**
   `js/teacher.js`'s `confirmByTyping()` replaced plain `confirm()` on
   those three cascade deletes only (not lower-stakes "remove one

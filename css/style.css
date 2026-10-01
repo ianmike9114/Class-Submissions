@@ -833,3 +833,239 @@ details.card summary::marker { color: var(--blue); }
    so the tap has visible feedback (the button is icon-only, no text to swap). */
 @keyframes refresh-spin { to { transform: rotate(360deg); } }
 #refresh-data.spinning { animation: refresh-spin 0.7s linear infinite; }
+
+/* ===== Organized layout (term-hide + layout-org pass) =====================
+   Shared bits: status chips, "⋯" overflow menu (<details class="menu">),
+   student class grid / outline dropdowns / Up next, teacher assignment rows.
+   See .claude/Skills/lms-layout-expert/SKILL.md for the patterns. */
+
+/* Status chip: one per row, colour = meaning. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  background: #eef2f7;
+  color: var(--text);
+}
+.chip-done      { color: var(--green); background: #dcfce7; }
+.chip-submitted { color: var(--blue);  background: #dbe4ef; }
+.chip-todo      { color: var(--blue);  background: #eef2f7; }
+.chip-soon      { color: var(--amber); background: #fef3c7; }
+.chip-missing,
+.chip-returned  { color: #b91c1c;      background: #fee2e2; }
+.chip-material  { color: #5b21b6;      background: #ede9fe; }
+.chip-link      { color: var(--blue);  background: #fff; border: 1px solid var(--gray-border); text-decoration: none; font-weight: 500; }
+.chip-link:hover { border-color: var(--blue); }
+
+/* "⋯" overflow menu - pure <details>, page JS closes it on outside click. */
+details.menu { position: relative; flex: none; }
+details.menu > summary {
+  list-style: none;
+  cursor: pointer;
+  width: 2.25rem;
+  height: 2.25rem;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--gray-border);
+  background: #fff;
+  color: var(--text);
+  font-size: 1.1rem;
+  line-height: 1;
+  user-select: none;
+}
+details.menu > summary::-webkit-details-marker { display: none; }
+details.menu[open] > summary,
+details.menu > summary:hover { border-color: var(--blue); }
+.menu-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  min-width: 12rem;
+  background: #fff;
+  border: 1px solid var(--gray-border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 24px rgba(17, 28, 44, 0.12);
+  padding: 0.3rem;
+  display: flex;
+  flex-direction: column;
+}
+.menu-panel button {
+  background: none;
+  color: var(--text);
+  text-align: left;
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+}
+.menu-panel button:hover { background: var(--gray-bg); }
+.menu-panel button.menu-danger { color: #b91c1c; }
+.menu-panel button.menu-danger:hover { background: #fee2e2; }
+
+/* ---- Student page ---- */
+body.student-page main { max-width: 1180px; }
+
+/* My classes: card grid. */
+.class-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+.class-grid > .card { margin-bottom: 0; }
+.class-grid > p { grid-column: 1 / -1; }
+.class-card { padding: 0.85rem 1rem; display: flex; flex-direction: column; gap: 0.2rem; }
+.class-card-head { display: flex; align-items: flex-start; gap: 0.5rem; }
+.class-card-title { flex: 1 1 auto; min-width: 0; }
+.class-card-title strong { display: block; line-height: 1.3; overflow-wrap: anywhere; }
+.class-card-section { font-size: 0.85rem; color: var(--blue); margin-top: 0.1rem; overflow-wrap: anywhere; }
+.class-card-meta { font-size: 0.82rem; overflow-wrap: anywhere; }
+
+/* Course outline: wider column, subject + lesson dropdowns, rich rows. */
+#course-outline { flex-basis: 320px; }
+details.outline-subject {
+  border: 1px solid var(--gray-border);
+  border-radius: var(--radius-lg);
+  margin-bottom: 0.6rem;
+  background: #fff;
+}
+details.outline-subject > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 0.6rem 0.75rem 0.55rem;
+  display: block;
+}
+details.outline-subject > summary::-webkit-details-marker { display: none; }
+.outline-subject-row { display: flex; align-items: flex-start; gap: 0.5rem; }
+.outline-subject-name { flex: 1 1 auto; min-width: 0; line-height: 1.3; }
+.outline-subject-name::before {
+  content: "▸";
+  display: inline-block;
+  width: 1rem;
+  color: var(--blue);
+  transition: transform 0.15s ease;
+}
+details.outline-subject[open] > summary .outline-subject-name::before { transform: rotate(90deg); }
+.outline-subject-counts { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.25rem; flex: none; }
+.outline-subject-head .outline-progress { display: block; margin: 0.45rem 0 0; }
+.outline-subject-head .outline-progress-bar { display: block; }
+details.outline-subject > :not(summary) { margin: 0 0.5rem; }
+details.outline-subject[open] { padding-bottom: 0.4rem; }
+
+details.outline-lesson { margin: 0.15rem 0 0.35rem; }
+details.outline-lesson > summary.outline-lesson-head {
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.3rem 0.25rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #4b5563;
+  border-bottom: 1px solid var(--gray-border);
+}
+
+.outline-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.35rem;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+}
+.outline-item:hover { background: var(--gray-bg); text-decoration: none; }
+.outline-item.active {
+  background: #eef2f7;
+  border-left: 3px solid var(--blue);
+  padding-left: calc(0.35rem - 3px);
+  margin-left: 0;
+}
+.outline-item-icon { flex: none; width: 1.2rem; text-align: center; }
+.outline-item-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.outline-item-title {
+  color: var(--blue);
+  font-size: 0.88rem;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.outline-item-meta { font-size: 0.72rem; color: #6b7280; }
+
+/* Up next: fills the empty detail panel. */
+.up-next-list { display: flex; flex-direction: column; gap: 0.4rem; }
+.up-next-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.6rem;
+  border: 1px solid var(--gray-border);
+  border-radius: var(--radius-lg);
+}
+.up-next-main { flex: 1 1 auto; min-width: 0; }
+.up-next-main strong { display: block; overflow-wrap: anywhere; }
+.up-next-main .muted { font-size: 0.82rem; }
+.up-next-row button { flex: none; padding: 0.4rem 0.9rem; }
+
+/* ---- Teacher section: grouped assignment rows ---- */
+details.assign-group { padding: 0; overflow: visible; }
+details.assign-group > summary.assign-group-head {
+  cursor: pointer;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem 0.75rem;
+  padding: 0.75rem 1.25rem;
+  background: var(--gray-bg);
+  border-radius: var(--radius-lg);
+}
+details.assign-group[open] > summary.assign-group-head {
+  border-bottom: 1px solid var(--gray-border);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+.assign-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem 1rem;
+  align-items: start;
+  padding: 0.85rem 1.25rem;
+}
+.assign-row + .assign-row { border-top: 1px solid var(--gray-border); }
+.assign-title { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.assign-title strong { overflow-wrap: anywhere; }
+.assign-meta { font-size: 0.85rem; margin-top: 0.2rem; }
+.assign-desc {
+  margin: 0.35rem 0 0;
+  font-size: 0.88rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.assign-links { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.45rem; }
+.assign-actions { display: flex; align-items: center; gap: 0.4rem; }
+
+@media (max-width: 640px) {
+  .class-grid { grid-template-columns: 1fr; }
+  #course-outline { flex-basis: auto; }
+  .outline-item { min-height: 44px; }
+  details.menu > summary { width: 44px; height: 44px; }
+  .menu-panel button { min-height: 44px; }
+  .up-next-row { flex-wrap: wrap; }
+  .up-next-row button { width: 100%; }
+  .assign-row { grid-template-columns: 1fr; padding: 0.8rem 1rem; }
+  .assign-actions { justify-content: space-between; }
+  .assign-actions > button { flex: 1 1 auto; }
+  details.assign-group > summary.assign-group-head { padding: 0.7rem 1rem; }
+}
