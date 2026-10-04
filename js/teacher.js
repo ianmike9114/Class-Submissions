@@ -356,8 +356,12 @@ async function getPendingCounts() {
   return { byAssignment, bySection, bySubject };
 }
 
-function pendingBadge(count) {
-  return count ? `<span class="status-pending"> — ${count} pending</span>` : "";
+// Badges are clickable shortcuts: `target` is "subjectId|sectionId|assignmentId"
+// with any trailing part left blank when the badge rolls up several (a subject
+// or section card). The click handler (see goToPendingFromBadge below) jumps
+// straight to the pending work instead of making the teacher drill down.
+function pendingBadge(count, target = "") {
+  return count ? ` <button type="button" class="status-pending badge-link" data-goto-pending="${target}" title="Go to pending work">${count} pending</button>` : "";
 }
 
 // ---------- leave-request counts (mirrors getPendingCounts()/pendingBadge() above) ----------
@@ -468,8 +472,8 @@ function missingWorkBadge(count) {
   return count ? `<span class="status-pending"> — ${count} missing</span>` : "";
 }
 
-function leaveBadge(count) {
-  return count ? `<span class="status-pending"> — ${count} leave request${count > 1 ? "s" : ""}</span>` : "";
+function leaveBadge(count, target = "") {
+  return count ? ` <button type="button" class="status-pending badge-link" data-goto-leave-badge="${target}" title="Go to leave requests">${count} leave request${count > 1 ? "s" : ""}</button>` : "";
 }
 
 // ---------- pending invites (invite-by-email auto-join, mirrors getPendingCounts()/getLeaveRequestCounts() above) ----------
@@ -1105,7 +1109,52 @@ async function goToLeaveRequests(subjectId, sectionId) {
   await openSubject(subjectId);
   await openSection(sectionId);
   await openEnrolled(sectionId);
+  // Land on the first flagged student, not the top of a long roster.
+  el("view-enrolled")?.querySelector("[data-decline-leave]")?.closest("tr")
+    ?.scrollIntoView({ block: "center" });
 }
+
+// Clickable "N pending" / "N leave requests" badges (pendingBadge()/
+// leaveBadge()). An assignment-row badge knows its assignment; a subject or
+// section badge rolls up several, so pick the first matching entry from the
+// bell's per-assignment / per-section notification list (same data, already
+// owner-scoped) and go there. Pending lands with the Pending filter applied.
+async function goToPendingFromBadge(target) {
+  let [subjectId, sectionId, assignmentId] = target.split("|");
+  if (!assignmentId) {
+    await refreshNotifications();
+    const hit = lastNotifications.submissions.find((s) =>
+      s.subjectId === subjectId && (!sectionId || s.sectionId === sectionId));
+    if (!hit) return;
+    ({ sectionId, assignmentId } = hit);
+  }
+  el("submission-filter").value = "pending";
+  if (state.subjectId === subjectId && state.sectionId === sectionId) {
+    await openAssignment(assignmentId);
+  } else {
+    await goToAssignment(subjectId, sectionId, assignmentId);
+  }
+}
+
+async function goToLeaveFromBadge(target) {
+  let [subjectId, sectionId] = target.split("|");
+  if (!sectionId) {
+    await refreshNotifications();
+    const hit = lastNotifications.leaves.find((l) => l.subjectId === subjectId);
+    if (!hit) return;
+    sectionId = hit.sectionId;
+  }
+  await goToLeaveRequests(subjectId, sectionId);
+}
+
+// One delegated listener covers every badge, wherever/whenever it's rendered
+// (subject grid, section cards drawn after their rollup resolves, assignment rows).
+document.addEventListener("click", (e) => {
+  const pending = e.target.closest("[data-goto-pending]");
+  if (pending) { e.preventDefault(); goToPendingFromBadge(pending.dataset.gotoPending); return; }
+  const leave = e.target.closest("[data-goto-leave-badge]");
+  if (leave) { e.preventDefault(); goToLeaveFromBadge(leave.dataset.gotoLeaveBadge); }
+});
 
 // Names are already visible right on the dropdown row (unlike pending
 // submissions/leave requests, nothing further is "resolved" by looking),
@@ -1471,10 +1520,10 @@ async function loadSubjects() {
     row.innerHTML = `
       <strong>${s.name}</strong>
       <span class="muted" id="year-term-${d.id}">(${s.gradeLevel} — SY ${s.schoolYear || "—"} · Term ${s.term || "—"})</span>
-      ${pendingBadge(counts.bySubject.get(d.id))}
+      ${pendingBadge(counts.bySubject.get(d.id), d.id)}
       ${joinWaitingBadge(joinCounts.bySubject.get(d.id))}
       ${missingWorkBadge(missingCounts.bySubject.get(d.id))}
-      ${leaveBadge(leaveCounts.bySubject.get(d.id))}
+      ${leaveBadge(leaveCounts.bySubject.get(d.id), d.id)}
       ${s.archived ? '<span class="muted"> — archived</span>' : ""}
       <div id="year-term-edit-${d.id}"></div>
       <div style="margin-top:0.5rem;">
@@ -1808,9 +1857,9 @@ async function loadSections() {
     .then(([counts, leaveCounts]) => {
       snap.forEach((d) => {
         const p = list.querySelector(`[data-pending-badge="${d.id}"]`);
-        if (p) p.innerHTML = pendingBadge(counts.bySection.get(d.id));
+        if (p) p.innerHTML = pendingBadge(counts.bySection.get(d.id), `${state.subjectId}|${d.id}`);
         const lv = list.querySelector(`[data-leave-badge="${d.id}"]`);
-        if (lv) lv.innerHTML = leaveBadge(leaveCounts.bySection.get(d.id));
+        if (lv) lv.innerHTML = leaveBadge(leaveCounts.bySection.get(d.id), `${state.subjectId}|${d.id}`);
       });
     })
     .catch((err) => console.error("section badge rollup failed (badges only):", err));
@@ -2399,7 +2448,7 @@ async function loadAssignments() {
           <div class="assign-title">
             <span class="chip ${isMaterial ? "chip-material" : "chip-todo"}">${isMaterial ? "&#128196; Material" : "&#9998; Assignment"}</span>
             <strong>${escAttr(a.title || "(untitled)")}</strong>
-            ${isMaterial ? "" : pendingBadge(counts.byAssignment.get(d.id))}
+            ${isMaterial ? "" : pendingBadge(counts.byAssignment.get(d.id), `${state.subjectId}|${state.sectionId}|${d.id}`)}
           </div>
           <div class="muted assign-meta">${meta}</div>
           ${a.instructions ? `<p class="muted assign-desc">${escAttr(a.instructions)}</p>` : ""}

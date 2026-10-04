@@ -252,6 +252,18 @@ label { font-weight: 600; font-size: 0.85rem; display: block; margin-bottom: 0.2
 .status-ai-drafted { color: var(--blue);  background: #dbe4ef; }
 .status-published  { color: var(--green); background: #dcfce7; }
 .status-returned   { color: #b91c1c;      background: #fee2e2; }
+/* Clickable status badge (pendingBadge()/leaveBadge()) - looks like the chip,
+   acts like a link to the pending work. Resets the global button styling. */
+button.badge-link {
+  border: 0;
+  min-height: 0;
+  width: auto;
+  margin: 0 0 0 0.25rem;
+  cursor: pointer;
+  font-family: inherit;
+  line-height: 1.4;
+}
+button.badge-link:hover { text-decoration: underline; filter: brightness(0.96); }
 
 .progress-track {
   height: 8px;
