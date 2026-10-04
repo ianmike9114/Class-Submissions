@@ -201,10 +201,14 @@ function joinLinkFor(joinCode) {
 // actually reach (Messenger group) - complements the EmailJS notify path,
 // which misses students with no email. Uses state stashed by openSection().
 function buildAssignmentAnnouncement(a) {
+  // Materials reuse the same text minus the Due line (they're ungraded,
+  // no deadline), plus a direct file link so students can open it at once.
+  const isMaterial = a.type === "material";
   return [
-    `📌 New assignment: ${a.title}`,
+    isMaterial ? `📚 New material: ${a.title}` : `📌 New assignment: ${a.title}`,
     `Class: ${state.subjectName || "—"} — ${state.sectionName || "—"}`,
-    `Due: ${a.dueDate || "no deadline"}`,
+    isMaterial ? "" : `Due: ${a.dueDate || "no deadline"}`,
+    isMaterial && a.instructionsLink ? `File: ${a.instructionsLink}` : "",
     state.joinCode ? `Open/join here: ${joinLinkFor(state.joinCode)}` : "",
   ].filter(Boolean).join("\n");
 }
@@ -2393,8 +2397,8 @@ async function loadAssignments() {
           <details class="menu">
             <summary aria-label="More actions" title="More actions">&#8943;</summary>
             <div class="menu-panel">
-              ${isMaterial ? "" : `<button type="button" data-share="${d.id}">&#128227; Share to group</button>
-              <button type="button" data-copy="${d.id}">&#10697; Copy announcement</button>`}
+              <button type="button" data-share="${d.id}">&#128227; Share to group</button>
+              <button type="button" data-copy="${d.id}">&#10697; Copy announcement</button>
               <button type="button" class="menu-danger" data-delete-assignment="${d.id}">Delete ${isMaterial ? "material" : "assignment"}</button>
             </div>
           </details>
