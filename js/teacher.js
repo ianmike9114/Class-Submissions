@@ -2026,7 +2026,9 @@ async function openEnrolled(onlySectionId) {
         `&asStudentEmail=${encodeURIComponent(b.dataset.vemail)}` +
         `&asStudentName=${encodeURIComponent(b.dataset.vname)}` +
         `&asOwner=${encodeURIComponent(state.viewAsEmail)}`;
-      window.open(url, "_blank", "noopener");
+      // Same window, not a new tab: from the installed PWA a new tab escapes
+      // into the system browser. The preview's banner has a Back button.
+      location.href = url;
     }));
 
   const linkSelect = el("master-list-link-select");
@@ -2344,23 +2346,34 @@ async function loadAssignments() {
   const assignmentTitles = new Map(); // id -> title, for the delete-confirm prompt below
   const assignmentData = new Map();   // id -> full data, for the Share-to-group button
 
-  // Group by lesson/topic (the section's managed topic order first, then any
-  // unmanaged lessons, "General" last) so a long section reads as a short list
-  // of collapsible topics instead of one tall stack of cards. Within a topic,
-  // oldest first (creation order), so "Module 1" sits above "Module 2".
+  // Group by lesson/topic so a long section reads as a short list of
+  // collapsible topics instead of one tall stack of cards. Newest first, both
+  // ways: items within a lesson by createdAt descending, and lessons by their
+  // newest item - so this week's work is always on top. (Docs with no
+  // createdAt count as 0 and sink to the bottom.)
   const toMs = (v) => Number(v?.toMillis ? v.toMillis() : v) || 0; // number or Firestore Timestamp
   const byLesson = new Map();
   snap.docs
     .slice()
-    .sort((x, y) => toMs(x.data().createdAt) - toMs(y.data().createdAt))
+    .sort((x, y) => toMs(y.data().createdAt) - toMs(x.data().createdAt))
     .forEach((d) => {
       const lesson = (d.data().lesson || "").trim() || "General";
       if (!byLesson.has(lesson)) byLesson.set(lesson, []);
       byLesson.get(lesson).push(d);
     });
-  const orderedLessons = state.topics.filter((t) => byLesson.has(t));
-  for (const l of byLesson.keys()) if (!orderedLessons.includes(l) && l !== "General") orderedLessons.push(l);
-  if (byLesson.has("General")) orderedLessons.push("General");
+  // Map keeps insertion order, and items were inserted newest-first, so each
+  // lesson's first-seen position already ranks it by its newest item.
+  const orderedLessons = [...byLesson.keys()];
+
+  // Only the newest lesson starts open; the teacher's own open/close choices
+  // are remembered per section in localStorage (per-browser convenience only -
+  // blocked storage just falls back to the default).
+  const openKey = `assignGroupsOpen:${state.sectionId}`;
+  let openState = {};
+  try { openState = JSON.parse(localStorage.getItem(openKey)) || {}; } catch { /* storage blocked */ }
+  const saveOpenState = () => {
+    try { localStorage.setItem(openKey, JSON.stringify(openState)); } catch { /* storage full/blocked */ }
+  };
 
   if (snap.empty) list.innerHTML = '<p class="muted">No assignments or materials yet — add one above.</p>';
 
@@ -2406,21 +2419,29 @@ async function loadAssignments() {
       </div>`;
   };
 
-  for (const lesson of orderedLessons) {
+  orderedLessons.forEach((lesson, i) => {
     const docs = byLesson.get(lesson);
     docs.forEach((d) => { assignmentTitles.set(d.id, d.data().title); assignmentData.set(d.id, d.data()); });
     const graded = docs.filter((d) => d.data().type !== "material").length;
     const group = document.createElement("details");
     group.className = "card assign-group";
-    group.open = true;
+    group.open = typeof openState[lesson] === "boolean" ? openState[lesson] : i === 0;
     group.innerHTML = `
       <summary class="assign-group-head">
-        <strong>${escAttr(lesson)}</strong>
+        <strong class="assign-group-name">${escAttr(lesson)}</strong>
         <span class="muted">${graded} assignment${graded === 1 ? "" : "s"} · ${docs.length - graded} material${docs.length - graded === 1 ? "" : "s"}</span>
       </summary>
       ${docs.map(rowHtml).join("")}`;
+    // Record only the teacher's own clicks (a summary click fires before the
+    // toggle, so the new state is !open). Not the "toggle" event - that also
+    // fires for the default open set above, which would pin today's newest
+    // lesson open forever.
+    group.querySelector("summary").addEventListener("click", () => {
+      openState[lesson] = !group.open;
+      saveOpenState();
+    });
     list.appendChild(group);
-  }
+  });
   // Bulk-deadline picker: one checkbox per graded assignment in this section
   // (materials excluded - they have no due date). Rebuilt on every load so it
   // always mirrors the current assignment set.
@@ -4538,7 +4559,7 @@ function renderOverviewStudents(studentRows) {
       const url = `student.html?asStudentUID=${encodeURIComponent(b.dataset.viewAs)}` +
         `&asStudentEmail=${encodeURIComponent(b.dataset.vemail)}` +
         `&asStudentName=${encodeURIComponent(b.dataset.vname)}`;
-      window.open(url, "_blank", "noopener");
+      location.href = url; // same window - stays inside the PWA (see above)
     }));
 }
 
