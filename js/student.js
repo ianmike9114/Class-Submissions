@@ -33,7 +33,16 @@ function showViewAsBanner() {
   b.className = "view-as-bar";
   const who = esc(viewCtx.name || viewCtx.email || viewCtx.uid);
   b.innerHTML = `&#128065; <strong>Viewing as ${who}</strong>` +
-    `${viewCtx.email ? ` (${esc(viewCtx.email)})` : ""} — read-only preview. Submitting, joining, and editing are disabled.`;
+    `${viewCtx.email ? ` (${esc(viewCtx.email)})` : ""} — read-only preview. Submitting, joining, and editing are disabled.` +
+    ` <button type="button" class="view-as-back">&larr; Back to teacher dashboard</button>`;
+  // "View as" now opens in the same window (so it stays inside the installed
+  // PWA), so the preview needs its own way back. history.back() returns to the
+  // exact teacher screen when it came from there; otherwise go to the dashboard.
+  b.querySelector(".view-as-back").addEventListener("click", () => {
+    const fromTeacher = document.referrer && new URL(document.referrer).pathname.endsWith("/teacher.html");
+    if (fromTeacher && history.length > 1) history.back();
+    else location.href = "teacher.html";
+  });
   // Sticky at the very top of the page so "who am I viewing" is always on
   // screen, not scrolled away with the first card.
   document.body.insertBefore(b, document.body.firstChild);

@@ -85,6 +85,14 @@ h1, h2, h3, h4, strong, summary { font-family: var(--font-headline); }
   border-bottom: 3px solid var(--amber, #f6b73c);
   text-align: center;
 }
+.view-as-bar .view-as-back {
+  margin-left: 0.5rem;
+  padding: 0.3rem 0.75rem;
+  min-height: 0;
+  background: #fff;
+  color: #002045;
+  font-size: 0.85rem;
+}
 .sidebar-nav button.active {
   background: #1d3a63;
   color: #fff;
@@ -1029,7 +1037,18 @@ details.assign-group > summary.assign-group-head {
   padding: 0.75rem 1.25rem;
   background: var(--gray-bg);
   border-radius: var(--radius-lg);
+  list-style: none;
 }
+details.assign-group > summary.assign-group-head::-webkit-details-marker { display: none; }
+/* Collapse cue, same ▸ rotate as the student outline's .outline-subject-name. */
+.assign-group-name::before {
+  content: "▸";
+  display: inline-block;
+  width: 1rem;
+  color: var(--blue);
+  transition: transform 0.15s ease;
+}
+details.assign-group[open] > summary .assign-group-name::before { transform: rotate(90deg); }
 details.assign-group[open] > summary.assign-group-head {
   border-bottom: 1px solid var(--gray-border);
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
