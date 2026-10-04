@@ -264,6 +264,16 @@ button.badge-link {
   line-height: 1.4;
 }
 button.badge-link:hover { text-decoration: underline; filter: brightness(0.96); }
+/* Phones: thumb-sized tap target (44px min, per WCAG/Apple HIG) - the
+   desktop chip is only ~22px tall. */
+@media (max-width: 640px) {
+  button.badge-link {
+    min-height: 44px;
+    padding: 0.5rem 0.9rem;
+    font-size: 0.9rem;
+    margin: 0.25rem 0.25rem 0 0;
+  }
+}
 
 .progress-track {
   height: 8px;
