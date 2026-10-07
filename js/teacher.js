@@ -1976,14 +1976,19 @@ let enrolledBackView = "view-subject";
 let enrolledSectionId = null; // set below when this is a single-section view - lets #build-master-list-btn know what to build from
 async function openEnrolled(onlySectionId) {
   let sectionMap, titleText, sectionData;
+  // sectionId -> roster ([{name, gender}]), used below to arrange the list
+  // in Class Record order (MALE block, then FEMALE block).
+  let rosterMap;
   if (onlySectionId) {
     sectionData = (await getDoc(doc(db, "sections", onlySectionId))).data();
     sectionMap = new Map([[onlySectionId, sectionData.sectionName]]);
+    rosterMap = new Map([[onlySectionId, sectionData.roster || []]]);
     titleText = sectionData.sectionName;
     enrolledBackView = "view-section";
   } else {
     const sectionsSnap = await getDocs(ownerScopedQuery("sections", where("subjectId", "==", state.subjectId)));
     sectionMap = new Map(sectionsSnap.docs.map((d) => [d.id, d.data().sectionName]));
+    rosterMap = new Map(sectionsSnap.docs.map((d) => [d.id, d.data().roster || []]));
     titleText = el("subject-view-name").textContent;
     enrolledBackView = "view-subject";
   }
@@ -2036,15 +2041,53 @@ async function openEnrolled(onlySectionId) {
   // just the super admin - a regular teacher's preview is owner-scoped to
   // their own classes (asOwner below), which firestore.rules allows.
   const canViewAsStudent = !!currentUser;
-  list.innerHTML = masterListLinkControl + (rows.length
-    ? `<table class="records-grid"><thead><tr><th>#</th><th>Name</th><th>Gmail</th><th>Section</th><th></th></tr></thead><tbody>
-        ${rows.map((r, i) => { const pending = r.status === "pending"; return `<tr><td>${i + 1}</td><td id="enroll-name-${r.id}">${displayStudentName(r.studentName)}${pending ? ' <span class="status-pending">(pending approval)</span>' : ""}${r.leaveRequested ? ' <span class="status-pending">(leave requested)</span>' : ""}</td><td>${r.studentEmail || ""}</td><td>${sectionMap.get(r.sectionId) || ""}</td><td>
+  const renderEnrolledRow = (r, n) => { const pending = r.status === "pending"; return `<tr><td>${n}</td><td id="enroll-name-${r.id}">${displayStudentName(r.studentName)}${pending ? ' <span class="status-pending">(pending approval)</span>' : ""}${r.leaveRequested ? ' <span class="status-pending">(leave requested)</span>' : ""}</td><td>${r.studentEmail || ""}</td><td>${sectionMap.get(r.sectionId) || ""}</td><td>
           <button class="secondary" data-edit-enrollment="${r.id}" data-uid="${r.studentUID}" data-raw="${r.studentName}">Edit name</button>
           ${pending ? `<button data-approve-enrollment="${r.id}" title="Approve this student's join request">Approve</button>` : ""}
           ${canViewAsStudent ? `<button class="secondary" data-view-as="${r.studentUID}" data-vemail="${r.studentEmail || ""}" data-vname="${r.studentName || ""}" title="Open this student's page (read-only)">View as</button>` : ""}
           ${r.leaveRequested && !pending ? `<button class="secondary" data-decline-leave="${r.id}" title="Keep this student in the class and clear their leave request">Keep in class</button>` : ""}
           <button class="danger icon" data-remove-enrollment="${r.id}" data-leave-requested="${!!r.leaveRequested}" title="${pending ? "Reject join request" : "Remove"}" aria-label="Remove enrollment">×</button>
-        </td></tr>`; }).join("")}
+        </td></tr>`; };
+
+  // Arrange like the real Class Record: per section, a MALE block then a
+  // FEMALE block, each in roster order and numbered from 1. Gender comes from
+  // the section's roster (Set Roster), matched by the same fuzzy name test as
+  // the Records grid. Students not on the roster land in a last block so no
+  // one disappears. A section whose roster has no gender data renders flat
+  // and alphabetical, same as before.
+  const bodyRows = [];
+  const multiSection = sectionMap.size > 1;
+  let flatCount = 0;
+  for (const sectionId of [...new Set(rows.map((r) => r.sectionId))]) {
+    const sectionRows = rows.filter((r) => r.sectionId === sectionId);
+    const roster = (rosterMap.get(sectionId) || []).map((r) =>
+      typeof r === "string" ? { name: r.toUpperCase(), gender: "" } : { ...r, name: (r.name || "").toUpperCase() });
+    if (!roster.some((r) => r.gender === "Male" || r.gender === "Female")) {
+      sectionRows.forEach((r) => bodyRows.push(renderEnrolledRow(r, ++flatCount)));
+      continue;
+    }
+    sectionRows.forEach((r) => {
+      const idx = roster.findIndex((ro) =>
+        matchesNameSearch(r.studentName, ro.name) || matchesNameSearch(ro.name, r.studentName));
+      r.rosterIndex = idx;
+      r.gender = idx >= 0 ? roster[idx].gender : "";
+    });
+    const prefix = multiSection ? `${sectionMap.get(sectionId) || ""} — ` : "";
+    const groups = [
+      ["MALE", sectionRows.filter((r) => r.gender === "Male").sort((a, b) => a.rosterIndex - b.rosterIndex)],
+      ["FEMALE", sectionRows.filter((r) => r.gender === "Female").sort((a, b) => a.rosterIndex - b.rosterIndex)],
+      ["NOT ON ROSTER / NO GENDER", sectionRows.filter((r) => r.gender !== "Male" && r.gender !== "Female")],
+    ];
+    for (const [label, groupRows] of groups) {
+      if (groupRows.length === 0) continue;
+      bodyRows.push(`<tr class="gender-group"><td colspan="5">${prefix}${label}</td></tr>`);
+      groupRows.forEach((r, i) => bodyRows.push(renderEnrolledRow(r, i + 1)));
+    }
+  }
+
+  list.innerHTML = masterListLinkControl + (rows.length
+    ? `<table class="records-grid"><thead><tr><th>#</th><th>Name</th><th>Gmail</th><th>Section</th><th></th></tr></thead><tbody>
+        ${bodyRows.join("")}
       </tbody></table>`
     : '<p class="muted">No students enrolled yet.</p>');
 
