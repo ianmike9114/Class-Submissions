@@ -1154,3 +1154,26 @@ body.student-page > header button.secondary:hover { background: rgba(255, 255, 2
   body.student-page > header h1 { font-size: 1.1rem; text-align: center; }
   body.student-page > header .hdr-account { max-width: 9rem; }
 }
+
+/* Activities overview -> Student scores matrix (js/teacher.js
+   renderActivityScores). Every cell opens that activity; header titles are
+   plain-looking buttons so the blue header stays readable. */
+.scores-matrix .score-cell { cursor: pointer; text-align: center; }
+.scores-matrix .score-cell:hover { background: var(--gray-bg); }
+.scores-matrix thead th { text-align: center; }
+.scores-matrix button.link-button {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-height: 0;
+  width: auto;
+  color: var(--blue);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.scores-matrix button.link-button:hover { text-decoration: underline; }
+/* Keep the student name visible while scrolling across many activities. */
+.scores-matrix tbody td:nth-child(2) { position: sticky; left: 0; background: white; }
+.scores-matrix tbody tr.gender-group td { position: static; }

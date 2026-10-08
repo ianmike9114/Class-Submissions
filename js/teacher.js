@@ -2423,7 +2423,121 @@ function renderActivitiesSummary(assignments) {
         <thead><tr><th>Title</th><th>Points</th><th>Due</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
+      <h3 style="margin-top:1rem;">Student scores</h3>
+      <div id="activities-scores"><p class="muted">Loading...</p></div>
     </details>`;
+  // Built only the first time the overview is opened: it reads every
+  // submission of the section, and those docs can carry base64 photos.
+  const details = container.querySelector("details");
+  const sectionId = state.sectionId;
+  details.addEventListener("toggle", () => {
+    if (!details.open || details.dataset.loaded) return;
+    details.dataset.loaded = "true";
+    renderActivityScores(assignments, sectionId).catch((err) => {
+      console.error(err);
+      const box = el("activities-scores");
+      if (box) box.innerHTML = `<p class="muted">Couldn't load scores - try Refresh.</p>`;
+    });
+  });
+}
+
+// Student x activity score matrix under the Activities overview: one row per
+// enrolled student (Class Record MALE/FEMALE order, like Enrolled Students),
+// one column per activity (Written Work, then Performance Task, then Other).
+// Clicking a cell opens that activity with the student's submission
+// highlighted, ready to grade.
+async function renderActivityScores(assignments, sectionId) {
+  const box = el("activities-scores");
+  const COMPONENT_LABELS = { written: "Written Work", performance: "Performance Task" };
+  const groups = ["written", "performance"]
+    .map((key) => ({ label: COMPONENT_LABELS[key], items: assignments.filter((a) => a.component === key) }))
+    .filter((g) => g.items.length > 0);
+  const other = assignments.filter((a) => a.component !== "written" && a.component !== "performance");
+  if (other.length > 0) groups.push({ label: "Other", items: other });
+  const ordered = groups.flatMap((g) => g.items);
+
+  const [sectionSnap, enrollSnap, subSnaps] = await Promise.all([
+    getDoc(doc(db, "sections", sectionId)),
+    getDocs(ownerScopedQuery("enrollments", where("sectionId", "==", sectionId))),
+    Promise.all(ordered.map((a) => getDocs(ownerScopedQuery("submissions", where("assignmentId", "==", a.id))))),
+  ]);
+  if (!el("activities-scores") || state.sectionId !== sectionId) return; // navigated away
+  const subsByAssignment = new Map(); // assignmentId -> Map(studentUID -> submission)
+  ordered.forEach((a, i) => {
+    const byStudent = new Map();
+    subSnaps[i].forEach((d) => { if (ownedByViewAs(d.data())) byStudent.set(d.data().studentUID, d.data()); });
+    subsByAssignment.set(a.id, byStudent);
+  });
+
+  const students = enrollSnap.docs
+    .filter((d) => ownedByViewAs(d.data()))
+    .map((d) => d.data())
+    .sort((a, b) => (a.studentName || "").localeCompare(b.studentName || ""));
+  if (students.length === 0) {
+    box.innerHTML = `<p class="muted">No students enrolled yet.</p>`;
+    return;
+  }
+
+  const roster = (sectionSnap.data()?.roster || []).map((r) =>
+    typeof r === "string" ? { name: r.toUpperCase(), gender: "" } : { ...r, name: (r.name || "").toUpperCase() });
+  students.forEach((s) => {
+    const idx = roster.findIndex((ro) =>
+      matchesNameSearch(s.studentName, ro.name) || matchesNameSearch(ro.name, s.studentName));
+    s.rosterIndex = idx;
+    s.gender = idx >= 0 ? roster[idx].gender : "";
+  });
+  const byRoster = (a, b) => a.rosterIndex - b.rosterIndex;
+  const blocks = roster.some((r) => r.gender === "Male" || r.gender === "Female")
+    ? [
+        ["MALE", students.filter((s) => s.gender === "Male").sort(byRoster)],
+        ["FEMALE", students.filter((s) => s.gender === "Female").sort(byRoster)],
+        ["NOT ON ROSTER / NO GENDER", students.filter((s) => s.gender !== "Male" && s.gender !== "Female")],
+      ].filter(([, list]) => list.length > 0)
+    : [["", students]];
+
+  const STATUS_LABELS = { pending: "To grade", "ai-drafted": "To grade", returned: "Returned" };
+  const colCount = ordered.length + 4;
+  const renderRow = (s, n) => {
+    let earned = 0, possible = 0, missing = 0;
+    const cells = ordered.map((a) => {
+      const sub = subsByAssignment.get(a.id).get(s.studentUID);
+      const attrs = `class="score-cell" data-score-assignment="${a.id}" data-score-student="${s.studentName || ""}" title="Open ${a.title}"`;
+      if (!sub) { missing++; return `<td ${attrs}><span class="muted">—</span></td>`; }
+      if (sub.status === "published") {
+        const score = Number(sub.finalGrade?.score) || 0;
+        earned += score;
+        possible += Number(a.totalPoints) || 0;
+        return `<td ${attrs}>${score}/${a.totalPoints}</td>`;
+      }
+      const label = STATUS_LABELS[sub.status] || sub.status;
+      return `<td ${attrs}><span class="status-${sub.status === "returned" ? "returned" : "pending"}">${label}</span></td>`;
+    }).join("");
+    const total = possible ? `${earned}/${possible}` : "—";
+    const missingCell = `<span class="status-${missing > 0 ? "returned" : "published"}">${missing}</span>`;
+    return `<tr><td>${n}</td><td>${displayStudentName(s.studentName)}${s.status === "pending" ? ' <span class="muted">(pending)</span>' : ""}</td>${cells}<td><strong>${total}</strong></td><td>${missingCell}</td></tr>`;
+  };
+  const bodyRows = blocks.map(([label, list]) =>
+    (label ? `<tr class="gender-group"><td colspan="${colCount}">${label}</td></tr>` : "")
+    + list.map((s, i) => renderRow(s, i + 1)).join("")).join("");
+
+  box.innerHTML = `
+    <p class="muted">Score = published grade. "To grade" = submitted, not yet published. — = no submission. Total counts published scores only. Tap a cell to open that activity.</p>
+    <div class="scores-matrix">
+      <table class="records-grid">
+        <thead>
+          <tr><th rowspan="2">#</th><th rowspan="2">Student</th>
+            ${groups.map((g) => `<th colspan="${g.items.length}">${g.label}</th>`).join("")}
+            <th rowspan="2">Total</th><th rowspan="2">Missing</th></tr>
+          <tr>${ordered.map((a) => `<th><button type="button" class="link-button" data-score-assignment="${a.id}" title="Open ${a.title}">${a.title}</button><br><span class="muted">${a.totalPoints} pts</span></th>`).join("")}</tr>
+        </thead>
+        <tbody>${bodyRows}</tbody>
+      </table>
+    </div>`;
+  box.querySelectorAll("[data-score-assignment]").forEach((n) => n.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (n.dataset.scoreStudent) highlightStudentName = n.dataset.scoreStudent;
+    openAssignment(n.dataset.scoreAssignment);
+  }));
 }
 
 // "⋯" overflow menus are plain <details>: close any open one when the user
@@ -2439,7 +2553,7 @@ async function loadAssignments() {
   const [snap, counts] = await Promise.all([getDocs(q), getPendingCounts()]);
   // Materials aren't graded activities - keep them out of the Written/
   // Performance points overview.
-  renderActivitiesSummary(snap.docs.map((d) => d.data()).filter((a) => a.type !== "material"));
+  renderActivitiesSummary(snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((a) => a.type !== "material"));
   const list = el("assignments-list");
   list.innerHTML = "";
   const assignmentTitles = new Map(); // id -> title, for the delete-confirm prompt below
