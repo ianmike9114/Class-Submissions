@@ -2058,12 +2058,14 @@ async function openEnrolled(onlySectionId) {
   const bodyRows = [];
   const multiSection = sectionMap.size > 1;
   let flatCount = 0;
+  const ungenderedSections = [];
   for (const sectionId of [...new Set(rows.map((r) => r.sectionId))]) {
     const sectionRows = rows.filter((r) => r.sectionId === sectionId);
     const roster = (rosterMap.get(sectionId) || []).map((r) =>
       typeof r === "string" ? { name: r.toUpperCase(), gender: "" } : { ...r, name: (r.name || "").toUpperCase() });
     if (!roster.some((r) => r.gender === "Male" || r.gender === "Female")) {
       sectionRows.forEach((r) => bodyRows.push(renderEnrolledRow(r, ++flatCount)));
+      ungenderedSections.push(sectionMap.get(sectionId) || "");
       continue;
     }
     sectionRows.forEach((r) => {
@@ -2085,8 +2087,13 @@ async function openEnrolled(onlySectionId) {
     }
   }
 
+  // Flat list = that section's roster has no Male/Female set yet. Say so,
+  // so the missing MALE/FEMALE blocks don't look like a bug.
+  const genderNote = ungenderedSections.length === 0 ? "" : `
+    <p class="muted">Tip: set Male/Female for each name in <strong>Set Roster</strong>${multiSection ? ` (${ungenderedSections.join(", ")})` : ""} to arrange this list like the Class Record (MALE block, then FEMALE).</p>`;
+
   list.innerHTML = masterListLinkControl + (rows.length
-    ? `<table class="records-grid"><thead><tr><th>#</th><th>Name</th><th>Gmail</th><th>Section</th><th></th></tr></thead><tbody>
+    ? `${genderNote}<table class="records-grid"><thead><tr><th>#</th><th>Name</th><th>Gmail</th><th>Section</th><th></th></tr></thead><tbody>
         ${bodyRows.join("")}
       </tbody></table>`
     : '<p class="muted">No students enrolled yet.</p>');
