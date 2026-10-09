@@ -449,6 +449,17 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   whose max is set. Records grid (`loadRecords()`) shows the same columns
   read-only. Raw scores only, no WW/PT/QA weighting (see rule above).
   Not shown on `student.html`.
+- **"Email class (Gmail)" — zero-setup alternative to EmailJS notify.**
+  `js/teacher.js`'s `buildEmailClassUrl()`/`emailClass()` open the teacher's
+  *own* Gmail compose (desktop: `mail.google.com/mail/?view=cm`; phones,
+  `(pointer: coarse)`: `mailto:` → Gmail app, since Gmail mobile web drops
+  compose fields) with every non-pending enrolled `studentEmail` in BCC and
+  `buildAssignmentAnnouncement()` as the body. Lives in each assignment
+  row's ⋯ menu; after adding an assignment with no EmailJS config,
+  `showEmailClassPrompt()` shows a bottom prompt with a **real link**, not
+  `window.open` — the submit click's user activation has expired after the
+  `addDoc`/enrollment awaits, so a scripted open would be pop-up blocked.
+  Nothing is sent by the app; teacher presses Send. No rules change.
 
 ## Conventions
 

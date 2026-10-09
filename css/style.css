@@ -1192,3 +1192,30 @@ body.student-page > header button.secondary:hover { background: rgba(255, 255, 2
 @media (max-width: 640px) {
   .scores-matrix input.manual-score { min-height: 44px; }
 }
+/* "Email class (Gmail)" prompt shown after adding an assignment. A real link
+   (not window.open) so the pop-up blocker never eats it. */
+.email-class-prompt {
+  position: fixed;
+  left: 50%;
+  bottom: 1rem;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: calc(100vw - 2rem);
+  box-shadow: var(--shadow-hover);
+}
+.email-class-prompt a.button {
+  background: var(--blue);
+  color: white;
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 1rem;
+  text-decoration: none;
+  font-size: 0.95rem;
+}
+@media (max-width: 640px) {
+  .email-class-prompt a.button,
+  .email-class-prompt button { min-height: 44px; display: inline-flex; align-items: center; }
+}
