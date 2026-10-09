@@ -1187,6 +1187,19 @@ body.student-page > header button.secondary:hover { background: rgba(255, 255, 2
   display: inline-block;
 }
 .scores-matrix .manual-max-label { display: block; font-weight: normal; font-size: 0.8rem; }
+.scores-matrix input.manual-score.dirty { background: #fef9c3; border-color: var(--amber); }
+.manual-save-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0;
+  background: white;
+  border-top: 1px solid var(--gray-border);
+}
 .scores-matrix input.manual-score.saved { border-color: var(--green); outline: 2px solid var(--green); }
 .scores-matrix input.manual-score.save-error { border-color: #c0392b; outline: 2px solid #c0392b; }
 @media (max-width: 640px) {

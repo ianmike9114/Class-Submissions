@@ -2492,6 +2492,16 @@ const MANUAL_EXAMS = [
   { key: "termExam", label: "Term Exam" },
 ];
 
+// Count of typed-but-unsaved manual exam boxes on screen; the beforeunload
+// guard below warns before a refresh/close would throw them away.
+let unsavedManualScores = 0;
+window.addEventListener("beforeunload", (e) => {
+  if (unsavedManualScores > 0 && document.querySelector(".scores-matrix input.dirty")) {
+    e.preventDefault();
+    e.returnValue = "";
+  }
+});
+
 function parseManualNumber(raw) {
   const t = String(raw).trim();
   if (t === "") return null;
@@ -2590,7 +2600,7 @@ async function renderActivityScores(assignments, sectionId) {
 
   box.innerHTML = `
     <p class="muted">Score = published grade. "To grade" = submitted, not yet published. — = no submission. Tap a cell to open that activity.
-    <strong>Exams (manual):</strong> type the max points in the header, then each student's score - it saves when you leave the box. Total = published scores + exam scores that have a max set.</p>
+    <strong>Exams (manual):</strong> type the max points in the header and each student's score, then click <strong>Save</strong> (yellow boxes = not saved yet). Total = published scores + exam scores that have a max set.</p>
     <details class="exam-import">
       <summary>&#128229; Import exam scores from Excel</summary>
       <p class="muted">Upload your item-analysis workbook (the one with the <strong>Learner</strong> and <strong>Score</strong> columns). Scores are read in this browser - the file isn't uploaded anywhere.</p>
@@ -2618,6 +2628,10 @@ async function renderActivityScores(assignments, sectionId) {
         </thead>
         <tbody>${bodyRows}</tbody>
       </table>
+    </div>
+    <div class="manual-save-bar">
+      <button type="button" id="manual-scores-save" disabled>&#128190; Save scores</button>
+      <span id="manual-scores-status" class="muted" role="status"></span>
     </div>`;
   box.querySelectorAll("[data-score-assignment]").forEach((n) => n.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -2627,26 +2641,21 @@ async function renderActivityScores(assignments, sectionId) {
 
   wireExamImport({ box, students, roster, sectionId, examMax, rerender: () => renderActivityScores(assignments, sectionId) });
 
-  // Saves on change (blur / Enter). Field-path updates touch only the one
-  // key, so other exams on the same doc aren't clobbered.
-  box.querySelectorAll("input[data-exam-max]").forEach((input) => input.addEventListener("change", async () => {
-    const key = input.dataset.examMax;
-    const n = parseManualNumber(input.value);
-    if (Number.isNaN(n)) { flashSaveState(input, false); alert("Max points must be a number, 0 or more."); return; }
-    try {
-      await updateDoc(doc(db, "sections", sectionId), { [`manualExams.${key}`]: n === null ? deleteField() : n });
-      if (n === null) delete examMax[key]; else examMax[key] = n;
-      flashSaveState(input, true);
-      box.querySelectorAll("tbody tr").forEach(retotalRow);
-    } catch (err) {
-      console.error(err);
-      flashSaveState(input, false);
-      alert("Couldn't save the max points - check your connection and try again.");
-    }
-  }));
+  // Typed scores stay local until the teacher clicks Save (explicit save,
+  // by request - no auto-save on blur). "Dirty" = value differs from the
+  // input's defaultValue, which is the last saved value. One writeBatch
+  // saves every changed score + max; field-path updates touch only that key.
+  const saveBtn = box.querySelector("#manual-scores-save");
+  const saveStatus = box.querySelector("#manual-scores-status");
+  const allInputs = () => [...box.querySelectorAll(".scores-matrix input[data-exam], .scores-matrix input[data-exam-max]")];
+  const dirtyInputs = () => allInputs().filter((i) => i.value.trim() !== i.defaultValue.trim());
+  const liveMax = (key) => {
+    const i = box.querySelector(`input[data-exam-max="${key}"]`);
+    const n = i ? parseManualNumber(i.value) : null;
+    return n === null || Number.isNaN(n) ? null : n;
+  };
 
-  // Recomputes one row's Total cell in place (no re-render, so focus keeps
-  // moving naturally to the next box while typing down a column).
+  // Recomputes one row's Total from what's typed right now (saved or not).
   function retotalRow(row) {
     const first = row.querySelector("input[data-enrollment]");
     if (!first) return;
@@ -2657,38 +2666,95 @@ async function renderActivityScores(assignments, sectionId) {
       const sub = subsByAssignment.get(a.id).get(s.studentUID);
       if (sub?.status === "published") { earned += Number(sub.finalGrade?.score) || 0; possible += Number(a.totalPoints) || 0; }
     });
-    const sc = s.manualScores || {};
-    MANUAL_EXAMS.forEach((ex) => {
-      if (sc[ex.key] != null && examMax[ex.key] != null) { earned += Number(sc[ex.key]); possible += Number(examMax[ex.key]); }
+    row.querySelectorAll("input[data-exam]").forEach((i) => {
+      const v = parseManualNumber(i.value);
+      const max = liveMax(i.dataset.exam);
+      if (v !== null && !Number.isNaN(v) && max !== null) { earned += v; possible += max; }
     });
     const totalCell = row.children[row.children.length - 2];
     if (totalCell) totalCell.innerHTML = `<strong>${possible ? `${earned}/${possible}` : "—"}</strong>`;
   }
 
-  box.querySelectorAll("input[data-exam]").forEach((input) => input.addEventListener("change", async () => {
-    const key = input.dataset.exam;
+  function invalidReason(input) {
     const n = parseManualNumber(input.value);
-    const max = examMax[key];
-    if (Number.isNaN(n) || (n !== null && max != null && n > max)) {
-      flashSaveState(input, false);
-      alert(max != null ? `Score must be between 0 and ${max}.` : "Score must be a number, 0 or more.");
+    if (Number.isNaN(n)) return "not a number";
+    if (input.dataset.exam && n !== null) {
+      const max = liveMax(input.dataset.exam);
+      if (max !== null && n > max) return `above max ${max}`;
+    }
+    return "";
+  }
+
+  function refreshSaveState() {
+    const dirty = dirtyInputs();
+    allInputs().forEach((i) => {
+      i.classList.toggle("dirty", dirty.includes(i));
+      i.classList.toggle("save-error", !!invalidReason(i));
+    });
+    unsavedManualScores = dirty.length;
+    saveBtn.disabled = dirty.length === 0;
+    saveBtn.textContent = dirty.length ? `\u{1F4BE} Save ${dirty.length} change${dirty.length === 1 ? "" : "s"}` : "\u{1F4BE} Save scores";
+    saveStatus.textContent = dirty.length ? "Not saved yet." : "";
+  }
+
+  allInputs().forEach((input) => input.addEventListener("input", () => {
+    input.classList.remove("saved");
+    if (input.dataset.examMax) box.querySelectorAll("tbody tr").forEach(retotalRow);
+    else retotalRow(input.closest("tr"));
+    refreshSaveState();
+  }));
+
+  saveBtn.addEventListener("click", async () => {
+    const dirty = dirtyInputs();
+    const bad = dirty.filter(invalidReason);
+    if (bad.length) {
+      bad[0].focus();
+      alert(`${bad.length} box${bad.length === 1 ? " has" : "es have"} a wrong value (${invalidReason(bad[0])}). Fix the red box${bad.length === 1 ? "" : "es"} first.`);
       return;
     }
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Saving...";
     try {
-      await updateDoc(doc(db, "enrollments", input.dataset.enrollment), { [`manualScores.${key}`]: n === null ? deleteField() : n });
-      const s = students.find((st) => st.enrollmentId === input.dataset.enrollment);
-      if (s) {
-        s.manualScores = { ...(s.manualScores || {}) };
-        if (n === null) delete s.manualScores[key]; else s.manualScores[key] = n;
-        retotalRow(input.closest("tr"));
-      }
-      flashSaveState(input, true);
+      const batch = writeBatch(db);
+      const sectionUpdate = {};
+      const byEnrollment = new Map();
+      dirty.forEach((i) => {
+        const n = parseManualNumber(i.value);
+        const val = n === null ? deleteField() : n;
+        if (i.dataset.examMax) sectionUpdate[`manualExams.${i.dataset.examMax}`] = val;
+        else {
+          const u = byEnrollment.get(i.dataset.enrollment) || {};
+          u[`manualScores.${i.dataset.exam}`] = val;
+          byEnrollment.set(i.dataset.enrollment, u);
+        }
+      });
+      if (Object.keys(sectionUpdate).length) batch.update(doc(db, "sections", sectionId), sectionUpdate);
+      byEnrollment.forEach((u, id) => batch.update(doc(db, "enrollments", id), u));
+      await batch.commit();
+      // Saved: the typed values become the new baseline.
+      dirty.forEach((i) => {
+        i.defaultValue = i.value;
+        const n = parseManualNumber(i.value);
+        if (i.dataset.examMax) { if (n === null) delete examMax[i.dataset.examMax]; else examMax[i.dataset.examMax] = n; }
+        else {
+          const st = students.find((x) => x.enrollmentId === i.dataset.enrollment);
+          if (st) {
+            st.manualScores = { ...(st.manualScores || {}) };
+            if (n === null) delete st.manualScores[i.dataset.exam]; else st.manualScores[i.dataset.exam] = n;
+          }
+        }
+        flashSaveState(i, true);
+      });
+      refreshSaveState();
+      saveStatus.textContent = `Saved ${dirty.length} change${dirty.length === 1 ? "" : "s"}.`;
     } catch (err) {
       console.error(err);
-      flashSaveState(input, false);
-      alert("Couldn't save the score - check your connection and try again.");
+      refreshSaveState();
+      saveStatus.textContent = "Couldn't save - check your connection and click Save again.";
+      alert("Couldn't save the scores - check your connection and try again. Your typed scores are still here.");
     }
-  }));
+  });
+  refreshSaveState();
 }
 
 // Fills one manual exam column from the teacher's item-analysis workbook.
@@ -4731,6 +4797,12 @@ async function loadRecords() {
 
 // ---------- nav ----------
 function show(viewId) {
+  // Leaving the section with typed-but-unsaved exam scores: ask first, since
+  // the matrix is rebuilt on return and the typed values would be lost.
+  if (viewId !== "view-section" && unsavedManualScores > 0
+      && !el("view-section").classList.contains("hidden")
+      && document.querySelector(".scores-matrix input.dirty")
+      && !confirm("You have exam scores that aren't saved yet. Leave without saving?")) return;
   // settings-panel is included so opening Settings/Student Lists/Overview
   // REPLACES the current view instead of stacking on top of it - every nav
   // destination is now a mutually-exclusive tab.

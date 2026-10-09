@@ -442,8 +442,11 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   Activities overview's Student scores matrix (`js/teacher.js`'s
   `renderActivityScores()`, `MANUAL_EXAMS`). Max points per section live on
   `section.manualExams.{summative1,summative2,termExam}`; each student's score
-  on their `enrollment.manualScores.{key}` (saved on change via field-path
-  `updateDoc`, blank = `deleteField()`). Both docs already owner-writable,
+  on their `enrollment.manualScores.{key}` (**explicit Save button**, not auto-save, by
+  request: typed boxes turn yellow = unsaved, `#manual-scores-save` writes all
+  changed scores + maxes in one `writeBatch` with field-path updates, blank =
+  `deleteField()`; `beforeunload` + `show()` confirm guard against leaving
+  with unsaved boxes). Both docs already owner-writable,
   and `manualScores` is **not** in the student self-edit `hasOnly()` list, so
   **no `firestore.rules` change**. Row Total = published scores + exam scores
   whose max is set. Records grid (`loadRecords()`) shows the same columns
