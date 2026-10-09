@@ -105,3 +105,63 @@ describe("loadWorkbook row-walk", () => {
     ).rejects.toThrow(/not found/i);
   });
 });
+
+import { readExamScores, pickBestSheet } from "../../js/class-record.js";
+
+// Shaped like the teacher's real item-analysis sheet: header on row 19
+// (B "No.", C "Learner", D "Score", E "Score (%)"), learners from row 20,
+// "Highest Possible Score:" label in G21 with the number in H21.
+function itemAnalysisSheet() {
+  const ws = {
+    B19: { t: "s", v: "No." }, C19: { t: "s", v: "Learner" }, D19: { t: "s", v: "Score" }, E19: { t: "s", v: "Score (%)" },
+    G20: { t: "s", v: "Number of Examinees:" }, H20: { t: "n", v: 24 },
+    G21: { t: "s", v: "Highest Possible Score:" }, H21: { t: "n", v: 30 },
+    C20: { t: "s", v: "AQUINO, DIETHER CALAGNAS" }, D20: { t: "n", v: 12 }, E20: { t: "n", v: 40 },
+    C21: { t: "s", v: "CASTELO, JERIC SOMBILON" }, D21: { t: "n", v: 17 }, E21: { t: "n", v: 57 },
+    C22: { t: "s", v: "ABSENT, NO SCORE" },
+    C23: { t: "s", v: "FEMALE" },
+    C24: { t: "s", v: "DISCIPULO, ANGEL ALMAZAN" }, D24: { t: "n", v: 24 },
+    // template filler below the roster: formula evaluating to number 0
+    C25: { t: "n", v: 0 }, C26: { t: "n", v: 0 }, C27: { t: "n", v: 0 }, C28: { t: "n", v: 0 },
+    C29: { t: "s", v: "SHOULD NOT BE READ" }, D29: { t: "n", v: 1 },
+  };
+  return ws;
+}
+
+describe("readExamScores", () => {
+  it("detects Learner/Score columns, skips Score (%), reads max", () => {
+    const { rows, maxScore } = readExamScores(itemAnalysisSheet());
+    expect(maxScore).toBe(30);
+    expect(rows).toEqual([
+      { name: "AQUINO, DIETHER CALAGNAS", score: 12 },
+      { name: "CASTELO, JERIC SOMBILON", score: 17 },
+      { name: "DISCIPULO, ANGEL ALMAZAN", score: 24 },
+    ]);
+  });
+
+  it("stops after more than 3 non-name rows", () => {
+    const names = readExamScores(itemAnalysisSheet()).rows.map((r) => r.name);
+    expect(names).not.toContain("SHOULD NOT BE READ");
+  });
+
+  it("throws a clear error when the header is missing", () => {
+    expect(() => readExamScores({ A1: { t: "s", v: "Hello" } })).toThrow(/Learner/);
+  });
+
+  it("returns null max when no Highest Possible Score label", () => {
+    const ws = itemAnalysisSheet();
+    delete ws.G21;
+    expect(readExamScores(ws).maxScore).toBeNull();
+  });
+});
+
+describe("pickBestSheet", () => {
+  const sheets = ["Grade 10 - CSS", "Grade 12 - STEM 12", "Grade 12 - EMPOWERMENT TECH"];
+  it("picks the sheet sharing the most words with the section/subject", () => {
+    expect(pickBestSheet(sheets, ["CSS", "Grade 10 ICT"])).toBe("Grade 10 - CSS");
+    expect(pickBestSheet(sheets, ["STEM 12", "Empowerment Technologies"])).toBe("Grade 12 - STEM 12");
+  });
+  it("falls back to the first sheet", () => {
+    expect(pickBestSheet(sheets, ["Orchids"])).toBe("Grade 10 - CSS");
+  });
+});
