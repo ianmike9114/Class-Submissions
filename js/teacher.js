@@ -236,6 +236,41 @@ async function copyAnnouncement(text) {
   }
 }
 
+// Zero-setup email path: opens the teacher's OWN Gmail with every enrolled
+// student in BCC and the announcement pre-written - teacher just hits Send.
+// No backend/EmailJS needed. Phones get mailto: (opens the Gmail app) since
+// Gmail's mobile web drops the view=cm compose fields.
+async function buildEmailClassUrl(a) {
+  const enrollSnap = await getDocs(ownerScopedQuery("enrollments", where("sectionId", "==", state.sectionId)));
+  const emails = [...new Set(enrollSnap.docs
+    .map((d) => d.data())
+    .filter((en) => ownedByViewAs(en) && en.status !== "pending")
+    .map((en) => (en.studentEmail || "").trim().toLowerCase())
+    .filter(Boolean))];
+  if (emails.length === 0) return null;
+
+  const subject = `${a.type === "material" ? "New material" : "New assignment"}: ${a.title || ""}`;
+  const body = buildAssignmentAnnouncement(a);
+  const bcc = emails.join(",");
+  const phone = window.matchMedia("(pointer: coarse)").matches;
+  const url = phone
+    ? `mailto:?bcc=${encodeURIComponent(bcc)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+    : `https://mail.google.com/mail/?view=cm&fs=1&bcc=${encodeURIComponent(bcc)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  return { url, phone, count: emails.length };
+}
+
+async function emailClass(a) {
+  const built = await buildEmailClassUrl(a);
+  if (!built) { alert("No enrolled students with an email yet."); return; }
+  const { url, phone } = built;
+  if (phone) { location.href = url; return; }
+  // No "noopener" feature: with it window.open always returns null, which
+  // would hide a real pop-up block. Cut the opener link by hand instead.
+  const win = window.open(url, "_blank");
+  if (win) win.opener = null;
+  else alert("Your browser blocked the pop-up - allow pop-ups for this site, or use the ⋯ menu → Email class (Gmail) on the assignment.");
+}
+
 // Renders a QR entirely client-side (qrcodejs CDN global) - the join link
 // never leaves the device, no external QR image API involved. The
 // subject/section label is baked into the same canvas (not just a sibling
@@ -2726,6 +2761,7 @@ async function loadAssignments() {
             <div class="menu-panel">
               <button type="button" data-share="${d.id}">&#128227; Share to group</button>
               <button type="button" data-copy="${d.id}">&#10697; Copy announcement</button>
+              <button type="button" data-email-class="${d.id}">&#9993; Email class (Gmail)</button>
               <button type="button" class="menu-danger" data-delete-assignment="${d.id}">Delete ${isMaterial ? "material" : "assignment"}</button>
             </div>
           </details>
@@ -2767,6 +2803,14 @@ async function loadAssignments() {
     b.addEventListener("click", () => shareAnnouncement(buildAssignmentAnnouncement(assignmentData.get(b.dataset.share)))));
   list.querySelectorAll("[data-copy]").forEach((b) =>
     b.addEventListener("click", () => copyAnnouncement(buildAssignmentAnnouncement(assignmentData.get(b.dataset.copy)))));
+  list.querySelectorAll("[data-email-class]").forEach((b) =>
+    b.addEventListener("click", () => {
+      b.closest("details.menu")?.removeAttribute("open");
+      emailClass(assignmentData.get(b.dataset.emailClass)).catch((err) => {
+        console.error(err);
+        alert("Couldn't load the class emails - try Refresh.");
+      });
+    }));
   list.querySelectorAll("[data-delete-assignment]").forEach((b) =>
     b.addEventListener("click", async () => {
       b.closest("details.menu")?.removeAttribute("open");
@@ -2841,7 +2885,7 @@ el("add-assignment-form").addEventListener("submit", async (e) => {
   resetCreateType();
   loadAssignments();
   if (type === "material") { alert("Material added."); return; }
-  await notifyOnAssignmentCreate(title, dueDate);
+  await notifyOnAssignmentCreate(payload);
 });
 
 // Bulk-set one due date across the assignments the teacher ticks in the open
@@ -2890,8 +2934,16 @@ el("bulk-due-apply").addEventListener("click", async () => {
 // Assignments have no separate draft/publish step - creating one *is*
 // releasing it - so this is the release notify point. Silently does
 // nothing if the teacher hasn't saved an EmailJS config in Settings.
-async function notifyOnAssignmentCreate(title, dueDate) {
-  if (!getEmailConfig().serviceId) { alert("Assignment added."); return; }
+async function notifyOnAssignmentCreate(a) {
+  const { title, dueDate } = a;
+  // No EmailJS set up: offer the zero-setup Gmail compose path instead, as a
+  // real link the teacher taps (window.open here, after the awaits, would be
+  // pop-up blocked - the submit click's user activation has expired).
+  if (!getEmailConfig().serviceId) {
+    const built = await buildEmailClassUrl(a).catch((err) => { console.error(err); return null; });
+    showEmailClassPrompt(built);
+    return;
+  }
 
   const enrollSnap = await getDocs(ownerScopedQuery("enrollments", where("sectionId", "==", state.sectionId)));
   const students = enrollSnap.docs
@@ -2909,6 +2961,24 @@ async function notifyOnAssignmentCreate(title, dueDate) {
     dueDate,
   });
   alert(`Notified: ${sent} sent${failed ? `, ${failed} failed` : ""}.`);
+}
+
+function showEmailClassPrompt(built) {
+  document.getElementById("email-class-prompt")?.remove();
+  const box = document.createElement("div");
+  box.id = "email-class-prompt";
+  box.className = "email-class-prompt card";
+  box.setAttribute("role", "status");
+  box.innerHTML = built
+    ? `<span>Assignment added. Email the class (${built.count})?</span>
+       <a class="button" href="${built.url}" ${built.phone ? "" : `target="_blank" rel="noopener"`}>&#9993; Email class (Gmail)</a>
+       <button type="button" class="secondary" data-close>Not now</button>`
+    : `<span>Assignment added.</span><button type="button" class="secondary" data-close>OK</button>`;
+  document.body.appendChild(box);
+  const close = () => box.remove();
+  box.querySelector("[data-close]").addEventListener("click", close);
+  box.querySelector("a")?.addEventListener("click", () => setTimeout(close, 300));
+  setTimeout(close, 30000);
 }
 
 // ---------- submissions ----------
