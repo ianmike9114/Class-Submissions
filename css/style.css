@@ -1219,3 +1219,11 @@ body.student-page > header button.secondary:hover { background: rgba(255, 255, 2
   .email-class-prompt a.button,
   .email-class-prompt button { min-height: 44px; display: inline-flex; align-items: center; }
 }
+/* Import exam scores from Excel (inside Student scores). */
+.exam-import { margin: 0.5rem 0 1rem; padding: 0.5rem 0.75rem; border: 1px dashed var(--gray-border); border-radius: var(--radius-sm); }
+.exam-import summary { cursor: pointer; font-weight: 600; }
+.exam-import-controls { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: flex-end; margin: 0.5rem 0; }
+.exam-import-controls label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; }
+.exam-import-controls select,
+.exam-import-controls input { width: auto; max-width: 100%; }
+.exam-import tr.import-problem td { background: #fff7ed; }

@@ -1,12 +1,12 @@
 import { db, ADMIN_EMAIL, isSuperAdmin } from "./firebase-config.js";
 import { guardPage, signOutUser } from "./auth.js";
 import {
-  collection, addDoc, doc, setDoc, updateDoc, deleteDoc, deleteField, getDoc, getDocs, getCountFromServer, query, where, serverTimestamp,
+  collection, addDoc, doc, setDoc, updateDoc, deleteDoc, deleteField, writeBatch, getDoc, getDocs, getCountFromServer, query, where, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getGeminiKey, setGeminiKey, runRubricCheck, generateCodeExample } from "./gemini.js";
 import { getEmailConfig, saveEmailConfig, notifySection } from "./notify.js";
 import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons } from "./embed.js";
-import { loadWorkbook } from "./class-record.js";
+import { loadWorkbook, readExamScores, pickBestSheet } from "./class-record.js";
 import { runJava } from "./runner.js";
 import { codeBlockHtml, highlightWithin } from "./highlight.js";
 
@@ -2591,6 +2591,19 @@ async function renderActivityScores(assignments, sectionId) {
   box.innerHTML = `
     <p class="muted">Score = published grade. "To grade" = submitted, not yet published. — = no submission. Tap a cell to open that activity.
     <strong>Exams (manual):</strong> type the max points in the header, then each student's score - it saves when you leave the box. Total = published scores + exam scores that have a max set.</p>
+    <details class="exam-import">
+      <summary>&#128229; Import exam scores from Excel</summary>
+      <p class="muted">Upload your item-analysis workbook (the one with the <strong>Learner</strong> and <strong>Score</strong> columns). Scores are read in this browser - the file isn't uploaded anywhere.</p>
+      <div class="exam-import-controls">
+        <label>Exam
+          <select id="exam-import-key">${MANUAL_EXAMS.map((ex) => `<option value="${ex.key}">${ex.label}</option>`).join("")}</select>
+        </label>
+        <label>File <input id="exam-import-file" type="file" accept=".xlsx,.xls" /></label>
+        <label class="hidden" id="exam-import-sheet-wrap">Sheet / class <select id="exam-import-sheet"></select></label>
+        <label class="hidden" id="exam-import-max-wrap">Highest possible score <input id="exam-import-max" type="number" min="1" step="any" inputmode="decimal" /></label>
+      </div>
+      <div id="exam-import-preview"></div>
+    </details>
     <div class="scores-matrix">
       <table class="records-grid">
         <thead>
@@ -2611,6 +2624,8 @@ async function renderActivityScores(assignments, sectionId) {
     if (n.dataset.scoreStudent) highlightStudentName = n.dataset.scoreStudent;
     openAssignment(n.dataset.scoreAssignment);
   }));
+
+  wireExamImport({ box, students, roster, sectionId, examMax, rerender: () => renderActivityScores(assignments, sectionId) });
 
   // Saves on change (blur / Enter). Field-path updates touch only the one
   // key, so other exams on the same doc aren't clobbered.
@@ -2674,6 +2689,120 @@ async function renderActivityScores(assignments, sectionId) {
       alert("Couldn't save the score - check your connection and try again.");
     }
   }));
+}
+
+// Fills one manual exam column from the teacher's item-analysis workbook.
+// All parsing is client-side (SheetJS); names are matched to enrollments with
+// the same fuzzy word match used everywhere else, and anything ambiguous is
+// flagged, never guessed. One writeBatch saves every matched score + the max.
+function wireExamImport({ box, students, roster, sectionId, examMax, rerender }) {
+  const fileInput = box.querySelector("#exam-import-file");
+  const sheetSelect = box.querySelector("#exam-import-sheet");
+  const keySelect = box.querySelector("#exam-import-key");
+  const maxInput = box.querySelector("#exam-import-max");
+  const preview = box.querySelector("#exam-import-preview");
+  let workbook = null;
+  let parsed = null; // { rows, maxScore }
+
+  // Every name an enrollment might appear under in the workbook: its own
+  // studentName plus the roster name it was matched to.
+  const candidates = students.map((s) => ({
+    s, names: [s.studentName, s.rosterIndex >= 0 ? roster[s.rosterIndex].name : ""].filter(Boolean),
+  }));
+  const matchFor = (excelName) => {
+    const hits = candidates.filter((c) => c.names.some((n) =>
+      matchesNameSearch(n, excelName) || matchesNameSearch(excelName, n)));
+    return hits.length === 1 ? { student: hits[0].s } : { problem: hits.length ? "more than one match" : "no match" };
+  };
+
+  function renderPreview() {
+    if (!parsed) { preview.innerHTML = ""; return; }
+    const key = keySelect.value;
+    const max = parseManualNumber(maxInput.value);
+    const used = new Set();
+    const rows = parsed.rows.map((r) => {
+      const m = matchFor(r.name);
+      if (m.student && used.has(m.student.enrollmentId)) return { ...r, problem: "same student twice" };
+      if (m.student) used.add(m.student.enrollmentId);
+      const overMax = max != null && !Number.isNaN(max) && r.score > max;
+      return { ...r, ...m, problem: m.problem || (overMax ? `above max ${max}` : "") };
+    });
+    const ok = rows.filter((r) => !r.problem);
+    const bad = rows.filter((r) => r.problem);
+    const notInFile = students.filter((s) => !used.has(s.enrollmentId));
+    preview.innerHTML = `
+      <p><strong>${ok.length}</strong> score${ok.length === 1 ? "" : "s"} ready${bad.length ? `, <span class="status-returned">${bad.length} need checking</span>` : ""}.
+        ${notInFile.length ? `<span class="muted">${notInFile.length} enrolled student(s) not in this sheet - left unchanged.</span>` : ""}</p>
+      <div class="scores-matrix">
+        <table class="records-grid">
+          <thead><tr><th>Name in Excel</th><th>Student in class</th><th>Score</th></tr></thead>
+          <tbody>${rows.map((r) => {
+            const old = r.student?.manualScores?.[key];
+            const change = r.student && old != null && old !== r.score ? ` <span class="muted">(was ${old})</span>` : "";
+            return `<tr${r.problem ? ' class="import-problem"' : ""}><td>${escAttr(r.name)}</td>
+              <td>${r.student ? escAttr(displayStudentName(r.student.studentName)) : ""}${r.problem ? ` <span class="status-returned">&#9888; ${r.problem}</span>` : ""}</td>
+              <td>${r.score}${change}</td></tr>`;
+          }).join("")}</tbody>
+        </table>
+      </div>
+      <button type="button" id="exam-import-save" ${ok.length && max != null && !Number.isNaN(max) ? "" : "disabled"}>
+        Save ${ok.length} score${ok.length === 1 ? "" : "s"} to ${MANUAL_EXAMS.find((ex) => ex.key === key).label}</button>
+      ${max == null || Number.isNaN(max) ? `<span class="muted">Type the highest possible score first.</span>` : ""}
+      ${bad.length ? `<p class="muted">Rows marked &#9888; are skipped - type those scores in the table below by hand.</p>` : ""}`;
+    preview.querySelector("#exam-import-save")?.addEventListener("click", async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      btn.textContent = "Saving...";
+      try {
+        const batch = writeBatch(db);
+        ok.forEach((r) => batch.update(doc(db, "enrollments", r.student.enrollmentId), { [`manualScores.${key}`]: r.score }));
+        batch.update(doc(db, "sections", sectionId), { [`manualExams.${key}`]: max });
+        await batch.commit();
+        alert(`Saved ${ok.length} score${ok.length === 1 ? "" : "s"}.`);
+        rerender();
+      } catch (err) {
+        console.error(err);
+        btn.disabled = false;
+        btn.textContent = "Try saving again";
+        alert("Couldn't save the scores - check your connection and try again.");
+      }
+    });
+  }
+
+  function parseSheet() {
+    try {
+      parsed = readExamScores(workbook.Sheets[sheetSelect.value]);
+      maxInput.value = parsed.maxScore ?? (examMax[keySelect.value] ?? "");
+    } catch (err) {
+      parsed = null;
+      preview.innerHTML = `<p class="status-returned">${escAttr(err.message)} Pick the right sheet above.</p>`;
+      return;
+    }
+    renderPreview();
+  }
+
+  fileInput.addEventListener("change", async () => {
+    const file = fileInput.files[0];
+    if (!file) return;
+    preview.innerHTML = `<p class="muted">Reading file...</p>`;
+    try {
+      await loadScriptOnce(XLSX_CDN_URL);
+      workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
+    } catch (err) {
+      console.error(err);
+      preview.innerHTML = `<p class="status-returned">Couldn't read that file - is it an Excel .xlsx?</p>`;
+      return;
+    }
+    const best = pickBestSheet(workbook.SheetNames, [state.sectionName, state.subjectName]);
+    sheetSelect.innerHTML = workbook.SheetNames.map((n) =>
+      `<option value="${escAttr(n)}"${n === best ? " selected" : ""}>${escAttr(n)}</option>`).join("");
+    box.querySelector("#exam-import-sheet-wrap").classList.remove("hidden");
+    box.querySelector("#exam-import-max-wrap").classList.remove("hidden");
+    parseSheet();
+  });
+  sheetSelect.addEventListener("change", parseSheet);
+  keySelect.addEventListener("change", renderPreview);
+  maxInput.addEventListener("input", renderPreview);
 }
 
 // "⋯" overflow menus are plain <details>: close any open one when the user

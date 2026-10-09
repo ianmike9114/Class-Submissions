@@ -460,6 +460,19 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   `window.open` — the submit click's user activation has expired after the
   `addDoc`/enrollment awaits, so a scripted open would be pop-up blocked.
   Nothing is sent by the app; teacher presses Send. No rules change.
+- **Import exam scores from the item-analysis `.xlsx`.** "📥 Import exam
+  scores from Excel" inside Student scores (`js/teacher.js`'s
+  `wireExamImport()`) fills one manual exam column from the teacher's own
+  exam workbook (one tab per class, `Learner` | `Score` | `Score (%)` table,
+  "Highest Possible Score:" label). `js/class-record.js`'s `readExamScores()`
+  auto-detects the header (exact `Score`, so `Score (%)` is skipped), keeps
+  the string-type name rule, tolerates ≤3 spacer rows, and reads the max;
+  `pickBestSheet()` preselects the tab matching the section/subject name.
+  Names match enrollments (studentName + roster name) via
+  `matchesNameSearch`; 0 or >1 hits are flagged ⚠ and skipped, never
+  guessed. Preview first, then one `writeBatch` (scores + section max).
+  Client-side only, no rules change. Unit-tested in
+  `tests/unit/class-record.test.js`.
 
 ## Conventions
 
