@@ -1,7 +1,7 @@
 import { db, ADMIN_EMAIL, isSuperAdmin } from "./firebase-config.js";
 import { guardPage, signOutUser } from "./auth.js";
 import {
-  collection, addDoc, doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, getCountFromServer, query, where, serverTimestamp,
+  collection, addDoc, doc, setDoc, updateDoc, deleteDoc, deleteField, getDoc, getDocs, getCountFromServer, query, where, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getGeminiKey, setGeminiKey, runRubricCheck, generateCodeExample } from "./gemini.js";
 import { getEmailConfig, saveEmailConfig, notifySection } from "./notify.js";
@@ -2446,6 +2446,30 @@ function renderActivitiesSummary(assignments) {
 // one column per activity (Written Work, then Performance Task, then Other).
 // Clicking a cell opens that activity with the student's submission
 // highlighted, ready to grade.
+// Paper exams with no submission in the app - the teacher types each score
+// by hand. Max points live on the section (section.manualExams), scores on
+// each enrollment (enrollment.manualScores); both already owner-writable, so
+// no firestore.rules change. Not in the student self-edit hasOnly() list,
+// so a student can't change their own score.
+const MANUAL_EXAMS = [
+  { key: "summative1", label: "Summative 1" },
+  { key: "summative2", label: "Summative 2" },
+  { key: "termExam", label: "Term Exam" },
+];
+
+function parseManualNumber(raw) {
+  const t = String(raw).trim();
+  if (t === "") return null;
+  const n = Number(t);
+  return Number.isFinite(n) && n >= 0 ? n : NaN;
+}
+
+function flashSaveState(input, ok) {
+  input.classList.remove("saved", "save-error");
+  input.classList.add(ok ? "saved" : "save-error");
+  if (ok) setTimeout(() => input.classList.remove("saved"), 1200);
+}
+
 async function renderActivityScores(assignments, sectionId) {
   const box = el("activities-scores");
   const COMPONENT_LABELS = { written: "Written Work", performance: "Performance Task" };
@@ -2471,12 +2495,13 @@ async function renderActivityScores(assignments, sectionId) {
 
   const students = enrollSnap.docs
     .filter((d) => ownedByViewAs(d.data()))
-    .map((d) => d.data())
+    .map((d) => ({ ...d.data(), enrollmentId: d.id }))
     .sort((a, b) => (a.studentName || "").localeCompare(b.studentName || ""));
   if (students.length === 0) {
     box.innerHTML = `<p class="muted">No students enrolled yet.</p>`;
     return;
   }
+  const examMax = { ...(sectionSnap.data()?.manualExams || {}) };
 
   const roster = (sectionSnap.data()?.roster || []).map((r) =>
     typeof r === "string" ? { name: r.toUpperCase(), gender: "" } : { ...r, name: (r.name || "").toUpperCase() });
@@ -2496,7 +2521,7 @@ async function renderActivityScores(assignments, sectionId) {
     : [["", students]];
 
   const STATUS_LABELS = { pending: "To grade", "ai-drafted": "To grade", returned: "Returned" };
-  const colCount = ordered.length + 4;
+  const colCount = ordered.length + MANUAL_EXAMS.length + 4;
   const renderRow = (s, n) => {
     let earned = 0, possible = 0, missing = 0;
     const cells = ordered.map((a) => {
@@ -2512,23 +2537,36 @@ async function renderActivityScores(assignments, sectionId) {
       const label = STATUS_LABELS[sub.status] || sub.status;
       return `<td ${attrs}><span class="status-${sub.status === "returned" ? "returned" : "pending"}">${label}</span></td>`;
     }).join("");
+    const scores = s.manualScores || {};
+    const examCells = MANUAL_EXAMS.map((ex) => {
+      const v = scores[ex.key];
+      if (v != null && examMax[ex.key] != null) { earned += Number(v); possible += Number(examMax[ex.key]); }
+      return `<td class="manual-cell"><input type="number" min="0" step="any" inputmode="decimal" class="manual-score"
+        data-exam="${ex.key}" data-enrollment="${s.enrollmentId}" value="${v ?? ""}"
+        aria-label="${ex.label} score" /></td>`;
+    }).join("");
     const total = possible ? `${earned}/${possible}` : "—";
     const missingCell = `<span class="status-${missing > 0 ? "returned" : "published"}">${missing}</span>`;
-    return `<tr><td>${n}</td><td>${displayStudentName(s.studentName)}${s.status === "pending" ? ' <span class="muted">(pending)</span>' : ""}</td>${cells}<td><strong>${total}</strong></td><td>${missingCell}</td></tr>`;
+    return `<tr><td>${n}</td><td>${displayStudentName(s.studentName)}${s.status === "pending" ? ' <span class="muted">(pending)</span>' : ""}</td>${cells}${examCells}<td><strong>${total}</strong></td><td>${missingCell}</td></tr>`;
   };
   const bodyRows = blocks.map(([label, list]) =>
     (label ? `<tr class="gender-group"><td colspan="${colCount}">${label}</td></tr>` : "")
     + list.map((s, i) => renderRow(s, i + 1)).join("")).join("");
 
   box.innerHTML = `
-    <p class="muted">Score = published grade. "To grade" = submitted, not yet published. — = no submission. Total counts published scores only. Tap a cell to open that activity.</p>
+    <p class="muted">Score = published grade. "To grade" = submitted, not yet published. — = no submission. Tap a cell to open that activity.
+    <strong>Exams (manual):</strong> type the max points in the header, then each student's score - it saves when you leave the box. Total = published scores + exam scores that have a max set.</p>
     <div class="scores-matrix">
       <table class="records-grid">
         <thead>
           <tr><th rowspan="2">#</th><th rowspan="2">Student</th>
             ${groups.map((g) => `<th colspan="${g.items.length}">${g.label}</th>`).join("")}
+            <th colspan="${MANUAL_EXAMS.length}">Exams (manual)</th>
             <th rowspan="2">Total</th><th rowspan="2">Missing</th></tr>
-          <tr>${ordered.map((a) => `<th><button type="button" class="link-button" data-score-assignment="${a.id}" title="Open ${a.title}">${a.title}</button><br><span class="muted">${a.totalPoints} pts</span></th>`).join("")}</tr>
+          <tr>${ordered.map((a) => `<th><button type="button" class="link-button" data-score-assignment="${a.id}" title="Open ${a.title}">${a.title}</button><br><span class="muted">${a.totalPoints} pts</span></th>`).join("")}
+            ${MANUAL_EXAMS.map((ex) => `<th>${ex.label}<br><label class="muted manual-max-label">max
+              <input type="number" min="0" step="any" inputmode="decimal" class="manual-score manual-max" data-exam-max="${ex.key}"
+                value="${examMax[ex.key] ?? ""}" placeholder="pts" aria-label="${ex.label} max points" /></label></th>`).join("")}</tr>
         </thead>
         <tbody>${bodyRows}</tbody>
       </table>
@@ -2537,6 +2575,69 @@ async function renderActivityScores(assignments, sectionId) {
     e.stopPropagation();
     if (n.dataset.scoreStudent) highlightStudentName = n.dataset.scoreStudent;
     openAssignment(n.dataset.scoreAssignment);
+  }));
+
+  // Saves on change (blur / Enter). Field-path updates touch only the one
+  // key, so other exams on the same doc aren't clobbered.
+  box.querySelectorAll("input[data-exam-max]").forEach((input) => input.addEventListener("change", async () => {
+    const key = input.dataset.examMax;
+    const n = parseManualNumber(input.value);
+    if (Number.isNaN(n)) { flashSaveState(input, false); alert("Max points must be a number, 0 or more."); return; }
+    try {
+      await updateDoc(doc(db, "sections", sectionId), { [`manualExams.${key}`]: n === null ? deleteField() : n });
+      if (n === null) delete examMax[key]; else examMax[key] = n;
+      flashSaveState(input, true);
+      box.querySelectorAll("tbody tr").forEach(retotalRow);
+    } catch (err) {
+      console.error(err);
+      flashSaveState(input, false);
+      alert("Couldn't save the max points - check your connection and try again.");
+    }
+  }));
+
+  // Recomputes one row's Total cell in place (no re-render, so focus keeps
+  // moving naturally to the next box while typing down a column).
+  function retotalRow(row) {
+    const first = row.querySelector("input[data-enrollment]");
+    if (!first) return;
+    const s = students.find((st) => st.enrollmentId === first.dataset.enrollment);
+    if (!s) return;
+    let earned = 0, possible = 0;
+    ordered.forEach((a) => {
+      const sub = subsByAssignment.get(a.id).get(s.studentUID);
+      if (sub?.status === "published") { earned += Number(sub.finalGrade?.score) || 0; possible += Number(a.totalPoints) || 0; }
+    });
+    const sc = s.manualScores || {};
+    MANUAL_EXAMS.forEach((ex) => {
+      if (sc[ex.key] != null && examMax[ex.key] != null) { earned += Number(sc[ex.key]); possible += Number(examMax[ex.key]); }
+    });
+    const totalCell = row.children[row.children.length - 2];
+    if (totalCell) totalCell.innerHTML = `<strong>${possible ? `${earned}/${possible}` : "—"}</strong>`;
+  }
+
+  box.querySelectorAll("input[data-exam]").forEach((input) => input.addEventListener("change", async () => {
+    const key = input.dataset.exam;
+    const n = parseManualNumber(input.value);
+    const max = examMax[key];
+    if (Number.isNaN(n) || (n !== null && max != null && n > max)) {
+      flashSaveState(input, false);
+      alert(max != null ? `Score must be between 0 and ${max}.` : "Score must be a number, 0 or more.");
+      return;
+    }
+    try {
+      await updateDoc(doc(db, "enrollments", input.dataset.enrollment), { [`manualScores.${key}`]: n === null ? deleteField() : n });
+      const s = students.find((st) => st.enrollmentId === input.dataset.enrollment);
+      if (s) {
+        s.manualScores = { ...(s.manualScores || {}) };
+        if (n === null) delete s.manualScores[key]; else s.manualScores[key] = n;
+        retotalRow(input.closest("tr"));
+      }
+      flashSaveState(input, true);
+    } catch (err) {
+      console.error(err);
+      flashSaveState(input, false);
+      alert("Couldn't save the score - check your connection and try again.");
+    }
   }));
 }
 
@@ -4322,8 +4423,11 @@ async function loadRecords() {
   if (other.length > 0) groups.push({ key: "other", label: "Other", assignments: other });
 
   const orderedAssignments = groups.flatMap((g) => g.assignments);
-  const groupHeaderCells = groups.map((g) => `<th colspan="${g.assignments.length}">${g.label}</th>`).join("");
-  const titleHeaderCells = orderedAssignments.map((a) => `<th>${a.title}</th>`).join("");
+  const examMax = section.manualExams || {};
+  const groupHeaderCells = groups.map((g) => `<th colspan="${g.assignments.length}">${g.label}</th>`).join("")
+    + `<th colspan="${MANUAL_EXAMS.length}">Exams (manual)</th>`;
+  const titleHeaderCells = orderedAssignments.map((a) => `<th>${a.title}</th>`).join("")
+    + MANUAL_EXAMS.map((ex) => `<th>${ex.label}${examMax[ex.key] != null ? `<br><span class="muted">${examMax[ex.key]} pts</span>` : ""}</th>`).join("");
 
   // Exact string match misses students whose enrollment name is a
   // reordered/shortened version of the roster name (e.g. enrollment
@@ -4351,6 +4455,10 @@ async function loadRecords() {
         return `<td>${sub.finalGrade?.score ?? 0}/${a.totalPoints}</td>`;
       }
       return `<td class="status-${sub.status}">${sub.status}</td>`;
+    }).join("") + MANUAL_EXAMS.map((ex) => {
+      const v = enrollment?.manualScores?.[ex.key];
+      if (v == null) return `<td class="muted">—</td>`;
+      return `<td>${v}${examMax[ex.key] != null ? `/${examMax[ex.key]}` : ""}</td>`;
     }).join("");
     const missingCell = `<td><span class="status-${missing > 0 ? "returned" : "published"}">${missing}/${orderedAssignments.length}</span></td>`;
     return `<tr><td>${name}</td>${missingCell}${cells}</tr>`;
@@ -4367,7 +4475,7 @@ async function loadRecords() {
 
   const bodyRows = genderGroups.length > 1
     ? genderGroups.map((g) => {
-        const header = `<tr class="gender-group"><td colspan="${orderedAssignments.length + 2}">${g.label}</td></tr>`;
+        const header = `<tr class="gender-group"><td colspan="${orderedAssignments.length + MANUAL_EXAMS.length + 2}">${g.label}</td></tr>`;
         return header + g.students.map(renderStudentRow).join("");
       }).join("")
     : roster.map(renderStudentRow).join("");
