@@ -437,6 +437,19 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   starting point, not guarantee every future UI addition degrades
   gracefully on mobile without its own check.
 
+- **Manual exam scores (Summative 1, Summative 2, Term Exam).** Paper exams
+  have no submission, so the teacher types scores straight into the
+  Activities overview's Student scores matrix (`js/teacher.js`'s
+  `renderActivityScores()`, `MANUAL_EXAMS`). Max points per section live on
+  `section.manualExams.{summative1,summative2,termExam}`; each student's score
+  on their `enrollment.manualScores.{key}` (saved on change via field-path
+  `updateDoc`, blank = `deleteField()`). Both docs already owner-writable,
+  and `manualScores` is **not** in the student self-edit `hasOnly()` list, so
+  **no `firestore.rules` change**. Row Total = published scores + exam scores
+  whose max is set. Records grid (`loadRecords()`) shows the same columns
+  read-only. Raw scores only, no WW/PT/QA weighting (see rule above).
+  Not shown on `student.html`.
+
 ## Conventions
 
 - No bundler/build step by design — keep deployable as-is to GitHub

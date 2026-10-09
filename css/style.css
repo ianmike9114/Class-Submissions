@@ -1177,3 +1177,18 @@ body.student-page > header button.secondary:hover { background: rgba(255, 255, 2
 /* Keep the student name visible while scrolling across many activities. */
 .scores-matrix tbody td:nth-child(2) { position: sticky; left: 0; background: white; }
 .scores-matrix tbody tr.gender-group td { position: static; }
+/* Manual exam score boxes (Summative 1/2, Term Exam) in the scores matrix. */
+.scores-matrix input.manual-score {
+  width: 4.5rem;
+  min-height: 36px;
+  margin: 0;
+  padding: 0.25rem;
+  text-align: center;
+  display: inline-block;
+}
+.scores-matrix .manual-max-label { display: block; font-weight: normal; font-size: 0.8rem; }
+.scores-matrix input.manual-score.saved { border-color: var(--green); outline: 2px solid var(--green); }
+.scores-matrix input.manual-score.save-error { border-color: #c0392b; outline: 2px solid #c0392b; }
+@media (max-width: 640px) {
+  .scores-matrix input.manual-score { min-height: 44px; }
+}
