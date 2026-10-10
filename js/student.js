@@ -567,6 +567,10 @@ async function loadEverything() {
   el("course-outline-body").innerHTML = "";
   el("course-outline").classList.add("hidden");
   el("assignment-nav")?.classList.add("hidden"); // nothing open yet on a fresh render
+  // Quizzes render in their own tab (#quizzes-panel), never in the outline.
+  const quizList = el("quizzes-list");
+  quizList.innerHTML = '<p class="muted" id="quizzes-empty">No quizzes yet.</p>';
+  updateQuizTabCount(0);
   if (sectionIds.length === 0) return;
 
   // Firestore 'in' queries cap at 30 - fine for a solo class-load use case.
@@ -614,6 +618,8 @@ async function loadEverything() {
   const sectionToEnrollment = new Map(enrollments.map((en) => [en.sectionId, en]));
   const doneMaterialIds = new Set(enrollments.flatMap((en) => en.doneMaterials || []));
 
+  const quizHeadings = new Set();
+  let quizzesToTake = 0;
   for (const [subjectName, aDocs] of assignmentsBySubject) {
     if (aDocs.length === 0) continue;
     const heading = document.createElement("h3");
@@ -715,7 +721,21 @@ async function loadEverything() {
           ${renderSubmittedWork(s)}
           ${actionsBlock}`;
       }
-      list.appendChild(row);
+      if (isQuizAssignment(a)) {
+        // Quiz cards are always visible in the Quizzes tab, under a subject
+        // heading of their own (the outline-mode list keeps everything else).
+        el("quizzes-empty")?.remove();
+        if (!quizHeadings.has(subjectName)) {
+          quizHeadings.add(subjectName);
+          const qh = document.createElement("h3");
+          qh.textContent = subjectName;
+          quizList.appendChild(qh);
+        }
+        if (!subDoc && !isPastDue(a)) quizzesToTake++;
+        quizList.appendChild(row);
+      } else {
+        list.appendChild(row);
+      }
 
       // Material "mark done / undo": toggles this assignment id in the
       // student's own enrollment.doneMaterials. arrayUnion/arrayRemove keeps it
@@ -865,9 +885,17 @@ async function loadEverything() {
     (Array.isArray(sd.data().topics) ? sd.data().topics : []).forEach((t) => { if (!arr.includes(t)) arr.push(t); });
   }
 
-  renderOutline(assignmentsBySubject, subDocsByAssignment, topicOrderBySubject, doneMaterialIds);
-  renderUpNext(assignmentsBySubject, subDocsByAssignment, doneMaterialIds);
-  renderNeedsResubmission(assignmentsBySubject, subDocsByAssignment);
+  // The outline / Up next / resubmission callout cover assignments and
+  // materials only - quizzes have their own tab.
+  const nonQuizBySubject = new Map([...assignmentsBySubject].map(([k, v]) => [k, v.filter((d) => !isQuizAssignment(d.data()))]));
+  renderOutline(nonQuizBySubject, subDocsByAssignment, topicOrderBySubject, doneMaterialIds);
+  renderUpNext(nonQuizBySubject, subDocsByAssignment, doneMaterialIds);
+  renderNeedsResubmission(nonQuizBySubject, subDocsByAssignment);
+  updateQuizTabCount(quizzesToTake);
+  if (quizzesToTake > 0) {
+    el("assignment-empty")?.insertAdjacentHTML("afterbegin",
+      `<button type="button" class="quiz-nudge" data-student-tab="quizzes">&#128221; You have ${quizzesToTake} quiz${quizzesToTake === 1 ? "" : "zes"} to take &rarr; open Quizzes</button>`);
+  }
   attachSubmitHandlers();
   highlightWithin(el("assignments-list"));
   filterAssignments();
@@ -1563,6 +1591,30 @@ function wireRunButton(btn) {
     }
   });
 }
+
+// ---------- Assignments / Quizzes tabs ----------
+function isQuizAssignment(a) {
+  return a.type !== "material" && a.allowedFileTypes === "quiz";
+}
+function updateQuizTabCount(n) {
+  const badge = el("quiz-tab-count");
+  if (!badge) return;
+  badge.textContent = n;
+  badge.classList.toggle("hidden", !n);
+}
+function setStudentTab(tab) {
+  const quizzes = tab === "quizzes";
+  el("quizzes-panel").classList.toggle("hidden", !quizzes);
+  el("assignments-panel").classList.toggle("hidden", quizzes);
+  el("tab-quizzes").setAttribute("aria-selected", String(quizzes));
+  el("tab-assignments").setAttribute("aria-selected", String(!quizzes));
+  try { localStorage.setItem("studentTab", quizzes ? "quizzes" : "assignments"); } catch { /* storage blocked */ }
+}
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("[data-student-tab]");
+  if (t) setStudentTab(t.dataset.studentTab);
+});
+try { if (localStorage.getItem("studentTab") === "quizzes") setStudentTab("quizzes"); } catch { /* storage blocked */ }
 
 // ---------- Quiz taking (Quiz assignments) ----------
 // Anti-cheat here is DETERRENCE, not a lock - no web page can stop a

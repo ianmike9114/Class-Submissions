@@ -477,9 +477,17 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   Client-side only, no rules change. Unit-tested in
   `tests/unit/class-record.test.js`.
 
-- **Quiz assignments: anti-cheat is deterrence, not a lock.** Type "Quiz" in
-  the assignment-type dropdown opens a builder (`js/teacher.js`
-  `mountQuizBuilder()`): Gemini drafts 5-20 multiple choice / true-false /
+- **Quiz assignments: anti-cheat is deterrence, not a lock.** Quizzes have
+  their own home: teacher sidebar **📝 Quizzes** tab (`openQuizzes()`, every
+  quiz across classes + a class picker that jumps to the section's Create card
+  with Quiz picked), a third **Quiz** button in the Create card
+  (`setCreateType("quiz")` locks link type to quiz; the dropdown's quiz option
+  is `hidden`), and their own "📝 Quizzes" group at the top of a section's list.
+  Students get an **Assignments | 📝 Quizzes** tab bar (`setStudentTab()`,
+  remembered in localStorage); quiz cards render in `#quizzes-list` and are
+  excluded from the course outline / Up next / resubmission callout. Still the
+  same `assignments` docs (`allowedFileTypes: "quiz"`), so no data change. The
+  builder (`js/teacher.js` `mountQuizBuilder()`): Gemini drafts 5-20 multiple choice / true-false /
   identification items from a topic (`js/gemini.js` `generateQuiz()`, teacher's
   own key), teacher edits every item. Students (`js/student.js` `runQuiz()`) get
   a full-screen one-item-at-a-time runner: no Back, per-item timer + overall

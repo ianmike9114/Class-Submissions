@@ -130,7 +130,9 @@ covers any new header buttons or wide tables added.
   (`scoreQuiz`, `seededShuffle`, `normalizeAnswer`...). Builder:
   `js/teacher.js` `mountQuizBuilder()`; AI draft `js/gemini.js`
   `generateQuiz()`; review `quizResultHtml()`; student runner
-  `js/student.js` `runQuiz()`.
+  `js/student.js` `runQuiz()`. UI homes: teacher `openQuizzes()` (sidebar
+  tab) + Create-card Quiz button; student `#quizzes-panel` via
+  `setStudentTab()` (quizzes kept out of `renderOutline()`).
 - `enrollments` — studentUID, studentName (if section had roster at
   join time, this is exact roster spelling student picked via
   `js/student.js`'s name picker, not their Google account name - see

@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=48" />
+  <link rel="stylesheet" href="css/style.css?v=49" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="theme-color" content="#002045" />
   <link rel="apple-touch-icon" href="/icons/icon-192.png" />
@@ -72,7 +72,16 @@
     <div id="waiting-approval" class="card hidden" style="border-color:var(--amber, #f6b73c);"></div>
     <div id="classes-list" class="class-grid"></div>
 
-    <h2>Assignments</h2>
+    <!-- Assignments vs Quizzes tabs (js/student.js setStudentTab). Quizzes
+         render in their own panel, never in the course outline. -->
+    <div class="tab-bar" role="tablist">
+      <button type="button" class="tab-btn" role="tab" id="tab-assignments" data-student-tab="assignments" aria-selected="true">Assignments</button>
+      <button type="button" class="tab-btn" role="tab" id="tab-quizzes" data-student-tab="quizzes" aria-selected="false">&#128221; Quizzes <span id="quiz-tab-count" class="tab-count hidden"></span></button>
+    </div>
+    <div id="quizzes-panel" class="hidden" role="tabpanel">
+      <div id="quizzes-list"><p class="muted">No quizzes yet.</p></div>
+    </div>
+    <div id="assignments-panel" role="tabpanel">
     <details class="student-guide card">
       <summary><strong>How this page works</strong></summary>
       <ol class="student-guide-steps">
@@ -94,9 +103,10 @@
       </div>
       <div id="assignment-nav" class="hidden"></div>
     </div>
+    </div>
   </main>
 
-  <script type="module" src="js/student.js?v=54"></script>
+  <script type="module" src="js/student.js?v=55"></script>
 
   <!-- PWA: register the service worker (see sw.js). Failure swallowed. -->
   <script>

@@ -2905,10 +2905,12 @@ async function loadAssignments() {
   // createdAt count as 0 and sink to the bottom.)
   const toMs = (v) => Number(v?.toMillis ? v.toMillis() : v) || 0; // number or Firestore Timestamp
   const byLesson = new Map();
+  const quizDocs = []; // quizzes live in their own group, not mixed into lessons
   snap.docs
     .slice()
     .sort((x, y) => toMs(y.data().createdAt) - toMs(x.data().createdAt))
     .forEach((d) => {
+      if (d.data().allowedFileTypes === "quiz" && d.data().type !== "material") { quizDocs.push(d); return; }
       const lesson = (d.data().lesson || "").trim() || "General";
       if (!byLesson.has(lesson)) byLesson.set(lesson, []);
       byLesson.get(lesson).push(d);
@@ -2936,6 +2938,7 @@ async function loadAssignments() {
   const rowHtml = (d) => {
     const a = d.data();
     const isMaterial = a.type === "material";
+    const isQuiz = !isMaterial && a.allowedFileTypes === "quiz";
     const links = [
       a.instructionsLink ? `<a class="chip chip-link" href="${escAttr(a.instructionsLink)}" target="_blank" rel="noopener">${isMaterial ? "Material file" : "Instructions file"}</a>` : "",
       !isMaterial && a.uploadFolderLink ? `<a class="chip chip-link" href="${escAttr(a.uploadFolderLink)}" target="_blank" rel="noopener">Upload folder</a>` : "",
@@ -2944,12 +2947,13 @@ async function loadAssignments() {
       ? "Reading material · not graded"
       : [a.dueDate ? `Due ${escAttr(a.dueDate)}` : "No due date",
          a.totalPoints !== undefined && a.totalPoints !== "" ? `${escAttr(a.totalPoints)} pts` : "",
-         a.allowedFileTypes ? escAttr(a.allowedFileTypes) : ""].filter(Boolean).join(" · ");
+         isQuiz ? `${a.quiz?.questions?.length || 0} items · ${a.quiz?.secondsPerItem || 60}s each`
+           : a.allowedFileTypes ? escAttr(a.allowedFileTypes) : ""].filter(Boolean).join(" · ");
     return `
       <div class="assign-row">
         <div class="assign-main">
           <div class="assign-title">
-            <span class="chip ${isMaterial ? "chip-material" : "chip-todo"}">${isMaterial ? "&#128196; Material" : "&#9998; Assignment"}</span>
+            <span class="chip ${isMaterial ? "chip-material" : "chip-todo"}">${isMaterial ? "&#128196; Material" : isQuiz ? "&#128221; Quiz" : "&#9998; Assignment"}</span>
             <strong>${escAttr(a.title || "(untitled)")}</strong>
             ${isMaterial ? "" : pendingBadge(counts.byAssignment.get(d.id), `${state.subjectId}|${state.sectionId}|${d.id}`)}
           </div>
@@ -2958,19 +2962,37 @@ async function loadAssignments() {
           ${links ? `<div class="assign-links">${links}</div>` : ""}
         </div>
         <div class="assign-actions">
-          <button type="button" data-open="${d.id}">${isMaterial ? "Open" : "Open submissions"}</button>
+          <button type="button" data-open="${d.id}">${isMaterial ? "Open" : isQuiz ? "Open results" : "Open submissions"}</button>
           <details class="menu">
             <summary aria-label="More actions" title="More actions">&#8943;</summary>
             <div class="menu-panel">
               <button type="button" data-share="${d.id}">&#128227; Share to group</button>
               <button type="button" data-copy="${d.id}">&#10697; Copy announcement</button>
               <button type="button" data-email-class="${d.id}">&#9993; Email class (Gmail)</button>
-              <button type="button" class="menu-danger" data-delete-assignment="${d.id}">Delete ${isMaterial ? "material" : "assignment"}</button>
+              <button type="button" class="menu-danger" data-delete-assignment="${d.id}">Delete ${isMaterial ? "material" : isQuiz ? "quiz" : "assignment"}</button>
             </div>
           </details>
         </div>
       </div>`;
   };
+
+  if (quizDocs.length) {
+    quizDocs.forEach((d) => { assignmentTitles.set(d.id, d.data().title); assignmentData.set(d.id, d.data()); });
+    const qGroup = document.createElement("details");
+    qGroup.className = "card assign-group";
+    qGroup.open = typeof openState["__quizzes"] === "boolean" ? openState["__quizzes"] : true;
+    qGroup.innerHTML = `
+      <summary class="assign-group-head">
+        <strong class="assign-group-name">&#128221; Quizzes</strong>
+        <span class="muted">${quizDocs.length} quiz${quizDocs.length === 1 ? "" : "zes"}</span>
+      </summary>
+      ${quizDocs.map(rowHtml).join("")}`;
+    qGroup.querySelector("summary").addEventListener("click", () => {
+      openState["__quizzes"] = !qGroup.open;
+      saveOpenState();
+    });
+    list.appendChild(qGroup);
+  }
 
   orderedLessons.forEach((lesson, i) => {
     const docs = byLesson.get(lesson);
@@ -3217,18 +3239,26 @@ function readQuizBuilder(hostId) {
 // reveals the form with only the fields that type needs, so it's not a wall
 // of inputs. A Material is read-only reference content - no points, no due
 // date, no submissions - so it hides every graded-only field.
+// "quiz" is a graded assignment whose link type is locked to Quiz - it gets
+// its own button so teachers don't have to find it in the link-type dropdown.
 function setCreateType(type) {
   const form = el("add-assignment-form");
   const isAssignment = type !== "material";
+  const isQuiz = type === "quiz";
   form.dataset.type = isAssignment ? "assignment" : "material";
+  const filetype = el("assignment-filetype");
+  if (isQuiz) filetype.value = "quiz";
+  else if (filetype.value === "quiz") filetype.value = "document";
+  el("assignment-filetype-wrap").classList.toggle("hidden", isQuiz);
+  form.querySelectorAll(".not-quiz").forEach((n) => n.classList.toggle("hidden", isQuiz));
   el("create-type-choice").classList.add("hidden");
   form.classList.remove("hidden");
   form.querySelectorAll(".assignment-only").forEach((n) => n.classList.toggle("hidden", !isAssignment));
   // A hidden `required` field silently blocks form submit - only require
   // points for a graded assignment.
   el("assignment-total-points").required = isAssignment;
-  el("create-type-label").textContent = isAssignment ? "Assignment" : "Material";
-  el("create-submit-btn").textContent = isAssignment ? "Add assignment" : "Add material";
+  el("create-type-label").textContent = isQuiz ? "Quiz" : isAssignment ? "Assignment" : "Material";
+  el("create-submit-btn").textContent = isQuiz ? "Add quiz" : isAssignment ? "Add assignment" : "Add material";
   syncQuizBuilderVisibility("");
 }
 function resetCreateType() {
@@ -3449,6 +3479,11 @@ async function openAssignment(assignmentId) {
     });
   }
   syncQuizBuilderVisibility("edit-");
+  // A quiz stays a quiz (its type can't be switched to a link assignment and
+  // back); link-only fields don't apply to it.
+  const editIsQuiz = !isMaterial && data.allowedFileTypes === "quiz";
+  el("edit-assignment-filetype-wrap").classList.toggle("hidden", editIsQuiz);
+  editForm.querySelectorAll(".not-quiz").forEach((n) => n.classList.toggle("hidden", editIsQuiz));
   renderAssignmentContext(data);
   show("view-assignment");
   if (isMaterial) {
@@ -4755,6 +4790,93 @@ function renderDuplicateReview() {
 }
 
 // ---------- master lists management (Student Lists header view) ----------
+// ---------- Quizzes tab (sidebar) ----------
+// Every quiz across the viewed teacher's classes, grouped Subject > Section,
+// plus a class picker that jumps to that section's Create card with the Quiz
+// type already picked. Built from the same cached owner-scoped reads the
+// notification/pending badges use - no new query shapes.
+async function openQuizzes() {
+  show("view-quizzes");
+  const host = el("quizzes-overview");
+  host.innerHTML = '<p class="muted">Loading&hellip;</p>';
+  try {
+    const [subjectsSnap, sectionsSnap, assignSnap, counts] = await Promise.all([
+      cachedOwnerDocs("subjects", "subjects"),
+      cachedOwnerDocs("sections", "sections"),
+      cachedOwnerDocs("assignments", "assignments"),
+      getPendingCounts(),
+    ]);
+    const subjects = new Map(subjectsSnap.docs.map((d) => [d.id, d.data()]));
+    const sections = sectionsSnap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((sec) => subjects.has(sec.subjectId) && !subjects.get(sec.subjectId).archived)
+      .sort((x, y) => (subjects.get(x.subjectId).name || "").localeCompare(subjects.get(y.subjectId).name || "")
+        || (x.sectionName || "").localeCompare(y.sectionName || ""));
+    const sectionById = new Map(sections.map((sec) => [sec.id, sec]));
+
+    el("quiz-new-section").innerHTML = sections.length
+      ? sections.map((sec) => `<option value="${sec.id}">${escAttr(subjects.get(sec.subjectId).name || "")} · ${escAttr(sec.sectionName || "")}</option>`).join("")
+      : '<option value="">No classes yet - add a subject and section first</option>';
+    el("quiz-new-go").disabled = sections.length === 0;
+
+    const quizzes = assignSnap.docs
+      .filter((d) => d.data().allowedFileTypes === "quiz" && d.data().type !== "material" && sectionById.has(d.data().sectionId));
+    if (quizzes.length === 0) {
+      host.innerHTML = '<p class="muted">No quizzes yet. Pick a class above and click + New quiz.</p>';
+      return;
+    }
+    const toMs = (v) => Number(v?.toMillis ? v.toMillis() : v) || 0;
+    const bySection = new Map();
+    quizzes.sort((x, y) => toMs(y.data().createdAt) - toMs(x.data().createdAt)).forEach((d) => {
+      const sid = d.data().sectionId;
+      if (!bySection.has(sid)) bySection.set(sid, []);
+      bySection.get(sid).push(d);
+    });
+    host.innerHTML = sections.filter((sec) => bySection.has(sec.id)).map((sec) => `
+      <div class="card">
+        <strong>${escAttr(subjects.get(sec.subjectId).name || "")}</strong> <span class="muted">· ${escAttr(sec.sectionName || "")}</span>
+        ${bySection.get(sec.id).map((d) => {
+          const a = d.data();
+          const meta = [`${a.quiz?.questions?.length || 0} items`, `${a.quiz?.secondsPerItem || 60}s each`,
+            a.dueDate ? `Due ${escAttr(a.dueDate)}` : "No due date"].join(" · ");
+          return `<div class="assign-row">
+            <div class="assign-main">
+              <div class="assign-title"><span class="chip chip-todo">&#128221; Quiz</span>
+                <strong>${escAttr(a.title || "(untitled)")}</strong>
+                ${pendingBadge(counts.byAssignment.get(d.id), `${sec.subjectId}|${sec.id}|${d.id}`)}</div>
+              <div class="muted assign-meta">${meta}</div>
+            </div>
+            <div class="assign-actions">
+              <button type="button" data-quiz-open="${d.id}" data-subject="${sec.subjectId}" data-section="${sec.id}">Open results</button>
+            </div>
+          </div>`;
+        }).join("")}
+      </div>`).join("");
+    host.querySelectorAll("[data-quiz-open]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        await openSubject(b.dataset.subject);
+        await openSection(b.dataset.section);
+        await openAssignment(b.dataset.quizOpen);
+      }));
+  } catch (err) {
+    console.error("quizzes tab failed:", err);
+    host.innerHTML = '<p class="muted">Couldn\'t load your quizzes right now - try Refresh.</p>';
+  }
+}
+
+el("quiz-new-go").addEventListener("click", async () => {
+  const sectionId = el("quiz-new-section").value;
+  if (!sectionId) return;
+  const sec = (await getDoc(doc(db, "sections", sectionId))).data();
+  await openSubject(sec.subjectId);
+  await openSection(sectionId);
+  const createCard = el("create-type-choice").closest("details");
+  if (createCard) createCard.open = true;
+  resetCreateType();
+  setCreateType("quiz");
+  createCard?.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+
 async function openMasterLists() {
   show("view-master-lists");
   loadMasterLists();
@@ -5185,7 +5307,7 @@ function show(viewId) {
   // settings-panel is included so opening Settings/Student Lists/Overview
   // REPLACES the current view instead of stacking on top of it - every nav
   // destination is now a mutually-exclusive tab.
-  ["view-overview", "view-subjects", "view-subject", "view-enrolled", "view-section", "view-assignment", "view-records", "view-master-lists", "view-code-gen", "settings-panel"].forEach((v) => {
+  ["view-overview", "view-subjects", "view-subject", "view-enrolled", "view-section", "view-assignment", "view-records", "view-master-lists", "view-code-gen", "view-quizzes", "settings-panel"].forEach((v) => {
     el(v).classList.toggle("hidden", v !== viewId);
   });
   // Highlight which sidebar tab we're on so the teacher always knows their
@@ -5196,6 +5318,7 @@ function show(viewId) {
     "view-overview": "go-overview",
     "view-master-lists": "toggle-master-lists",
     "view-code-gen": "toggle-code-gen",
+    "view-quizzes": "toggle-quizzes",
     "settings-panel": "toggle-settings",
   };
   const activeBtn = navFor[viewId] || "go-home";
@@ -5219,6 +5342,10 @@ async function restoreNavState() {
   try { saved = JSON.parse(sessionStorage.getItem("teacherNavState") || "null"); } catch { saved = null; }
   if (saved && saved.view === "view-master-lists") {
     await openMasterLists();
+    return;
+  }
+  if (saved && saved.view === "view-quizzes") {
+    await openQuizzes();
     return;
   }
   if (!saved || saved.view === "view-subjects" || !saved.subjectId) {
@@ -5269,6 +5396,7 @@ el("refresh-data").addEventListener("click", async () => {
 });
 el("toggle-settings").addEventListener("click", () => show("settings-panel"));
 el("toggle-code-gen").addEventListener("click", () => show("view-code-gen"));
+el("toggle-quizzes").addEventListener("click", () => openQuizzes());
 
 // Mobile sidebar drawer: the topbar hamburger opens it, the scrim or any
 // nav tap closes it. On desktop the sidebar is always shown, so these are
