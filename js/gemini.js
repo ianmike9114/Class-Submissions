@@ -170,3 +170,64 @@ Rules:
   // Strip any stray markdown fences the model adds despite the instruction.
   return rawText.replace(/^```[a-zA-Z]*\s*/i, "").replace(/```\s*$/, "").trim();
 }
+
+// Teacher-only: draft quiz items for a topic. Same browser-direct call and
+// "Return ONLY valid JSON" pattern as runRubricCheck. Returns Gemini's raw
+// parsed JSON - js/quiz.js's parseGeneratedQuiz() sanitizes it into builder
+// items, and the teacher reviews/edits every item before saving.
+// types: subset of ["mc","tf","id"].
+export async function generateQuiz({ topic, count = 10, types = ["mc"], gradeLevel = "11" }) {
+  const apiKey = getGeminiKey();
+  if (!apiKey) throw new Error("No Gemini API key set. Add one in Settings (gear icon) first.");
+  if (!topic || !topic.trim()) throw new Error("Type the quiz topic first.");
+
+  const typeLines = {
+    mc: '- "mc" (multiple choice): {"type":"mc","prompt":"...","choices":["...","...","...","..."],"answer":<index 0-3 of the correct choice>}',
+    tf: '- "tf" (true or false): {"type":"tf","prompt":"<a statement>","answer":true|false}',
+    id: '- "id" (identification, 1-3 word answer): {"type":"id","prompt":"...","answer":["<accepted answer>","<optional alternate spelling/abbreviation>"]}',
+  };
+  const wanted = types.filter((t) => typeLines[t]);
+  if (wanted.length === 0) throw new Error("Pick at least one item type.");
+
+  const promptText = `You are helping a Philippine DepEd Senior High School teacher write a quiz for Grade ${gradeLevel} students.
+Topic / coverage: ${topic}
+
+Write exactly ${count} items, mixing these item types as evenly as possible:
+${wanted.map((t) => typeLines[t]).join("\n")}
+
+Rules:
+- Use clear, simple English a Grade ${gradeLevel} Filipino student can read quickly.
+- Prefer questions that check understanding and application (short scenarios, examples, "which of these") over pure word-for-word recall.
+- Multiple choice: exactly 4 plausible choices, only one correct, no "all of the above"/"none of the above". Vary the position of the correct answer.
+- True/False: avoid trick wording and double negatives.
+- Identification: the answer must be short and unambiguous.
+
+Return ONLY valid JSON, no markdown fences, in this exact shape:
+{"items":[ ...items as shown above... ]}`;
+
+  const body = {
+    contents: [{ parts: [{ text: promptText }] }],
+    generationConfig: { responseMimeType: "application/json" },
+  };
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  );
+  if (!res.ok) {
+    throw new Error(`Gemini request failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
+  }
+  const data = await res.json();
+  const rawText = data.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
+  const cleaned = rawText.replace(/^```json\s*/i, "").replace(/```$/, "").trim();
+
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    throw new Error("Gemini didn't return valid JSON: " + rawText.slice(0, 300));
+  }
+}

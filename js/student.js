@@ -6,6 +6,7 @@ import {
 import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js";
 import { runJava } from "./runner.js";
 import { codeBlockHtml, highlightWithin } from "./highlight.js";
+import { seededShuffle, quizDeadlineMs } from "./quiz.js?v=1";
 
 let currentUser = null;
 function el(id) { return document.getElementById(id); }
@@ -661,14 +662,18 @@ async function loadEverything() {
           ${a.instructions ? `<p>${a.instructions}</p>` : ""}
           ${instructionsFileBlock}
           ${uploadFolderBlock}
-          <div class="muted">Type: ${a.allowedFileTypes}</div>
+          ${a.allowedFileTypes === "quiz" ? "" : `<div class="muted">Type: ${a.allowedFileTypes}</div>`}
           <div class="muted">Total points: ${a.totalPoints}</div>
           ${isPastDue(a)
             ? `<p class="status-pending" style="display:inline-block; margin-top:0.5rem;">Closed — deadline passed (was due ${a.dueDate})</p>`
+            : a.allowedFileTypes === "quiz"
+            ? renderQuizIntro(aDoc.id, a)
             : renderSubmitForm(aDoc.id, a.allowedFileTypes)}`;
       } else {
         const s = subDoc.data();
-        const statusLabel = s.status === "published" ? "Graded"
+        const isQuiz = a.allowedFileTypes === "quiz";
+        const statusLabel = isQuiz && s.status !== "published" ? "Quiz submitted — your score shows here once your teacher checks it"
+          : s.status === "published" ? "Graded"
           : s.status === "returned" ? "Returned — please revise and resubmit"
           : "Submitted, pending review";
         // Graded work stays locked, but the student can ask the teacher to
@@ -681,7 +686,11 @@ async function loadEverything() {
           : `<div style="margin-top:0.5rem;">
                <button type="button" class="secondary" data-request-redo="${subDoc.id}">Request to redo</button>
                <span class="muted"> Ask your teacher to reopen this so you can improve it.</span></div>`;
-        const actionsBlock = s.status === "published"
+        // Quizzes: no edit/remove/redo from the student side (answers are
+        // final once submitted; a retake is the teacher's call).
+        const actionsBlock = isQuiz
+          ? (s.status === "published" ? renderResult(s, a) : "")
+          : s.status === "published"
           ? renderResult(s, a) + redoBlock
           : isPastDue(a)
           ? `<div class="muted" style="margin-top:0.5rem;">Deadline passed — locked, no more changes.</div>`
@@ -1553,6 +1562,356 @@ function wireRunButton(btn) {
       btn.textContent = original;
     }
   });
+}
+
+// ---------- Quiz taking (Quiz assignments) ----------
+// Anti-cheat here is DETERRENCE, not a lock - no web page can stop a
+// screenshot or a second phone's camera. What it does:
+//  - one item per screen, no Back, per-item timer + overall deadline anchored
+//    to the server's quizAttempts.startedAt (one start per student);
+//  - item order AND choice order shuffled per student (seeded, stable on
+//    refresh), so a shared screenshot doesn't match a classmate's screen;
+//  - text can't be selected/copied/right-clicked, paste into answers is
+//    blocked, printing hides the quiz;
+//  - leaving the screen (switching to ChatGPT, another tab/app) is counted
+//    and shown to the teacher, and the question blurs while focus is away;
+//  - a faint watermark with the student's name/email over the quiz, so a
+//    leaked screenshot shows who shared it.
+// Scoring happens on the teacher's side against quizKeys (never readable
+// here), so nothing in this file knows the correct answers.
+
+function renderQuizIntro(assignmentId, a) {
+  const n = a.quiz?.questions?.length || 0;
+  const secs = a.quiz?.secondsPerItem || 60;
+  return `
+    <div class="quiz-intro">
+      <p><strong>&#128221; Quiz · ${n} items · about ${Math.ceil((n * secs) / 60)} minutes</strong></p>
+      <ul class="quiz-rules">
+        <li>One question at a time. <strong>You can't go back.</strong></li>
+        <li>You have <strong>${secs} seconds</strong> for each item.</li>
+        <li>Leaving this screen (opening another app or tab) is <strong>recorded and shown to your teacher</strong>.</li>
+        <li>You can take it <strong>only once</strong>. Make sure your internet is stable first.</li>
+      </ul>
+      <button type="button" class="quiz-start-btn" data-start-quiz="${assignmentId}">Start quiz</button>
+    </div>`;
+}
+
+const QUIZ_STORE_PREFIX = "quizState:";
+function quizStoreKey(assignmentId) { return `${QUIZ_STORE_PREFIX}${assignmentId}:${currentUser.uid}`; }
+function loadQuizState(assignmentId) {
+  try { return JSON.parse(localStorage.getItem(quizStoreKey(assignmentId)) || "null"); } catch { return null; }
+}
+function saveQuizState(assignmentId, st) {
+  try { localStorage.setItem(quizStoreKey(assignmentId), JSON.stringify(st)); } catch { /* private mode - resume just won't remember answers */ }
+}
+function clearQuizState(assignmentId) {
+  try { localStorage.removeItem(quizStoreKey(assignmentId)); } catch { /* ignore */ }
+}
+
+document.addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-start-quiz]");
+  if (!btn) return;
+  if (readOnlyBlocked()) return;
+  const assignmentId = btn.dataset.startQuiz;
+  const a = assignmentsById.get(assignmentId);
+  if (!a || !a.quiz?.questions?.length) { alert("This quiz has no questions yet - tell your teacher."); return; }
+  if (isPastDue(a)) { alert("Deadline passed - this quiz is closed."); loadEverything(); return; }
+  btn.disabled = true;
+  const original = btn.textContent;
+  btn.textContent = "Starting...";
+  try {
+    const attemptRef = doc(db, "quizAttempts", `${assignmentId}_${currentUser.uid}`);
+    let snap = await getDoc(attemptRef);
+    const resuming = snap.exists();
+    if (!resuming) {
+      if (!confirm("Start the quiz now? The timer starts right away and you can only take it once.")) {
+        btn.disabled = false; btn.textContent = original; return;
+      }
+      const before = Date.now();
+      await setDoc(attemptRef, {
+        assignmentId,
+        studentUID: currentUser.uid,
+        studentName: currentUser.displayName || currentUser.email,
+        ownerEmail: a.ownerEmail || ADMIN_EMAIL,
+        startedAt: serverTimestamp(),
+      });
+      snap = await getDoc(attemptRef);
+      // Rough server-vs-phone clock offset, so a wrong phone clock doesn't
+      // eat (or add) quiz time.
+      const startedAt = snap.data().startedAt.toMillis();
+      saveQuizState(assignmentId, { ...(loadQuizState(assignmentId) || {}), skew: startedAt - Math.round((before + Date.now()) / 2) });
+    }
+    runQuiz(assignmentId, a, snap.data().startedAt.toMillis(), resuming);
+  } catch (err) {
+    console.error(err);
+    alert("Couldn't start the quiz: " + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+});
+
+function runQuiz(assignmentId, a, startedAtMs, resuming) {
+  const seed = currentUser.uid + assignmentId;
+  const questions = seededShuffle(a.quiz.questions, seed);
+  const secsPerItem = a.quiz.secondsPerItem || 60;
+  const deadline = quizDeadlineMs(startedAtMs, questions.length, secsPerItem);
+  const saved = loadQuizState(assignmentId) || {};
+  const st = {
+    idx: saved.idx || 0,
+    answers: saved.answers || {},
+    leftCount: saved.leftCount || 0,
+    leftEvents: saved.leftEvents || [],
+    screenshotKeys: saved.screenshotKeys || 0,
+    pasteBlocked: saved.pasteBlocked || 0,
+    resumes: (saved.resumes || 0) + (resuming ? 1 : 0),
+    itemStartedAt: saved.itemStartedAt || null,
+    skew: saved.skew || 0,
+  };
+  const now = () => Date.now() + st.skew;
+  const persist = () => saveQuizState(assignmentId, st);
+  persist();
+
+  const who = esc(currentUser.displayName || "") + " · " + esc(currentUser.email || "");
+  const overlay = document.createElement("div");
+  overlay.className = "quiz-overlay";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.innerHTML = `
+    <div class="quiz-watermark" aria-hidden="true">${Array.from({ length: 40 }, () => `<span>${who}</span>`).join("")}</div>
+    <div class="quiz-panel">
+      <div class="quiz-top">
+        <span class="quiz-title">${esc(a.title)}</span>
+        <span class="quiz-clock" aria-live="off"></span>
+      </div>
+      <div class="quiz-progress-text"></div>
+      <div class="quiz-bar"><div class="quiz-bar-fill"></div></div>
+      <div class="quiz-body"></div>
+      <p class="quiz-warn hidden" role="alert"></p>
+      <button type="button" class="quiz-next"></button>
+    </div>`;
+  document.body.appendChild(overlay);
+  document.body.classList.add("quiz-open");
+
+  const body = overlay.querySelector(".quiz-body");
+  const nextBtn = overlay.querySelector(".quiz-next");
+  const clock = overlay.querySelector(".quiz-clock");
+  const barFill = overlay.querySelector(".quiz-bar-fill");
+  const warn = overlay.querySelector(".quiz-warn");
+  let finished = false;
+  let tick = null;
+
+  // --- anti-copy ---
+  const block = (ev) => ev.preventDefault();
+  ["copy", "cut", "contextmenu", "dragstart"].forEach((t) => overlay.addEventListener(t, block));
+  overlay.addEventListener("selectstart", (ev) => { if (!ev.target.closest?.("input")) ev.preventDefault(); });
+  overlay.addEventListener("paste", (ev) => {
+    ev.preventDefault();
+    st.pasteBlocked++;
+    persist();
+    showWarn("Pasting is turned off during the quiz. Type your own answer.");
+  });
+  const onKeyUp = (ev) => {
+    if (ev.key === "PrintScreen") {
+      st.screenshotKeys++;
+      persist();
+      try { navigator.clipboard?.writeText(""); } catch { /* ignore */ }
+      showWarn("Screenshots are recorded and shown to your teacher.");
+    }
+  };
+  const onKeyDown = (ev) => {
+    const k = (ev.key || "").toLowerCase();
+    if ((ev.ctrlKey || ev.metaKey) && ["c", "x", "a", "p", "s", "u"].includes(k) && !ev.target.closest?.("input")) ev.preventDefault();
+  };
+  document.addEventListener("keyup", onKeyUp);
+  document.addEventListener("keydown", onKeyDown);
+
+  // --- leaving the screen ---
+  let lastLeft = 0;
+  const recordLeave = () => {
+    if (finished) return;
+    const t = now();
+    if (t - lastLeft < 1500) return; // blur + visibilitychange fire together
+    lastLeft = t;
+    st.leftCount++;
+    st.leftEvents.push(Math.round((t - startedAtMs) / 1000));
+    if (st.leftEvents.length > 50) st.leftEvents.shift();
+    persist();
+  };
+  const onVisibility = () => {
+    if (document.visibilityState === "hidden") recordLeave();
+    else if (!finished) showWarn(`You left the quiz screen (${st.leftCount}×). Your teacher will see this.`);
+  };
+  const onBlur = () => { overlay.classList.add("quiz-blurred"); recordLeave(); };
+  const onFocus = () => {
+    overlay.classList.remove("quiz-blurred");
+    if (!finished && st.leftCount > 0) showWarn(`You left the quiz screen (${st.leftCount}×). Your teacher will see this.`);
+  };
+  const onBeforeUnload = (ev) => { if (!finished) { ev.preventDefault(); ev.returnValue = ""; } };
+  document.addEventListener("visibilitychange", onVisibility);
+  window.addEventListener("blur", onBlur);
+  window.addEventListener("focus", onFocus);
+  window.addEventListener("beforeunload", onBeforeUnload);
+
+  function showWarn(msg) {
+    warn.textContent = "⚠ " + msg;
+    warn.classList.remove("hidden");
+  }
+
+  function cleanup() {
+    finished = true;
+    clearInterval(tick);
+    document.removeEventListener("keyup", onKeyUp);
+    document.removeEventListener("keydown", onKeyDown);
+    document.removeEventListener("visibilitychange", onVisibility);
+    window.removeEventListener("blur", onBlur);
+    window.removeEventListener("focus", onFocus);
+    window.removeEventListener("beforeunload", onBeforeUnload);
+    overlay.remove();
+    document.body.classList.remove("quiz-open");
+  }
+
+  function currentAnswer(q) {
+    if (q.type === "id") {
+      const v = body.querySelector(".quiz-id-input")?.value.trim();
+      return v ? v : undefined;
+    }
+    return st.answers[q.id];
+  }
+
+  function renderItem() {
+    const q = questions[st.idx];
+    if (!st.itemStartedAt) { st.itemStartedAt = now(); persist(); }
+    overlay.querySelector(".quiz-progress-text").textContent = `Item ${st.idx + 1} of ${questions.length}`;
+    let answerHtml = "";
+    if (q.type === "mc") {
+      // Choice order shuffled per student per item; the saved answer is the
+      // ORIGINAL index so the teacher's key never depends on display order.
+      const order = seededShuffle([0, 1, 2, 3].slice(0, (q.choices || []).length), seed + q.id);
+      answerHtml = order.map((orig, pos) => `
+        <button type="button" class="quiz-choice" data-val="${orig}" aria-pressed="${st.answers[q.id] === orig}">
+          <span class="quiz-letter">${"ABCD"[pos]}</span><span>${esc(q.choices[orig])}</span></button>`).join("");
+    } else if (q.type === "tf") {
+      answerHtml = `<div class="quiz-tf">
+        <button type="button" class="quiz-choice" data-val="true" aria-pressed="${st.answers[q.id] === true}">True</button>
+        <button type="button" class="quiz-choice" data-val="false" aria-pressed="${st.answers[q.id] === false}">False</button></div>`;
+    } else {
+      answerHtml = `<input class="quiz-id-input" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+        placeholder="Type your answer" value="${esc(st.answers[q.id] || "")}" />`;
+    }
+    body.innerHTML = `<div class="quiz-q">${esc(q.prompt)}</div><div class="quiz-answers-area">${answerHtml}</div>`;
+    body.querySelectorAll(".quiz-choice").forEach((c) => c.addEventListener("click", () => {
+      const v = c.dataset.val;
+      st.answers[q.id] = v === "true" ? true : v === "false" ? false : Number(v);
+      persist();
+      body.querySelectorAll(".quiz-choice").forEach((o) => o.setAttribute("aria-pressed", String(o === c)));
+      updateNext();
+    }));
+    const input = body.querySelector(".quiz-id-input");
+    if (input) {
+      input.addEventListener("input", () => { st.answers[q.id] = input.value; persist(); updateNext(); });
+      input.addEventListener("drop", block);
+      input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); goNext(); } });
+      input.focus();
+    }
+    updateNext();
+    updateClock();
+  }
+
+  function updateNext() {
+    const q = questions[st.idx];
+    const last = st.idx === questions.length - 1;
+    const has = currentAnswer(q) !== undefined;
+    nextBtn.textContent = last ? (has ? "Submit quiz" : "Skip & submit") : (has ? "Next →" : "Skip →");
+    nextBtn.classList.toggle("secondary", !has);
+  }
+
+  function goNext(fromTimer = false) {
+    if (finished) return;
+    const q = questions[st.idx];
+    if (!fromTimer && currentAnswer(q) === undefined
+      && !confirm("Skip this item? You can't come back to it.")) return;
+    const ans = currentAnswer(q);
+    if (ans === undefined) delete st.answers[q.id]; else st.answers[q.id] = ans;
+    if (st.idx >= questions.length - 1) { submit(false); return; }
+    st.idx++;
+    st.itemStartedAt = null;
+    persist();
+    warn.classList.add("hidden");
+    renderItem();
+  }
+  let retry = null; // set when a submit failed; the button then retries it
+  nextBtn.addEventListener("click", () => (retry ? retry() : goNext(false)));
+
+  function updateClock() {
+    if (finished) return;
+    const t = now();
+    if (t >= deadline) { submit(true); return; }
+    const itemLeft = Math.max(0, Math.ceil((st.itemStartedAt + secsPerItem * 1000 - t) / 1000));
+    const left = Math.min(itemLeft, Math.ceil((deadline - t) / 1000));
+    clock.textContent = `⏱ ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+    clock.classList.toggle("quiz-clock-low", left <= 10);
+    barFill.style.width = `${Math.max(0, Math.min(100, (left / secsPerItem) * 100))}%`;
+    if (itemLeft <= 0) goNext(true);
+  }
+
+  let submitting = false;
+  async function submit(timedOut) {
+    if (submitting) return;
+    submitting = true;
+    clearInterval(tick);
+    const q = questions[st.idx];
+    const ans = q ? currentAnswer(q) : undefined;
+    if (q && ans !== undefined) st.answers[q.id] = ans;
+    persist();
+    body.innerHTML = `<div class="quiz-q">Submitting your answers…</div>`;
+    nextBtn.classList.add("hidden");
+    // Only keep answers for real question ids (strip anything stale).
+    const ids = new Set(a.quiz.questions.map((x) => x.id));
+    const quizAnswers = Object.fromEntries(Object.entries(st.answers).filter(([k, v]) => ids.has(k) && v !== "" && v !== undefined));
+    try {
+      await addDoc(collection(db, "submissions"), {
+        assignmentId,
+        studentUID: currentUser.uid,
+        studentName: currentUser.displayName || currentUser.email,
+        link: "",
+        code: "",
+        codeOutput: "",
+        photoPages: [],
+        quizAnswers,
+        quizLog: {
+          leftCount: st.leftCount,
+          leftEvents: st.leftEvents,
+          screenshotKeys: st.screenshotKeys,
+          pasteBlocked: st.pasteBlocked,
+          resumes: st.resumes,
+          timedOut: !!timedOut,
+          answered: Object.keys(quizAnswers).length,
+        },
+        quizSubmittedAt: serverTimestamp(),
+        status: "pending",
+        submittedAt: Date.now(),
+        ownerEmail: a.ownerEmail || ADMIN_EMAIL,
+      });
+      clearQuizState(assignmentId);
+      cleanup();
+      alert((timedOut ? "Time's up! " : "") + "Quiz submitted. Your score will show here once your teacher checks it.");
+      loadEverything();
+    } catch (err) {
+      console.error(err);
+      // Keep the answers (they're still in localStorage) and let them retry.
+      submitting = false;
+      body.innerHTML = `<div class="quiz-q">Couldn't submit - check your internet connection.</div>
+        <p class="muted">Your answers are saved on this device. Tap Try again.</p>`;
+      nextBtn.textContent = "Try again";
+      nextBtn.classList.remove("hidden", "secondary");
+      retry = () => submit(timedOut);
+    }
+  }
+
+  if (now() >= deadline) { submit(true); return; }
+  renderItem();
+  tick = setInterval(updateClock, 250);
 }
 
 function attachSubmitHandlers() {

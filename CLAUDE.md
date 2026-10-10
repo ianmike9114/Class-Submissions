@@ -477,6 +477,30 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   Client-side only, no rules change. Unit-tested in
   `tests/unit/class-record.test.js`.
 
+- **Quiz assignments: anti-cheat is deterrence, not a lock.** Type "Quiz" in
+  the assignment-type dropdown opens a builder (`js/teacher.js`
+  `mountQuizBuilder()`): Gemini drafts 5-20 multiple choice / true-false /
+  identification items from a topic (`js/gemini.js` `generateQuiz()`, teacher's
+  own key), teacher edits every item. Students (`js/student.js` `runQuiz()`) get
+  a full-screen one-item-at-a-time runner: no Back, per-item timer + overall
+  deadline anchored to server `quizAttempts.startedAt` (one start per student),
+  item + choice order shuffled per student (seeded, stable on refresh), no
+  select/copy/right-click/paste, print hidden, question blurs when focus leaves,
+  name/email watermark, and leaving the screen / PrintScreen / paste attempts
+  are counted into `quizLog` and shown to the teacher as flags. **No web page can
+  block a screenshot or a second phone's camera** — don't promise that. A
+  tech-savvy student could also read the questions from the assignment doc
+  before pressing Start (assignments are world-readable); answers are safe in
+  owner-only `quizKeys`. Auto-score is computed on the teacher's side
+  (`quizResultHtml()`, `js/quiz.js` `scoreQuiz()`), pre-fills the score box;
+  teacher can "Accept" near-miss identification answers, then Publish as usual
+  (no Return-for-revision for quizzes — "Allow retake" deletes the submission +
+  attempt instead). **`firestore.rules` adds `quizKeys` + `quizAttempts`
+  blocks — must `firebase deploy --only firestore:rules`**, else creating a
+  quiz fails (the app removes the half-made assignment and says so).
+  `gemini.js`/`quiz.js` imports carry their own `?v=` (bump when changed —
+  `scripts/bump-version.mjs` doesn't cover sub-modules).
+
 ## Conventions
 
 - No bundler/build step by design — keep deployable as-is to GitHub

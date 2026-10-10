@@ -36,6 +36,7 @@ import {
   getDocs,
   query,
   where,
+  serverTimestamp,
 } from "firebase/firestore";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -396,6 +397,69 @@ describe("submissionAttempts: returned-version history", () => {
       });
     });
     await assertSucceeds(deleteDoc(doc(ctxFor("ua", TEACHER_A), "submissionAttempts", "att4")));
+  });
+});
+
+describe("quizKeys: answer key is owner-only", () => {
+  const key = { assignmentId: "qz1", ownerEmail: TEACHER_A, answers: { q1: 2 } };
+  it("owning teacher can create + read the key", async () => {
+    const db = ctxFor("ua", TEACHER_A);
+    await assertSucceeds(setDoc(doc(db, "quizKeys", "qz1"), key));
+    await assertSucceeds(getDoc(doc(db, "quizKeys", "qz1")));
+  });
+  it("a student can NEVER read the key", async () => {
+    await testEnv.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), "quizKeys", "qz1"), key));
+    await assertFails(getDoc(doc(ctxFor("student1", "s1@x.com"), "quizKeys", "qz1")));
+  });
+  it("another teacher cannot read or overwrite the key", async () => {
+    await testEnv.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), "quizKeys", "qz1"), key));
+    await assertFails(getDoc(doc(ctxFor("ub", TEACHER_B), "quizKeys", "qz1")));
+    await assertFails(setDoc(doc(ctxFor("ub", TEACHER_B), "quizKeys", "qz1"), { ...key, ownerEmail: TEACHER_B }));
+  });
+  it("a student cannot create a key", async () => {
+    await assertFails(setDoc(doc(ctxFor("student1", "s1@x.com"), "quizKeys", "qz9"), key));
+  });
+});
+
+describe("quizAttempts: one server-timed start per student", () => {
+  const stud = () => ctxFor("student1", "s1@x.com");
+  const attempt = () => ({ assignmentId: "qz1", studentUID: "student1", ownerEmail: TEACHER_A, startedAt: serverTimestamp() });
+  it("student can check a not-yet-existing attempt of their own", async () => {
+    await assertSucceeds(getDoc(doc(stud(), "quizAttempts", "qz1_student1")));
+  });
+  it("student cannot peek at another student's attempt id", async () => {
+    await assertFails(getDoc(doc(stud(), "quizAttempts", "qz1_student2")));
+  });
+  it("student can start once with server time", async () => {
+    await assertSucceeds(setDoc(doc(stud(), "quizAttempts", "qz1_student1"), attempt()));
+    await assertSucceeds(getDoc(doc(stud(), "quizAttempts", "qz1_student1")));
+  });
+  it("student cannot backdate startedAt", async () => {
+    await assertFails(setDoc(doc(stud(), "quizAttempts", "qz1_student1"), { ...attempt(), startedAt: new Date(2020, 0, 1) }));
+  });
+  it("student cannot restart (overwrite) or delete their attempt", async () => {
+    await assertSucceeds(setDoc(doc(stud(), "quizAttempts", "qz1_student1"), attempt()));
+    await assertFails(setDoc(doc(stud(), "quizAttempts", "qz1_student1"), attempt()));
+    await assertFails(deleteDoc(doc(stud(), "quizAttempts", "qz1_student1")));
+  });
+  it("student cannot create an attempt under someone else's id", async () => {
+    await assertFails(setDoc(doc(stud(), "quizAttempts", "qz1_student2"), attempt()));
+  });
+  it("owning teacher can list + delete (allow retake); other teacher cannot list", async () => {
+    await assertSucceeds(setDoc(doc(stud(), "quizAttempts", "qz1_student1"), attempt()));
+    const a = ctxFor("ua", TEACHER_A);
+    await assertSucceeds(getDocs(query(collection(a, "quizAttempts"), where("ownerEmail", "==", TEACHER_A), where("assignmentId", "==", "qz1"))));
+    await assertFails(getDocs(query(collection(ctxFor("ub", TEACHER_B), "quizAttempts"), where("ownerEmail", "==", TEACHER_A))));
+    await assertSucceeds(deleteDoc(doc(a, "quizAttempts", "qz1_student1")));
+  });
+});
+
+describe("submissions: quiz answers are final for the student", () => {
+  it("student CANNOT change quizAnswers after submitting", async () => {
+    await testEnv.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), "submissions", "quizSub"), {
+      ownerEmail: TEACHER_A, studentUID: "student1", status: "pending", quizAnswers: { q1: 0 },
+    }));
+    await assertFails(updateDoc(doc(ctxFor("student1", "s1@x.com"), "submissions", "quizSub"), { quizAnswers: { q1: 2 }, status: "pending" }));
   });
 });
 

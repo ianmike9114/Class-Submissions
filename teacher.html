@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=47" />
+  <link rel="stylesheet" href="css/style.css?v=48" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="theme-color" content="#002045" />
   <link rel="apple-touch-icon" href="/icons/icon-192.png" />
@@ -389,9 +389,13 @@
               <option value="code">Code (students paste &amp; run their code in-app; Gist/Doc link also OK)</option>
               <option value="image">Image / slides (Drive or Slides link, "anyone with link")</option>
               <option value="video">Video (YouTube, unlisted)</option>
+              <option value="quiz">Quiz (timed, auto-checked - multiple choice / true-false / identification)</option>
             </select>
-            <label>Total points</label>
-            <input id="assignment-total-points" type="number" required placeholder="e.g. 100" />
+            <div id="assignment-quiz-builder" class="hidden"></div>
+            <div id="assignment-points-wrap">
+              <label>Total points</label>
+              <input id="assignment-total-points" type="number" required placeholder="e.g. 100" />
+            </div>
             <label style="margin-top:0.75rem;">Rubric reference file (optional - a Drive/Docs link to your rubric PDF/Word doc, shown to you while grading as your basis for scoring)</label>
             <input id="assignment-rubric-link" type="url" placeholder="https://drive.google.com/file/d/..." />
           </div>
@@ -454,9 +458,13 @@
               <option value="code">Code (students paste &amp; run their code in-app; Gist/Doc link also OK)</option>
               <option value="image">Image / slides (Drive or Slides link, "anyone with link")</option>
               <option value="video">Video (YouTube, unlisted)</option>
+              <option value="quiz">Quiz (timed, auto-checked - multiple choice / true-false / identification)</option>
             </select>
-            <label>Total points</label>
-            <input id="edit-assignment-total-points" type="number" required />
+            <div id="edit-assignment-quiz-builder" class="hidden"></div>
+            <div id="edit-assignment-points-wrap">
+              <label>Total points</label>
+              <input id="edit-assignment-total-points" type="number" required />
+            </div>
             <label style="margin-top:0.75rem;">Rubric reference file (optional)</label>
             <input id="edit-assignment-rubric-link" type="url" placeholder="https://drive.google.com/file/d/..." />
           </div>
@@ -495,7 +503,7 @@
     <button type="button" id="photo-lightbox-close" aria-label="Close preview">&times;</button>
   </div>
 
-  <script type="module" src="js/teacher.js?v=92"></script>
+  <script type="module" src="js/teacher.js?v=93"></script>
 
   <!-- PWA: register the service worker (see sw.js). Failure swallowed. -->
   <script>

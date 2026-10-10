@@ -113,6 +113,24 @@ covers any new header buttons or wide tables added.
 - `sections` — subjectId, sectionName, joinCode
 - `assignments` — subjectId, sectionId, title, instructions (free text shown to students - objective/output format/anything needed), instructionsLink (optional Drive/Docs/folder link to instructions, embedded via `js/embed.js`'s `toEmbedUrl()` same as submission previews - single field, but Drive **folder** link works for multiple files at once, embedding as thumbnail grid), component ("written" | "performance" - drives Records grid's grouped header, older assignments without this land in fallback "Other" group), dueDate, allowedFileTypes (link-type hint, not upload constraint), totalPoints (number - score cap, teacher grades one raw number against this), rubricReferenceLink (optional Drive/Docs link to teacher's own rubric PDF/Word, shown embedded on Review screen for teacher's reference only - not parsed, not used to compute anything)
 - `submissions` — assignmentId, studentUID, studentName, link (may be empty if `photoPages` used instead), photoPages (optional - string[] of base64 `data:image/jpeg;base64,...` pages from in-app photo capture (camera or gallery) on "image"/"document" assignments, up to `MAX_PHOTOS` (10), each compressed client-side to `PER_PHOTO_MAX_LEN` so whole array still fits 1MiB Firestore doc cap; no Storage; older submissions may instead have single `photoData` string field - both handled on display, both feed per-assignment photo gallery/ZIP download), status(pending/published — "ai-drafted" only appears on submissions graded before AI check hidden), finalGrade{score, feedback} (score is single number out of assignment's `totalPoints`). Student may `deleteDoc` own submission while `status == "pending"` (rule-enforced in `firestore.rules`, not just hidden in UI) - once `published`, immutable from their side.
+- **Quiz assignments** (`allowedFileTypes: "quiz"`): the assignment doc also
+  has `quiz: { questions: [{ id, type: "mc"|"tf"|"id", prompt, choices? }],
+  secondsPerItem, oneWay }` and `totalPoints` = item count — **no answers**
+  (assignments are readable by any signed-in user). Answers live in
+  `quizKeys/{assignmentId}` `{ assignmentId, ownerEmail, answers: { [qid]:
+  mcIndex | bool | [accepted strings] } }`, owner-only read/write.
+  `quizAttempts/{assignmentId}_{studentUID}` `{ assignmentId, studentUID,
+  studentName, ownerEmail, startedAt (must == request.time) }` is created on
+  Start — student create-only (one try), owner list/delete ("Allow retake").
+  The quiz submission adds `quizAnswers { [qid]: value }` (mc = ORIGINAL choice
+  index, display order is shuffled), `quizLog { leftCount, leftEvents,
+  screenshotKeys, pasteBlocked, resumes, timedOut, answered }`, and
+  `quizSubmittedAt` (serverTimestamp). `quizAnswers` is deliberately NOT in the
+  student self-edit `hasOnly()` list. Pure helpers: `js/quiz.js`
+  (`scoreQuiz`, `seededShuffle`, `normalizeAnswer`...). Builder:
+  `js/teacher.js` `mountQuizBuilder()`; AI draft `js/gemini.js`
+  `generateQuiz()`; review `quizResultHtml()`; student runner
+  `js/student.js` `runQuiz()`.
 - `enrollments` — studentUID, studentName (if section had roster at
   join time, this is exact roster spelling student picked via
   `js/student.js`'s name picker, not their Google account name - see

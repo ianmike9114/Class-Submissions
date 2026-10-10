@@ -206,6 +206,50 @@ service cloud.firestore {
       allow delete: if canActAsOwner(resource.data);
     }
 
+    // ---------- quizKeys (answer key for a Quiz assignment) ----------
+    // Doc id = the assignment id. Assignment docs are readable by every
+    // signed-in user, so the correct answers live HERE instead, fully
+    // owner-locked: students can never read the key. Auto-scoring runs on the
+    // teacher's side (js/teacher.js loadSubmissions), never trusted from the
+    // student. Direct ownerEmail comparison on read - see the submissions read
+    // rule for why canActAsOwner() isn't used there.
+    match /quizKeys/{assignmentId} {
+      allow read: if isSignedIn()
+                  && (isSuperAdmin()
+                      || (isGrantedTeacher() && resource.data.ownerEmail == request.auth.token.email));
+      allow create: if isSuperAdmin()
+                    || (isGrantedTeacher() && request.resource.data.ownerEmail == request.auth.token.email);
+      allow update: if isSuperAdmin()
+                    || (isGrantedTeacher() && resource.data.ownerEmail == request.auth.token.email
+                        && request.resource.data.ownerEmail == request.auth.token.email);
+      allow delete: if canActAsOwner(resource.data);
+    }
+
+    // ---------- quizAttempts (one per student per quiz, written on Start) ----------
+    // Doc id = "{assignmentId}_{studentUID}". startedAt must equal the server's
+    // request.time, so the quiz timer is anchored to a time the student can't
+    // fake. No student update/delete: a student can start a quiz only once.
+    // The owning teacher deletes it to allow a retake. A student may `get` a
+    // not-yet-existing doc with their own uid suffix (to check "already
+    // started?" before creating it).
+    match /quizAttempts/{attemptId} {
+      allow get: if isSignedIn()
+                 && ((resource == null && attemptId.matches('.*_' + request.auth.uid))
+                     || resource.data.studentUID == request.auth.uid
+                     || isSuperAdmin()
+                     || (isGrantedTeacher() && resource.data.ownerEmail == request.auth.token.email));
+      allow list: if isSignedIn()
+                  && (resource.data.studentUID == request.auth.uid
+                      || isSuperAdmin()
+                      || (isGrantedTeacher() && resource.data.ownerEmail == request.auth.token.email));
+      allow create: if isSignedIn()
+                    && request.resource.data.studentUID == request.auth.uid
+                    && attemptId == request.resource.data.assignmentId + '_' + request.auth.uid
+                    && request.resource.data.ownerEmail is string
+                    && request.resource.data.startedAt == request.time;
+      allow delete: if canActAsOwner(resource.data);
+    }
+
     // ---------- invites (teacher adds a student by Gmail; consumed/deleted
     // on auto-join at sign-in - see js/student.js's applyPendingInvites()) ----------
     match /invites/{inviteId} {

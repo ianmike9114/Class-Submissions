@@ -3,7 +3,11 @@ import { guardPage, signOutUser } from "./auth.js";
 import {
   collection, addDoc, doc, setDoc, updateDoc, deleteDoc, deleteField, writeBatch, getDoc, getDocs, getCountFromServer, query, where, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { getGeminiKey, setGeminiKey, runRubricCheck, generateCodeExample } from "./gemini.js";
+import { getGeminiKey, setGeminiKey, runRubricCheck, generateCodeExample, generateQuiz } from "./gemini.js?v=2";
+import {
+  QUIZ_MIN_ITEMS, QUIZ_MAX_ITEMS, QUIZ_TYPES, QUIZ_GRACE_SECONDS, splitQuiz, joinQuiz, validateQuizItems,
+  parseGeneratedQuiz, newItemId, splitAccepted, scoreQuiz, quizTimeLimitSeconds, formatDuration,
+} from "./quiz.js?v=1";
 import { getEmailConfig, saveEmailConfig, notifySection } from "./notify.js";
 import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons } from "./embed.js";
 import { loadWorkbook, readExamScores, pickBestSheet } from "./class-record.js";
@@ -340,6 +344,10 @@ async function cascadeDeleteAssignment(assignmentId) {
   // share the same ownerEmail as their submission, so ownerScopedQuery reaches
   // them; best-effort so a missing collection/rule never blocks the delete.
   await deleteWhere("submissionAttempts", "assignmentId", assignmentId).catch(() => {});
+  // Quiz assignments: answer key + per-student start records. Best-effort,
+  // same as above (non-quiz assignments simply have none).
+  await deleteWhere("quizAttempts", "assignmentId", assignmentId).catch(() => {});
+  await deleteDoc(doc(db, "quizKeys", assignmentId)).catch(() => {});
   await deleteDoc(doc(db, "assignments", assignmentId));
 }
 
@@ -3021,6 +3029,190 @@ async function loadAssignments() {
     }));
 }
 
+// ---------- Quiz builder (Quiz assignments) ----------
+// Teacher types a topic, Gemini drafts 5-20 items (js/gemini.js
+// generateQuiz), and the teacher reviews/edits every item before saving.
+// The questions go on the assignment doc; the answer key goes to
+// quizKeys/{assignmentId} (owner-only - assignment docs are readable by any
+// signed-in user). Pure helpers live in js/quiz.js.
+const quizBuilders = new Map(); // host element id -> builder
+
+function mountQuizBuilder(hostId, { items = [], secondsPerItem = 60, topic = "" } = {}) {
+  const host = el(hostId);
+  const b = { items: items.map((it) => ({ ...it, choices: it.choices ? [...it.choices] : undefined })), secondsPerItem };
+  quizBuilders.set(hostId, b);
+  const secOpts = [20, 30, 45, 60, 90, 120]
+    .map((n) => `<option value="${n}" ${n === Number(secondsPerItem) ? "selected" : ""}>${n} seconds</option>`).join("");
+  const countOpts = Array.from({ length: QUIZ_MAX_ITEMS - QUIZ_MIN_ITEMS + 1 }, (_, i) => i + QUIZ_MIN_ITEMS)
+    .map((n) => `<option value="${n}" ${n === 10 ? "selected" : ""}>${n} items</option>`).join("");
+  host.innerHTML = `
+    <div class="quiz-builder card">
+      <strong>Quiz questions</strong>
+      <p class="muted" style="margin-top:0.25rem;">Students answer one item at a time with a timer, can't go back, can't copy the text, and leaving the screen is recorded for you. Correct answers are never sent to students.</p>
+      <label>Time per item</label>
+      <select class="qb-seconds">${secOpts}</select>
+      <details class="qb-ai" ${b.items.length ? "" : "open"}>
+        <summary><strong>&#10024; Draft questions with AI</strong></summary>
+        <label>Topic (what the quiz should cover - paste the lesson's key points for better items)</label>
+        <textarea class="qb-topic" rows="3" placeholder="e.g. Cybersecurity: phishing, malware, strong passwords, two-factor authentication">${escAttr(topic)}</textarea>
+        <div class="qb-grid">
+          <div><label>How many</label><select class="qb-count">${countOpts}</select></div>
+          <div><label>Grade level</label><select class="qb-grade"><option>10</option><option selected>11</option><option>12</option></select></div>
+        </div>
+        <label>Item types</label>
+        <div class="qb-types">
+          ${Object.entries(QUIZ_TYPES).map(([k, v]) => `<label class="qb-check"><input type="checkbox" value="${k}" ${k !== "id" ? "checked" : ""} /> ${v}</label>`).join("")}
+        </div>
+        <button type="button" class="qb-generate">&#10024; Generate</button>
+        <p class="qb-status muted"></p>
+      </details>
+      <ol class="qb-items"></ol>
+      <button type="button" class="secondary qb-add">+ Add item</button>
+      <span class="muted qb-count-label"></span>
+    </div>`;
+
+  const list = host.querySelector(".qb-items");
+  const render = () => {
+    list.innerHTML = b.items.map((it, i) => quizItemEditorHtml(it, i)).join("");
+    host.querySelector(".qb-count-label").textContent =
+      ` ${b.items.length} item(s) = ${b.items.length} point(s). Need ${QUIZ_MIN_ITEMS}-${QUIZ_MAX_ITEMS}.`;
+  };
+  render();
+
+  host.querySelector(".qb-seconds").addEventListener("change", (e) => { b.secondsPerItem = Number(e.target.value); });
+  host.querySelector(".qb-add").addEventListener("click", () => {
+    if (b.items.length >= QUIZ_MAX_ITEMS) { alert(`A quiz can have at most ${QUIZ_MAX_ITEMS} items.`); return; }
+    b.items.push({ id: newItemId(), type: "mc", prompt: "", choices: ["", "", "", ""], answer: 0 });
+    render();
+    list.lastElementChild?.querySelector("textarea")?.focus();
+  });
+
+  // Every edit writes straight into b.items (no re-render, so focus stays put);
+  // only structural changes (type switch, delete) re-render.
+  list.addEventListener("input", (e) => {
+    const li = e.target.closest("[data-qi]");
+    if (!li) return;
+    const it = b.items[Number(li.dataset.qi)];
+    const f = e.target.dataset.f;
+    if (f === "prompt") it.prompt = e.target.value;
+    else if (f === "choice") it.choices[Number(e.target.dataset.c)] = e.target.value;
+    else if (f === "accepted") it.answer = splitAccepted(e.target.value);
+  });
+  list.addEventListener("change", (e) => {
+    const li = e.target.closest("[data-qi]");
+    if (!li) return;
+    const it = b.items[Number(li.dataset.qi)];
+    const f = e.target.dataset.f;
+    if (f === "type") {
+      it.type = e.target.value;
+      if (it.type === "mc") { it.choices = it.choices || ["", "", "", ""]; it.answer = 0; }
+      if (it.type === "tf") { it.answer = true; }
+      if (it.type === "id") { it.answer = []; }
+      render();
+    } else if (f === "mc-answer") it.answer = Number(e.target.value);
+    else if (f === "tf-answer") it.answer = e.target.value === "true";
+  });
+  list.addEventListener("click", (e) => {
+    const del = e.target.closest("[data-qdel]");
+    if (!del) return;
+    b.items.splice(Number(del.dataset.qdel), 1);
+    render();
+  });
+
+  host.querySelector(".qb-generate").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    const status = host.querySelector(".qb-status");
+    const types = [...host.querySelectorAll(".qb-types input:checked")].map((c) => c.value);
+    const count = Number(host.querySelector(".qb-count").value);
+    if (b.items.length && !confirm(`Replace the ${b.items.length} item(s) below with new AI drafts?`)) return;
+    btn.disabled = true;
+    status.textContent = "Drafting questions... (10-30 seconds)";
+    try {
+      const raw = await generateQuiz({
+        topic: host.querySelector(".qb-topic").value,
+        count,
+        types,
+        gradeLevel: host.querySelector(".qb-grade").value,
+      });
+      const items = parseGeneratedQuiz(raw).slice(0, QUIZ_MAX_ITEMS);
+      if (items.length === 0) throw new Error("The AI didn't return usable items - try again or reword the topic.");
+      b.items = items;
+      render();
+      status.textContent = `Drafted ${items.length} item(s). Read each one and fix anything wrong before saving - the AI can make mistakes.`;
+    } catch (err) {
+      status.textContent = err.message;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+  return b;
+}
+
+function quizItemEditorHtml(it, i) {
+  const typeSel = `<select data-f="type" class="qb-type">${Object.entries(QUIZ_TYPES)
+    .map(([k, v]) => `<option value="${k}" ${k === it.type ? "selected" : ""}>${v}</option>`).join("")}</select>`;
+  let answerHtml = "";
+  if (it.type === "mc") {
+    answerHtml = `<div class="muted">Choices - tick the correct one:</div>` + (it.choices || ["", "", "", ""]).map((c, ci) => `
+      <div class="qb-choice">
+        <input type="radio" name="qb-ans-${it.id}" data-f="mc-answer" value="${ci}" ${Number(it.answer) === ci ? "checked" : ""} title="Correct answer" />
+        <span class="qb-letter">${"ABCD"[ci]}</span>
+        <input data-f="choice" data-c="${ci}" value="${escAttr(c)}" placeholder="Choice ${"ABCD"[ci]}" />
+      </div>`).join("");
+  } else if (it.type === "tf") {
+    answerHtml = `<div class="qb-tf muted">Answer:
+      <label class="qb-check"><input type="radio" name="qb-ans-${it.id}" data-f="tf-answer" value="true" ${it.answer === true ? "checked" : ""} /> True</label>
+      <label class="qb-check"><input type="radio" name="qb-ans-${it.id}" data-f="tf-answer" value="false" ${it.answer === false ? "checked" : ""} /> False</label></div>`;
+  } else {
+    answerHtml = `<label>Accepted answers (separate alternates with ; - spelling of spaces, capitals and dashes doesn't matter)</label>
+      <input data-f="accepted" value="${escAttr((it.answer || []).join("; "))}" placeholder="e.g. CPU; central processing unit" />`;
+  }
+  return `<li data-qi="${i}" class="qb-item">
+    <div class="qb-item-head"><strong>Item ${i + 1}</strong> ${typeSel}
+      <button type="button" class="danger qb-del" data-qdel="${i}" title="Delete item">&#10005;</button></div>
+    <textarea data-f="prompt" rows="2" placeholder="Question">${escAttr(it.prompt || "")}</textarea>
+    ${answerHtml}
+  </li>`;
+}
+
+// Show/hide the builder + total-points box to match the type dropdown.
+// `prefix` is "" (create form) or "edit-" (edit form).
+function syncQuizBuilderVisibility(prefix) {
+  const isQuiz = el(`${prefix}assignment-filetype`).value === "quiz";
+  const hostId = `${prefix}assignment-quiz-builder`;
+  const host = el(hostId);
+  const form = el(prefix ? "edit-assignment-form" : "add-assignment-form");
+  const isAssignment = form.dataset.type !== "material";
+  host.classList.toggle("hidden", !isQuiz || !isAssignment);
+  el(`${prefix}assignment-points-wrap`).classList.toggle("hidden", isQuiz && isAssignment);
+  el(`${prefix}assignment-total-points`).required = isAssignment && !isQuiz;
+  if (isQuiz && isAssignment && !quizBuilders.has(hostId)) {
+    mountQuizBuilder(hostId, { topic: el(`${prefix}assignment-title`).value });
+  }
+}
+el("assignment-filetype").addEventListener("change", () => syncQuizBuilderVisibility(""));
+el("edit-assignment-filetype").addEventListener("change", () => syncQuizBuilderVisibility("edit-"));
+
+function resetQuizBuilder(hostId) {
+  quizBuilders.delete(hostId);
+  el(hostId).innerHTML = "";
+}
+
+// Reads + validates a builder. Returns { quiz, answers, totalPoints } or null
+// (after alerting) when the quiz isn't ready to save.
+function readQuizBuilder(hostId) {
+  const b = quizBuilders.get(hostId);
+  const items = b ? b.items : [];
+  const problem = validateQuizItems(items);
+  if (problem) { alert(problem); return null; }
+  const { questions, answers } = splitQuiz(items);
+  return {
+    quiz: { questions, secondsPerItem: b.secondsPerItem || 60, oneWay: true },
+    answers,
+    totalPoints: questions.length,
+  };
+}
+
 // Pick-type-first create flow (Google Classroom-style): choosing a type
 // reveals the form with only the fields that type needs, so it's not a wall
 // of inputs. A Material is read-only reference content - no points, no due
@@ -3037,10 +3229,13 @@ function setCreateType(type) {
   el("assignment-total-points").required = isAssignment;
   el("create-type-label").textContent = isAssignment ? "Assignment" : "Material";
   el("create-submit-btn").textContent = isAssignment ? "Add assignment" : "Add material";
+  syncQuizBuilderVisibility("");
 }
 function resetCreateType() {
   const form = el("add-assignment-form");
   form.reset();
+  resetQuizBuilder("assignment-quiz-builder");
+  syncQuizBuilderVisibility("");
   form.classList.add("hidden");
   el("create-type-choice").classList.remove("hidden");
 }
@@ -3076,7 +3271,26 @@ el("add-assignment-form").addEventListener("submit", async (e) => {
     totalPoints: Number(el("assignment-total-points").value) || 0,
     rubricReferenceLink: el("assignment-rubric-link").value.trim(),
   };
-  await addDoc(collection(db, "assignments"), payload);
+  const quizData = payload.allowedFileTypes === "quiz" ? readQuizBuilder("assignment-quiz-builder") : null;
+  if (payload.allowedFileTypes === "quiz") {
+    if (!quizData) return;
+    payload.quiz = quizData.quiz;
+    payload.totalPoints = quizData.totalPoints;
+  }
+  const ref = await addDoc(collection(db, "assignments"), payload);
+  if (quizData) {
+    // Answer key in its own owner-only doc. If that write is refused (e.g.
+    // the quizKeys rule isn't deployed yet), don't leave behind a quiz with
+    // no key - remove the assignment and say why.
+    try {
+      await setDoc(doc(db, "quizKeys", ref.id), { assignmentId: ref.id, ownerEmail: state.viewAsEmail, answers: quizData.answers });
+    } catch (err) {
+      console.error(err);
+      await deleteDoc(ref).catch(() => {});
+      alert("Couldn't save the quiz answer key, so the quiz was not created. (Are the latest Firestore rules deployed?) " + err.message);
+      return;
+    }
+  }
   resetCreateType();
   loadAssignments();
   if (type === "material") { alert("Material added."); return; }
@@ -3224,6 +3438,17 @@ async function openAssignment(assignmentId) {
   editForm.dataset.type = isMaterial ? "material" : "assignment";
   editForm.querySelectorAll(".assignment-only").forEach((n) => n.classList.toggle("hidden", isMaterial));
   el("edit-assignment-total-points").required = !isMaterial;
+  resetQuizBuilder("edit-assignment-quiz-builder");
+  if (!isMaterial && data.allowedFileTypes === "quiz") {
+    const keySnap = await getDoc(doc(db, "quizKeys", assignmentId)).catch(() => null);
+    const answers = keySnap?.exists() ? keySnap.data().answers : {};
+    mountQuizBuilder("edit-assignment-quiz-builder", {
+      items: joinQuiz(data.quiz?.questions, answers),
+      secondsPerItem: data.quiz?.secondsPerItem || 60,
+      topic: data.title || "",
+    });
+  }
+  syncQuizBuilderVisibility("edit-");
   renderAssignmentContext(data);
   show("view-assignment");
   if (isMaterial) {
@@ -3260,6 +3485,18 @@ el("edit-assignment-form").addEventListener("submit", async (e) => {
     totalPoints: Number(el("edit-assignment-total-points").value) || 0,
     rubricReferenceLink: el("edit-assignment-rubric-link").value.trim(),
   };
+  if (!isMaterial && payload.allowedFileTypes === "quiz") {
+    const quizData = readQuizBuilder("edit-assignment-quiz-builder");
+    if (!quizData) return;
+    payload.quiz = quizData.quiz;
+    payload.totalPoints = quizData.totalPoints;
+    try {
+      await setDoc(doc(db, "quizKeys", assignmentId), { assignmentId, ownerEmail: state.viewAsEmail, answers: quizData.answers });
+    } catch (err) {
+      alert("Couldn't save the quiz answer key - nothing was changed. " + err.message);
+      return;
+    }
+  }
   await updateDoc(doc(db, "assignments", assignmentId), payload);
   alert("Saved.");
   await openAssignment(assignmentId);
@@ -3855,6 +4092,10 @@ async function loadSubmissions() {
   });
   const list = el("submissions-list");
   list.innerHTML = "";
+  const a = aDoc.data() || {};
+  const isQuiz = a.allowedFileTypes === "quiz";
+  const quiz = isQuiz ? await loadQuizReviewData(state.assignmentId, a, ownedDocs) : null;
+  if (quiz) list.appendChild(quiz.unfinishedCard);
   // Pending (and AI-drafted, still unreviewed) submissions need the
   // teacher's attention most - surface those first instead of leaving them
   // buried among already-published ones in query order.
@@ -3886,18 +4127,21 @@ async function loadSubmissions() {
         + `<div class="code-run"><button type="button" class="secondary" data-run-code="${d.id}">&#9654; Run this</button></div>`
         + `<pre class="code-output hidden" data-teacher-output="${d.id}"></pre>`
       : "";
+    const quizBlock = quiz ? quizResultHtml(d.id, s, a, quiz) : "";
     row.innerHTML = `
       <strong id="sub-name-${d.id}">${displayStudentName(s.studentName)}</strong>
       <button type="button" class="secondary" data-edit-sub-name="${d.id}" data-uid="${s.studentUID}" data-raw="${s.studentName}" style="margin-left:0.4rem;">Edit name</button>
       <span class="status-${s.status}"> — ${s.status}</span>
       ${s.resubmitRequested ? ' <span class="status-pending">redo requested</span>' : ""}
-      ${codeBlock}
-      ${linkBlock}
+      ${quizBlock}
+      ${quiz ? "" : codeBlock}
+      ${quiz ? "" : linkBlock}
       <div id="detail-${d.id}"></div>
       <div style="margin-top:0.5rem;">
         ${AI_CHECK_ENABLED ? `<button data-ai="${d.id}">Run AI Check</button>` : ""}
         ${s.resubmitRequested ? `<button data-allow-redo="${d.id}">Allow redo</button>` : ""}
         <button class="secondary" data-review="${d.id}">Review / Grade</button>
+        ${quiz ? `<button class="secondary" data-quiz-retake="${d.id}">Allow retake</button>` : ""}
         <button class="danger" data-delete-sub="${d.id}">Delete</button>
       </div>`;
     list.appendChild(row);
@@ -3933,6 +4177,7 @@ async function loadSubmissions() {
   }
   list.querySelectorAll("[data-review]").forEach((b) =>
     b.addEventListener("click", () => openReview(b.dataset.review)));
+  if (quiz) wireQuizReview(list, ownedDocs, quiz);
   // Grant a student's redo request: reopen the graded submission for editing
   // (status -> "returned", the same reopened state as "Return for revision")
   // and clear the request flag. The old finalGrade is deliberately kept - it
@@ -3993,6 +4238,138 @@ async function loadSubmissions() {
     }));
 }
 el("submission-filter").addEventListener("change", loadSubmissions);
+
+// ---------- Quiz review (auto-score + cheating signals) ----------
+// Latest auto-score per submission id (incl. teacher "Accept" overrides), so
+// openReview() can pre-fill the score box.
+const quizAutoScores = new Map();
+
+// One read each for the answer key and the start records, shared by every
+// row. Both best-effort: no key -> no auto-score (teacher grades by hand).
+async function loadQuizReviewData(assignmentId, a, ownedDocs) {
+  const [keySnap, attemptsSnap] = await Promise.all([
+    getDoc(doc(db, "quizKeys", assignmentId)).catch(() => null),
+    getDocs(ownerScopedQuery("quizAttempts", where("assignmentId", "==", assignmentId))).catch(() => null),
+  ]);
+  const key = keySnap?.exists() ? keySnap.data().answers : null;
+  const attempts = new Map();
+  (attemptsSnap?.docs || []).forEach((d) => attempts.set(d.data().studentUID, { id: d.id, ...d.data() }));
+  const questions = a.quiz?.questions || [];
+  const submittedUIDs = new Set(ownedDocs.map((d) => d.data().studentUID));
+
+  // Started but never submitted (closed the app, lost signal, still taking
+  // it...). Shown so the teacher can let them start over.
+  const unfinished = [...attempts.values()].filter((t) => !submittedUIDs.has(t.studentUID));
+  const unfinishedCard = document.createElement("div");
+  unfinishedCard.className = "card";
+  unfinishedCard.innerHTML = `
+    <strong>Quiz</strong> <span class="muted">${questions.length} items · ${formatDuration(quizTimeLimitSeconds(questions.length, a.quiz?.secondsPerItem) * 1000)} time limit</span>
+    ${key ? "" : `<p class="status-pending">Answer key not found - auto-check is off; grade by hand.</p>`}
+    ${unfinished.length ? `<div style="margin-top:0.5rem;"><div class="muted">Started but not submitted (may still be taking it):</div>
+      ${unfinished.map((t) => `<div class="quiz-unfinished">${displayStudentName(t.studentName || t.studentUID)}
+        <span class="muted">started ${t.startedAt?.toDate ? t.startedAt.toDate().toLocaleString() : ""}</span>
+        <button type="button" class="secondary" data-quiz-reset-attempt="${t.id}">Allow retake</button></div>`).join("")}</div>` : ""}`;
+  return { key, attempts, questions, overrides: new Map(), unfinishedCard };
+}
+
+function describeQuizAnswer(q, val) {
+  if (val === undefined || val === null || val === "") return "<em>no answer</em>";
+  if (q.type === "mc") return `${"ABCD"[Number(val)] || "?"}. ${escAttr(q.choices?.[Number(val)] ?? "")}`;
+  if (q.type === "tf") return val === true ? "True" : "False";
+  return escAttr(String(val));
+}
+function describeQuizKey(q, keyVal) {
+  if (keyVal === undefined) return "?";
+  if (q.type === "id") return escAttr((Array.isArray(keyVal) ? keyVal : [keyVal]).join(" / "));
+  return describeQuizAnswer(q, keyVal);
+}
+
+function quizResultHtml(submissionId, s, a, quiz) {
+  const { key, attempts, questions } = quiz;
+  const log = s.quizLog || {};
+  const attempt = attempts.get(s.studentUID);
+  const limitSec = quizTimeLimitSeconds(questions.length, a.quiz?.secondsPerItem);
+  const flags = [];
+  if (log.leftCount > 0) flags.push(`&#9888; Left the quiz screen ${log.leftCount}&times;`);
+  if (log.screenshotKeys > 0) flags.push(`&#9888; Pressed screenshot key ${log.screenshotKeys}&times;`);
+  if (log.pasteBlocked > 0) flags.push(`&#9888; Tried to paste ${log.pasteBlocked}&times;`);
+  if (log.resumes > 0) flags.push(`Reopened mid-quiz ${log.resumes}&times;`);
+  if (log.timedOut) flags.push("Ran out of time (auto-submitted)");
+  let timeLine = "";
+  if (attempt?.startedAt?.toMillis && s.quizSubmittedAt?.toMillis) {
+    const took = s.quizSubmittedAt.toMillis() - attempt.startedAt.toMillis();
+    timeLine = `&#9201; ${formatDuration(took)} of ${formatDuration(limitSec * 1000)}`;
+    if (took > (limitSec + QUIZ_GRACE_SECONDS) * 1000) flags.push("&#9888; Submitted after the time limit");
+  } else if (!attempt) {
+    flags.push("&#9888; No start record (retake allowed, or submitted outside the quiz screen)");
+  }
+
+  if (!key) {
+    return `<div class="quiz-result">${timeLine ? `<span class="muted">${timeLine}</span>` : ""}
+      ${flags.length ? `<div class="quiz-flags">${flags.map((f) => `<span>${f}</span>`).join("")}</div>` : ""}</div>`;
+  }
+  const overrides = quiz.overrides.get(submissionId) || {};
+  const { score, total, perItem } = scoreQuiz(questions, key, s.quizAnswers || {}, overrides);
+  quizAutoScores.set(submissionId, score);
+  const rows = questions.map((q) => {
+    const ok = perItem[q.id];
+    const acceptBox = q.type === "id" && s.quizAnswers?.[q.id] && (!ok || overrides[q.id])
+      ? ` <label class="qb-check"><input type="checkbox" data-quiz-accept="${submissionId}" data-qid="${q.id}" ${overrides[q.id] ? "checked" : ""} /> Accept</label>`
+      : "";
+    return `<li class="${ok ? "quiz-ok" : "quiz-wrong"}">
+      <span class="quiz-mark">${ok ? "&#10003;" : "&#10007;"}</span> ${escAttr(q.prompt)}
+      <div class="muted">Answer: ${describeQuizAnswer(q, s.quizAnswers?.[q.id])}${ok && !overrides[q.id] ? "" : ` · Correct: ${describeQuizKey(q, key[q.id])}`}${acceptBox}</div></li>`;
+  }).join("");
+  return `<div class="quiz-result" data-quiz-result="${submissionId}">
+    <strong>Auto-score: <span data-quiz-score="${submissionId}">${score}</span> / ${total}</strong>
+    ${timeLine ? ` <span class="muted">${timeLine}</span>` : ""}
+    ${flags.length ? `<div class="quiz-flags">${flags.map((f) => `<span>${f}</span>`).join("")}</div>` : `<div class="muted">No cheating signals recorded.</div>`}
+    <details><summary class="muted" style="cursor:pointer;">See answers</summary><ol class="quiz-answers">${rows}</ol></details>
+  </div>`;
+}
+
+function wireQuizReview(list, ownedDocs, quiz) {
+  // Teacher accepts a near-miss Identification answer -> re-score that row and
+  // update the open score box, if any. Assigned (not addEventListener'd)
+  // because #submissions-list outlives each loadSubmissions() re-render.
+  list.onchange = (e) => {
+    const cb = e.target.closest("[data-quiz-accept]");
+    if (!cb) return;
+    const subId = cb.dataset.quizAccept;
+    const ov = { ...(quiz.overrides.get(subId) || {}) };
+    if (cb.checked) ov[cb.dataset.qid] = true; else delete ov[cb.dataset.qid];
+    quiz.overrides.set(subId, ov);
+    const s = ownedDocs.find((d) => d.id === subId)?.data();
+    const { score } = scoreQuiz(quiz.questions, quiz.key, s?.quizAnswers || {}, ov);
+    quizAutoScores.set(subId, score);
+    const scoreEl = list.querySelector(`[data-quiz-score="${subId}"]`);
+    if (scoreEl) scoreEl.textContent = score;
+    const box = el(`score-${subId}`);
+    if (box) box.value = score;
+  };
+  const resetAttempt = (attemptId) => deleteDoc(doc(db, "quizAttempts", attemptId)).catch((err) => {
+    console.error("couldn't delete quiz attempt:", err);
+  });
+  list.querySelectorAll("[data-quiz-retake]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const s = ownedDocs.find((d) => d.id === b.dataset.quizRetake)?.data();
+      if (!s) return;
+      if (!confirm(`Let ${s.studentName || "this student"} take the quiz again? Their current answers and score are deleted.`)) return;
+      b.disabled = true;
+      await deleteDoc(doc(db, "submissions", b.dataset.quizRetake));
+      const attempt = quiz.attempts.get(s.studentUID);
+      if (attempt) await resetAttempt(attempt.id);
+      alert("Done - the student can start the quiz again.");
+      loadSubmissions();
+    }));
+  list.querySelectorAll("[data-quiz-reset-attempt]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      if (!confirm("Let this student start the quiz over? If they're still taking it right now, their current try is lost.")) return;
+      b.disabled = true;
+      await resetAttempt(b.dataset.quizResetAttempt);
+      loadSubmissions();
+    }));
+}
 
 async function runAiCheck(submissionId) {
   const btn = document.querySelector(`[data-ai="${submissionId}"]`);
@@ -4069,7 +4446,8 @@ async function openReview(submissionId) {
   const a = (await getDoc(doc(db, "assignments", s.assignmentId))).data();
   const container = el(`detail-${submissionId}`);
 
-  const draft = s.finalGrade || { score: "", feedback: "" };
+  const isQuiz = a.allowedFileTypes === "quiz";
+  const draft = s.finalGrade || { score: isQuiz ? (quizAutoScores.get(submissionId) ?? "") : "", feedback: "" };
   const rubricEmbedUrl = a.rubricReferenceLink ? toEmbedUrl(a.rubricReferenceLink) : null;
   const rubricBlock = a.rubricReferenceLink
     ? `<label>Your rubric (reference)</label>
@@ -4086,8 +4464,9 @@ async function openReview(submissionId) {
       <label>Feedback</label>
       <textarea id="feedback-${submissionId}" rows="3">${draft.feedback || ""}</textarea>
       <button data-publish="${submissionId}">Publish to student</button>
-      <button type="button" class="secondary" data-return="${submissionId}">Return for revision</button>
-      <div class="muted" style="margin-top:0.4rem; font-size:0.85em;">Return for revision unlocks editing for the student to redo the work; Publish finalizes the grade and locks it.</div>
+      ${isQuiz ? `<div class="muted" style="margin-top:0.4rem; font-size:0.85em;">Score is pre-filled from the auto-check (including any answers you ticked "Accept"). Publish shows the score to the student - correct answers stay hidden.</div>`
+        : `<button type="button" class="secondary" data-return="${submissionId}">Return for revision</button>
+      <div class="muted" style="margin-top:0.4rem; font-size:0.85em;">Return for revision unlocks editing for the student to redo the work; Publish finalizes the grade and locks it.</div>`}
       <details data-attempts="${submissionId}" style="margin-top:0.6rem;">
         <summary class="muted" style="cursor:pointer;">Previous attempts</summary>
         <div id="attempts-${submissionId}" style="margin-top:0.5rem;"><p class="muted">Loading…</p></div>
@@ -4142,7 +4521,7 @@ async function openReview(submissionId) {
   // reuses the same score/feedback boxes so the teacher can leave a note on
   // what needs fixing. Student side then deletes and resubmits, same as the
   // existing pending-submission "Remove" flow.
-  container.querySelector(`[data-return]`).addEventListener("click", async () => {
+  container.querySelector(`[data-return]`)?.addEventListener("click", async () => {
     const score = readValidScore();
     if (score === null) return;
     const btn = container.querySelector(`[data-return]`);
