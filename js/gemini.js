@@ -8,6 +8,9 @@
 import { extractDriveFileId } from "./embed.js";
 
 const STORAGE_KEY = "geminiApiKey";
+// "-latest" alias tracks Google's current Flash model, so a retired version
+// a pinned version (was gemini-2.0-flash) can't break when Google retires it.
+const GEMINI_MODEL = "gemini-flash-latest";
 
 export function getGeminiKey() {
   return localStorage.getItem(STORAGE_KEY) || "";
@@ -55,7 +58,7 @@ async function callGemini(promptText, json) {
   const body = { contents: [{ parts: [{ text: promptText }] }] };
   if (json) body.generationConfig = { responseMimeType: "application/json" };
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${getGeminiKey()}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${getGeminiKey()}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -183,7 +186,7 @@ Score each criterion using its own max-points scale, exactly as named above (the
   };
 
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },

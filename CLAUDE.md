@@ -510,7 +510,7 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   backs `generateQuiz()`/`generateCodeExample()`: tries Groq
   (`llama-3.3-70b-versatile`, OpenAI-compatible, free key from console.groq.com,
   stored as `groqApiKey` in localStorage like the Gemini key) and falls back to
-  Gemini if Groq has no key or fails. Rubric-check stays Gemini-only (images).
+  Gemini (`gemini-flash-latest` alias) if Groq has no key or fails. Rubric-check stays Gemini-only (images).
   `gemini.js`/`quiz.js` imports carry their own `?v=` (bump when changed —
   `scripts/bump-version.mjs` doesn't cover sub-modules).
 
