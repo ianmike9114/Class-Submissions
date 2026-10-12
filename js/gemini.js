@@ -8,7 +8,7 @@
 import { extractDriveFileId } from "./embed.js";
 
 const STORAGE_KEY = "geminiApiKey";
-// "-latest" alias tracks Google's current Flash model, so a retired version
+// "-latest" alias tracks Google's current Flash model, so
 // a pinned version (was gemini-2.0-flash) can't break when Google retires it.
 const GEMINI_MODEL = "gemini-flash-latest";
 
