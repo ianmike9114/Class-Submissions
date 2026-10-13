@@ -9,6 +9,7 @@ import {
   signInWithEmailLink,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { clearAllCaches } from "./assignment-cache.js?v=1";
 
 // Uses Google Identity Services directly (the accounts.google.com/gsi/client
 // script tag on index.html) instead of Firebase's signInWithPopup/Redirect.
@@ -131,6 +132,7 @@ export function clearAuthHops() {
 
 export function signOutUser() {
   forgetDevice();
+  clearAllCaches(); // per-student assignment cache (shared lab PCs)
   return signOut(auth);
 }
 

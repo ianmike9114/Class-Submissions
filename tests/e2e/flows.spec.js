@@ -110,7 +110,36 @@ test("student submits, teacher grades, student sees the score", async ({ page })
   expect(errors, errors.join(" | ")).toEqual([]);
 });
 
-test("quiz with a question bank: student gets 5 of 6, teacher sees score out of 5", async ({ page }) => {
+test("student's cached assignment list picks up a teacher edit on reload", async ({ page }) => {
+  const errors = trackPageErrors(page);
+  await signIn(page, STUDENT, "Juan Dela Cruz");
+  await page.waitForURL(/student\.html/);
+  await expect(page.locator('.outline-item[data-title="E2E Essay"]').first()).toBeAttached();
+  // The dashboard load stored this class's assignments in localStorage.
+  expect(await page.evaluate(() => Object.keys(localStorage).some((k) => k.startsWith("lms.asgCache.")))).toBe(true);
+
+  const tpage = await page.context().browser().newPage();
+  await blockProduction(tpage);
+  tpage.on("dialog", (d) => d.accept());
+  await signIn(tpage, TEACHER, "Teacher One");
+  await tpage.waitForURL(/teacher\.html/);
+  await tpage.locator("#subjects-list [data-open]").first().click();
+  await tpage.locator("#sections-list [data-open]").first().click();
+  await tpage.locator("#assignments-list [data-open]").first().click();
+  await tpage.locator("#view-assignment summary", { hasText: "Edit assignment" }).click();
+  await tpage.fill("#edit-assignment-title", "E2E Essay v2");
+  await tpage.locator("#edit-assignment-form button[type=submit]").click();
+  await expect(tpage.locator("#assignment-view-title")).toHaveText("E2E Essay v2");
+  await tpage.close();
+
+  // touchSection() bumped the section's assignmentsVersion, so the cache refetches.
+  await page.reload();
+  await expect(page.locator('.outline-item[data-title="E2E Essay v2"]').first()).toBeAttached();
+  await expect(page.locator('.outline-item[data-title="E2E Essay"]')).toHaveCount(0);
+  expect(errors, errors.join(" | ")).toEqual([]);
+});
+
+test("quiz with a question bank:student gets 5 of 6, teacher sees score out of 5", async ({ page }) => {
   const errors = trackPageErrors(page);
   const tpage = await page.context().browser().newPage();
   await blockProduction(tpage);

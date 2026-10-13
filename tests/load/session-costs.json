@@ -1,10 +1,15 @@
 {
   "_about": "Firestore reads/writes per user action, derived from the real code paths (see tests/load/quota-budget.md). Firestore bills 1 read per document returned (min 1 per query) and 1 read per up-to-1000 index entries for count() aggregations. Formulas use the 'assumptions' below; scripts/quota-budget.mjs evaluates them.",
-  "limits": { "readsPerDay": 50000, "writesPerDay": 20000 },
+  "limits": {
+    "readsPerDay": 50000,
+    "writesPerDay": 20000
+  },
   "assumptions": {
     "classesPerStudent": 4,
     "assignmentsPerClass": 25,
     "submissionsPerStudent": 60,
+    "currentTermSubmissions": 30,
+    "changedClassesPerDay": 1,
     "sectionsPerTeacher": 4,
     "subjectsPerTeacher": 3,
     "studentsPerSection": 40,
@@ -18,16 +23,16 @@
   },
   "actions": {
     "studentDashboardLoad": {
-      "where": "js/student.js loadEverything() + getHiddenSectionIds()",
-      "reads": "3*classesPerStudent + 2 + classesPerStudent*assignmentsPerClass + submissionsPerStudent",
+      "where": "js/student.js loadEverything() + getHiddenSectionIds() + js/assignment-cache.js",
+      "reads": "3*classesPerStudent + 2 + changedClassesPerDay*assignmentsPerClass + classesPerStudent*assignmentsPerClass/30 + 1 + currentTermSubmissions",
       "writes": "0",
-      "note": "enrollments + sections + subjects + owners' settings (~classes each) + admin/all-teachers settings (2) + every assignment in the student's classes + the student's own submissions"
+      "note": "enrollments + sections (read once) + subjects + owners' settings + admin/all-teachers settings (2) + assignments ONLY for classes a teacher changed since the cached copy (assignmentsVersion / 6h TTL) + this term's own submissions (assignmentId 'in' chunks of 30, min 1 read each). Past-term submissions are no longer read."
     },
     "studentSubmit": {
       "where": "js/student.js submit form -> addDoc/updateDoc, then loadEverything() reload",
-      "reads": "3*classesPerStudent + 2 + classesPerStudent*assignmentsPerClass + submissionsPerStudent",
+      "reads": "classesPerStudent + classesPerStudent*assignmentsPerClass/30 + 1 + currentTermSubmissions",
       "writes": "1",
-      "note": "the post-submit dashboard reload is what costs reads"
+      "note": "post-action reload reuses the hidden-class lookup (10-min in-memory cache) and cached assignments; re-reads only enrollments and this term's submissions"
     },
     "teacherHomeLoad": {
       "where": "js/teacher.js loadSubjects() + getNotifications() + getMissingWorkCounts() (cachedOwnerDocs, once per session)",
