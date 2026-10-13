@@ -581,6 +581,13 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   longest by ≥25% and ≥8 chars; the builder shows it live per item and asks to
   confirm on save (warning, not a block). `generateQuiz()`'s prompt tells the AI
   to keep all 4 choices similar in length with the answer never the longest.
+  **Answer positions spread A–D** (AI drafts put the answer at A): students
+  already see choices in a per-student shuffled order, but the saved bank is now
+  balanced too - `js/quiz.js`'s `balanceAnswerPositions()` runs on every AI draft
+  (new items only) and on the builder's "Spread answers A–D" button;
+  `answerPatternWarning()` shows live and offers to spread on save. **Locked once
+  any student has started** (edit builder counts `quizAttempts`): saved student
+  answers are original choice indexes, so moving choices would mis-score them.
   **Full-screen breach mode** (developer feedback, decoded via the
   `pangasinan-feedback-triage` skill): `runQuiz` shows a "Continue in full
   screen" gate (fresh tap = user gesture) where `document.fullscreenEnabled`;
