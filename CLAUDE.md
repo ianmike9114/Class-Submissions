@@ -632,9 +632,11 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   a breach (docked laptops/projectors also trigger it).
   **Android app bridge** (`js/app-bridge.js`, inert in browsers): the
   optional Capacitor wrapper in `android-app/` loads the live site;
-  `isLmsApp()` detects it. Inside the app `runQuiz` calls
-  `setScreenshotBlock(true/false)` (PrivacyScreen plugin → Android
-  `FLAG_SECURE`, screenshots/recordings black) and skips the full-screen gate;
+  `isLmsApp()` detects it. Inside the app the **whole student page** (modules,
+  scores, quizzes — by request) calls `setScreenshotBlock(true)` on load
+  (PrivacyScreen plugin → Android `FLAG_SECURE`, screenshots/recordings
+  black); the flag outlives page loads, so `index.html` and `teacher.js` turn
+  it off. `runQuiz` skips the full-screen gate in the app;
   `index.html` replaces Google's web button (blocked in WebViews) with the
   native picker → `signInWithGoogleIdToken()`. Teacher option
   `quiz.requireApp` ("Android students must use the app") makes Android

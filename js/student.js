@@ -2192,7 +2192,7 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
     window.removeEventListener("orientationchange", checkSplit);
     window.screen?.removeEventListener?.("change", checkSecondScreen);
     document.removeEventListener("fullscreenchange", onFsChange);
-    setScreenshotBlock(false);
+    // Screenshot block stays on: the whole student page is protected in the app.
     if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
     overlay.remove();
     document.body.classList.remove("quiz-open");
@@ -2409,6 +2409,9 @@ function showConnectionError(err) {
 guardPage("student").then(async (user) => {
   if (!user) return;
   currentUser = user;
+  // Android app only: screenshots/recordings come out black on every student
+  // screen (modules, scores, quizzes). No-op in browsers.
+  setScreenshotBlock(true);
   // Header account: Google profile photo when available, else a circle with the
   // email initial; real display name beside it, full email on hover.
   const av = el("student-avatar");
