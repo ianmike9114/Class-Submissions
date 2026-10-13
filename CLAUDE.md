@@ -392,6 +392,20 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   re-render from memory with the saved submission patched in, and the bell
   updates locally (`resolvedLocally`) instead of re-reading the class + all
   notifications (~200 reads per score before). The Refresh button clears all.
+- **Student own-submissions cache + `enrollment.subsVersion` marker.**
+  `js/student.js` caches each section's own submissions (`lms.subCache.<uid>`,
+  1h TTL, photo-heavy sections dropped by `fitToBudget()`) and refetches a
+  section only when its enrollment's `subsVersion` changed or this page wrote
+  to it. **Every teacher write that changes what a student sees on a
+  submission must call `touchStudentSubs(studentUID, sectionId)`** (publish,
+  return, allow redo, delete, quiz retake today); the student's own writes call
+  `afterOwnSubmissionWrite()`, which stamps their own enrollment.
+  `firestore.rules` adds `'subsVersion'` to the student self-update `hasOnly`
+  list - **must `firebase deploy --only firestore:rules`** (until then the
+  stamp is refused and other devices catch up within 1h). Subjects + term
+  settings behind `getHiddenSectionIds()` are cached 30 min
+  (`lms.termCache.<uid>`), so an archive/term switch reaches students within
+  30 min. Sign-out clears all `lms.*Cache.*` stores.
 - **Notification bell has third bucket, "new joins".** `js/student.js`'s
   `enroll()` stamps every new enrollment with `seen: false`;
   `js/teacher.js`'s `getNotifications()` queries `seen == false`

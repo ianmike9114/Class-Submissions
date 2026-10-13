@@ -270,6 +270,24 @@ describe("enrollments: self-enroll + limited self-edit", () => {
     await assertSucceeds(updateDoc(doc(db, "enrollments", "enr1"), { leaveRequested: true }));
     await assertFails(updateDoc(doc(db, "enrollments", "enr1"), { sectionId: "secB" }));
   });
+  it("student can stamp subsVersion on their OWN enrollment only", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "enrollments", "enr1"), {
+        studentUID: "student1", ownerEmail: TEACHER_A, sectionId: "secA", studentName: "Juan",
+      });
+    });
+    await assertSucceeds(updateDoc(doc(ctxFor("student1", "s1@x.com"), "enrollments", "enr1"), { subsVersion: 123 }));
+    await assertFails(updateDoc(doc(ctxFor("student2", "s2@x.com"), "enrollments", "enr1"), { subsVersion: 456 }));
+    await assertFails(updateDoc(doc(ctxFor("student1", "s1@x.com"), "enrollments", "enr1"), { subsVersion: 789, status: "approved" }));
+  });
+  it("owning teacher can stamp subsVersion (touchStudentSubs)", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "enrollments", "enr1"), {
+        studentUID: "student1", ownerEmail: TEACHER_A, sectionId: "secA", studentName: "Juan",
+      });
+    });
+    await assertSucceeds(updateDoc(doc(ctxFor("ua", TEACHER_A), "enrollments", "enr1"), { subsVersion: 1 }));
+  });
 });
 
 describe("settings: per-teacher current-term marker", () => {

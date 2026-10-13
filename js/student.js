@@ -1,5 +1,5 @@
 import { db, ADMIN_EMAIL, isSuperAdmin } from "./firebase-config.js";
-import { guardPage, signOutUser } from "./auth.js?v=4";
+import { guardPage, signOutUser } from "./auth.js?v=5";
 import { isLmsApp, isAndroid, setScreenshotBlock, APP_APK_URL } from "./app-bridge.js?v=1";
 import {
   collection, addDoc, setDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where, arrayUnion, arrayRemove, serverTimestamp,
@@ -8,7 +8,10 @@ import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEm
 import { runJava } from "./runner.js";
 import { codeBlockHtml, highlightWithin } from "./highlight.js";
 import { seededShuffle, quizDeadlineMs, servedQuestions, QUIZ_BREACH_LIMIT } from "./quiz.js?v=5";
-import { readCache, writeCache, staleSectionIds, asDoc, chunk } from "./assignment-cache.js?v=1";
+import {
+  readCache, writeCache, staleSectionIds, asDoc, chunk, readStore, writeStore, fitToBudget,
+  SUB_PREFIX, SUB_CACHE_TTL_MS, TERM_PREFIX, TERM_CACHE_TTL_MS,
+} from "./assignment-cache.js?v=2";
 
 let currentUser = null;
 function el(id) { return document.getElementById(id); }
@@ -369,6 +372,16 @@ async function getHiddenSectionIds(sectionIds) {
   try {
     const sectionDocs = await getDocsByIds("sections", sectionIds);
     const sectionToSubject = new Map(sectionDocs.map((d) => [d.id, d.data().subjectId]));
+    // Spark read budget: subjects + term settings change rarely (a teacher
+    // archives a subject, the admin switches term), so they're remembered for
+    // 30 min per student (localStorage, never in "View as"). Section docs above
+    // stay fresh - they carry assignmentsVersion.
+    const termKey = [...new Set([...sectionToSubject.values()].filter(Boolean))].sort().join(",");
+    const termCacheUid = viewCtx ? null : dataUID();
+    const tc = termCacheUid ? readStore(TERM_PREFIX, termCacheUid) : {};
+    if (tc.key === termKey && Date.now() - tc.at < TERM_CACHE_TTL_MS && Array.isArray(tc.subjects)) {
+      return computeHiddenSections(sectionDocs, sectionToSubject, new Map(tc.subjects), new Map(tc.settings || []), tc.global || null);
+    }
     const subjectDocs = await getDocsByIds("subjects", [...sectionToSubject.values()]);
     const subjectData = new Map(subjectDocs.map((d) => [d.id, d.data()]));
 
@@ -398,40 +411,48 @@ async function getHiddenSectionIds(sectionIds) {
     } catch (err) {
       console.error("global current-term read failed (per-owner still applies):", err);
     }
-    const globalActive = !!(globalTerm && globalTerm.currentSchoolYear && globalTerm.currentTerm);
-
-    // Effective term, school-wide first: the site-wide override
-    // (settings/all-teachers), else the SUPER ADMIN's own current term
-    // (settings/{ADMIN_EMAIL}) - the admin's term wins for every teacher's
-    // classes, so a teacher who left an old term saved (or never set one) can't
-    // make a finished term show to students. Only when the admin has set no term
-    // does an owner's own setting apply. Under any active term a subject with a
-    // blank SY/term counts as a mismatch and is hidden - the teacher grid lists
-    // those as "No term set" so they get fixed via Edit Year/Term.
-    const adminSetting = settingByOwner.get(ADMIN_EMAIL);
-    const adminActive = !!(adminSetting && adminSetting.currentSchoolYear && adminSetting.currentTerm);
-    const schoolTerm = globalActive ? globalTerm : (adminActive ? adminSetting : null);
-
-    const hiddenSubjects = new Set();
-    for (const [subjectId, s] of subjectData) {
-      if (s.archived === true) { hiddenSubjects.add(subjectId); continue; }
-      const setting = schoolTerm || settingByOwner.get(s.ownerEmail);
-      if (setting && setting.currentSchoolYear && setting.currentTerm) {
-        const sameTerm = normYear(s.schoolYear) === normYear(setting.currentSchoolYear)
-          && normTerm(s.term) === normTerm(setting.currentTerm);
-        if (!sameTerm) hiddenSubjects.add(subjectId);
-      }
+    if (termCacheUid) {
+      writeStore(TERM_PREFIX, termCacheUid, { key: termKey, at: Date.now(), subjects: [...subjectData], settings: [...settingByOwner], global: globalTerm });
     }
-
-    const hiddenSections = new Set();
-    for (const [sectionId, subjectId] of sectionToSubject) {
-      if (hiddenSubjects.has(subjectId)) hiddenSections.add(sectionId);
-    }
-    return { hidden: hiddenSections, sectionDocs, ok: true };
+    return computeHiddenSections(sectionDocs, sectionToSubject, subjectData, settingByOwner, globalTerm);
   } catch (err) {
     console.error("hidden-section lookup failed (showing all classes):", err);
     return { hidden: new Set(), sectionDocs: [], ok: false };
   }
+}
+
+// Pure part of getHiddenSectionIds() (fresh or term-cached inputs).
+function computeHiddenSections(sectionDocs, sectionToSubject, subjectData, settingByOwner, globalTerm) {
+  const globalActive = !!(globalTerm && globalTerm.currentSchoolYear && globalTerm.currentTerm);
+
+  // Effective term, school-wide first: the site-wide override
+  // (settings/all-teachers), else the SUPER ADMIN's own current term
+  // (settings/{ADMIN_EMAIL}) - the admin's term wins for every teacher's
+  // classes, so a teacher who left an old term saved (or never set one) can't
+  // make a finished term show to students. Only when the admin has set no term
+  // does an owner's own setting apply. Under any active term a subject with a
+  // blank SY/term counts as a mismatch and is hidden - the teacher grid lists
+  // those as "No term set" so they get fixed via Edit Year/Term.
+  const adminSetting = settingByOwner.get(ADMIN_EMAIL);
+  const adminActive = !!(adminSetting && adminSetting.currentSchoolYear && adminSetting.currentTerm);
+  const schoolTerm = globalActive ? globalTerm : (adminActive ? adminSetting : null);
+
+  const hiddenSubjects = new Set();
+  for (const [subjectId, s] of subjectData) {
+    if (s.archived === true) { hiddenSubjects.add(subjectId); continue; }
+    const setting = schoolTerm || settingByOwner.get(s.ownerEmail);
+    if (setting && setting.currentSchoolYear && setting.currentTerm) {
+      const sameTerm = normYear(s.schoolYear) === normYear(setting.currentSchoolYear)
+        && normTerm(s.term) === normTerm(setting.currentTerm);
+      if (!sameTerm) hiddenSubjects.add(subjectId);
+    }
+  }
+
+  const hiddenSections = new Set();
+  for (const [sectionId, subjectId] of sectionToSubject) {
+    if (hiddenSubjects.has(subjectId)) hiddenSections.add(sectionId);
+  }
+  return { hidden: hiddenSections, sectionDocs, ok: true };
 }
 
 // Spark read budget (tests/load/quota-budget.md): loadEverything() runs on
@@ -439,12 +460,35 @@ async function getHiddenSectionIds(sectionIds) {
 // the hidden-class lookup (sections/subjects/settings) - are reused in memory
 // for 10 minutes while the enrolled-section set is unchanged. A join/approval
 // changes the key and refetches; a page load always starts fresh. Enrollments
-// and submissions are always re-read (they're what an action changes).
+// are always re-read; submissions use their own per-section cache (below).
 // Assignments live in the per-section cache (js/assignment-cache.js); the
 // teacher "View as" preview keeps it in memory only, never in localStorage.
 const PAGE_CACHE_MS = 10 * 60 * 1000;
 let pageCache = null; // { key, at, info }
 const memAsgCache = {};
+const memSubCache = {};
+// Own submission writes in this page: those sections' cached submissions are
+// re-read on the next loadEverything() ("*" = all, when the section is unknown).
+const dirtySubSections = new Set();
+let enrollmentIdBySection = new Map();
+
+// Call after EVERY write the student makes to their own submission (submit,
+// edit, retract, quiz submit, request/cancel redo). Marks the section dirty
+// here and stamps the student's own enrollment.subsVersion so their OTHER
+// devices refetch too. Best-effort: until firestore.rules allows subsVersion
+// the stamp is refused and other devices catch up within SUB_CACHE_TTL_MS.
+async function afterOwnSubmissionWrite(assignmentId) {
+  const sectionId = assignmentsById.get(assignmentId)?.sectionId;
+  if (!sectionId) { dirtySubSections.add("*"); return; }
+  dirtySubSections.add(sectionId);
+  const enrollmentId = enrollmentIdBySection.get(sectionId);
+  if (!enrollmentId || viewCtx) return;
+  try {
+    await updateDoc(doc(db, "enrollments", enrollmentId), { subsVersion: Date.now() });
+  } catch (err) {
+    console.warn("subsVersion stamp refused (other devices refresh within 1h):", err?.code || err);
+  }
+}
 
 async function loadEverything() {
   const enrollSnap = await getDocs(
@@ -655,13 +699,38 @@ async function loadEverything() {
   // load. Equality + 'in' is served by single-field index merging; if Firestore
   // ever asks for a composite index (failed-precondition) or the query fails,
   // fall back to the old unfiltered query so the dashboard never breaks.
+  //
+  // Cached per section (lms.subCache.<uid>, see js/assignment-cache.js) and
+  // re-read only for sections whose enrollment.subsVersion changed (teacher
+  // touchStudentSubs() / own writes on another device), that this page wrote
+  // to (dirtySubSections), that have no entry, or past the 1h TTL.
+  enrollmentIdBySection = new Map(enrollments.map((en) => [en.sectionId, en.id]));
+  const subsVersionBySection = new Map(enrollments.map((en) => [en.sectionId, en.subsVersion ?? null]));
+  const idsBySection = new Map();
+  allADocs.forEach((d) => {
+    const sec = d.data().sectionId;
+    if (!idsBySection.has(sec)) idsBySection.set(sec, []);
+    idsBySection.get(sec).push(d.id);
+  });
+  const subSections = [...idsBySection.keys()];
+  const subCache = viewCtx ? memSubCache : readStore(SUB_PREFIX, dataUID());
+  const subNow = Date.now();
+  const staleSubs = new Set(dirtySubSections.has("*") ? subSections : [
+    ...staleSectionIds(subSections.map((id) => ({ id, version: subsVersionBySection.get(id) ?? null })), subCache, subNow, SUB_CACHE_TTL_MS),
+    ...subSections.filter((id) => dirtySubSections.has(id)),
+  ]);
   let mySubDocs = [];
-  const shownIds = allADocs.map((d) => d.id);
   try {
-    const snaps = await Promise.all(chunk(shownIds).map((ids) => getDocs(query(
+    const jobs = [...staleSubs].flatMap((sec) => chunk(idsBySection.get(sec)).map((ids) => getDocs(query(
       collection(db, "submissions"), where("studentUID", "==", dataUID()), where("assignmentId", "in", ids), ...ownerScope()
-    ))));
-    mySubDocs = snaps.flatMap((s) => s.docs);
+    )).then((snap) => [sec, snap])));
+    const results = await Promise.all(jobs);
+    for (const sec of staleSubs) subCache[sec] = { v: subsVersionBySection.get(sec) ?? null, at: subNow, docs: [] };
+    for (const [sec, snap] of results) snap.docs.forEach((d) => subCache[sec].docs.push({ id: d.id, data: d.data() }));
+    for (const id of Object.keys(subCache)) if (!idsBySection.has(id)) delete subCache[id];
+    dirtySubSections.clear();
+    if (!viewCtx) writeStore(SUB_PREFIX, dataUID(), fitToBudget(subCache));
+    mySubDocs = subSections.flatMap((sec) => (subCache[sec]?.docs || []).map((d) => asDoc(d.id, d.data)));
   } catch (err) {
     console.warn("filtered submissions query failed, using full query:", err);
     const all = await getDocs(
@@ -841,6 +910,7 @@ async function loadEverything() {
           requestRedoBtn.disabled = true;
           try {
             await updateDoc(doc(db, "submissions", subDoc.id), { resubmitRequested: true });
+            await afterOwnSubmissionWrite(subDoc.data().assignmentId);
             alert("Request sent — your teacher will decide whether to reopen it.");
             loadEverything();
           } catch (err) {
@@ -856,6 +926,7 @@ async function loadEverything() {
           cancelRedoBtn.disabled = true;
           try {
             await updateDoc(doc(db, "submissions", subDoc.id), { resubmitRequested: false });
+            await afterOwnSubmissionWrite(subDoc.data().assignmentId);
             loadEverything();
           } catch (err) {
             alert("Couldn't cancel request: " + err.message);
@@ -877,6 +948,7 @@ async function loadEverything() {
             removeBtn.disabled = true;
             try {
               await deleteDoc(doc(db, "submissions", subDoc.id));
+              await afterOwnSubmissionWrite(subDoc.data().assignmentId);
               alert("Removed — you can resubmit now.");
               loadEverything();
             } catch (err) {
@@ -1627,6 +1699,7 @@ function wireSubmitForm(form) {
           ownerEmail: assignmentOwnerEmail,
         });
       }
+      await afterOwnSubmissionWrite(assignmentId);
       pendingPhotos.delete(assignmentId);
       pendingCodeOutput.delete(assignmentId);
       alert(submissionId ? "Saved — resubmitted for review." : "Submitted!");
@@ -2171,6 +2244,7 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
         submittedAt: Date.now(),
         ownerEmail: a.ownerEmail || ADMIN_EMAIL,
       });
+      await afterOwnSubmissionWrite(assignmentId);
       clearQuizState(assignmentId);
       cleanup();
       alert((timedOut ? "Time's up! " : byBreach ? `${QUIZ_BREACH_LIMIT} breaches - your quiz was submitted automatically. ` : "") + "Quiz submitted. Your score will show here once your teacher checks it.");
