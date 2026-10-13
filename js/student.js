@@ -1,17 +1,17 @@
 import { db, ADMIN_EMAIL, isSuperAdmin } from "./firebase-config.js";
-import { guardPage, signOutUser } from "./auth.js?v=5";
+import { guardPage, signOutUser } from "./auth.js?v=6";
 import { isLmsApp, isAndroid, setScreenshotBlock, APP_APK_URL } from "./app-bridge.js?v=1";
 import {
-  collection, addDoc, setDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where, arrayUnion, arrayRemove, serverTimestamp,
+  collection, addDoc, setDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where, arrayUnion, arrayRemove, serverTimestamp, documentId,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=2";
 import { runJava } from "./runner.js";
 import { codeBlockHtml, highlightWithin } from "./highlight.js";
 import { seededShuffle, quizDeadlineMs, servedQuestions, QUIZ_BREACH_LIMIT } from "./quiz.js?v=5";
 import {
-  readCache, writeCache, staleSectionIds, asDoc, chunk, readStore, writeStore, fitToBudget,
+  readCache, writeCache, staleSectionIds, assignmentDelta, asDoc, chunk, readStore, writeStore, fitToBudget,
   SUB_PREFIX, SUB_CACHE_TTL_MS, TERM_PREFIX, TERM_CACHE_TTL_MS,
-} from "./assignment-cache.js?v=2";
+} from "./assignment-cache.js?v=3";
 
 let currentUser = null;
 function el(id) { return document.getElementById(id); }
@@ -641,27 +641,56 @@ async function loadEverything() {
   updateQuizTabCount(0);
   if (sectionIds.length === 0) return;
 
-  // Assignments: served from the per-section cache, re-fetching only sections
-  // whose assignmentsVersion changed (teacher touchSection()), that have no
-  // entry, are past the 6h TTL, or whose section doc couldn't be read. Firestore
-  // 'in' queries cap at 30, hence the chunks. Sorted by id afterwards to keep
-  // Firestore's own default (document id) order the render relied on.
+  // Assignments: served from the per-section cache (js/assignment-cache.js
+  // assignmentDelta()). A section with a complete assignmentVersions map
+  // re-reads only the assignments the teacher added/edited and drops deleted
+  // ones; others re-read the whole class only when its assignmentsVersion
+  // changed, there's no entry, the 6h TTL passed, or the section doc couldn't
+  // be read. Firestore 'in' queries cap at 30, hence the chunks. Sorted by id
+  // afterwards to keep Firestore's own default (document id) order.
   const visibleSectionIds = [...new Set(sectionIds)].slice(0, 30);
-  const versionById = new Map(hiddenInfo.sectionDocs.map((d) => [d.id, d.data().assignmentsVersion ?? null]));
+  const sectionDataById = new Map(hiddenInfo.sectionDocs.map((d) => [d.id, d.data()]));
   const asgCache = viewCtx ? memAsgCache : readCache(dataUID());
   const nowMs = Date.now();
-  const stale = new Set([
-    ...staleSectionIds(visibleSectionIds.map((id) => ({ id, version: versionById.get(id) ?? null })), asgCache, nowMs),
-    ...visibleSectionIds.filter((id) => !versionById.has(id)),
-  ]);
-  if (stale.size) {
-    const snaps = await Promise.all(chunk([...stale]).map((ids) =>
+  const plans = new Map(visibleSectionIds.map((id) => [id, sectionDataById.has(id)
+    ? assignmentDelta(sectionDataById.get(id), asgCache[id], nowMs)
+    : { full: true, fetchIds: [], dropIds: [] }]));
+  const fullIds = new Set(visibleSectionIds.filter((id) => plans.get(id).full));
+  const deltaSections = visibleSectionIds.filter((id) => !fullIds.has(id) && (plans.get(id).fetchIds.length || plans.get(id).dropIds.length));
+  let deltaDocs = [];
+  const deltaFetch = deltaSections.flatMap((id) => plans.get(id).fetchIds);
+  if (deltaFetch.length) {
+    try {
+      const snaps = await Promise.all(chunk(deltaFetch).map((ids) =>
+        getDocs(query(collection(db, "assignments"), where(documentId(), "in", ids)))));
+      deltaDocs = snaps.flatMap((sn) => sn.docs);
+    } catch (err) {
+      console.warn("assignment delta fetch failed, re-reading those classes:", err);
+      deltaSections.forEach((id) => fullIds.add(id));
+      deltaSections.length = 0;
+    }
+  }
+  if (fullIds.size) {
+    const snaps = await Promise.all(chunk([...fullIds]).map((ids) =>
       getDocs(query(collection(db, "assignments"), where("sectionId", "in", ids)))
     ));
-    for (const id of stale) asgCache[id] = { v: versionById.get(id) ?? null, at: nowMs, docs: [] };
+    for (const id of fullIds) {
+      const sd = sectionDataById.get(id) || {};
+      asgCache[id] = { v: sd.assignmentsVersion ?? null, at: nowMs, docs: [], av: { ...(sd.assignmentVersions || {}) } };
+    }
     for (const snap of snaps) {
       for (const d of snap.docs) asgCache[d.data().sectionId]?.docs.push({ id: d.id, data: d.data() });
     }
+  }
+  for (const id of deltaSections) {
+    const sd = sectionDataById.get(id) || {};
+    const entry = asgCache[id];
+    const { fetchIds, dropIds } = plans.get(id);
+    const gone = new Set([...fetchIds, ...dropIds]);
+    entry.docs = entry.docs.filter((d) => !gone.has(d.id));
+    deltaDocs.filter((d) => d.data().sectionId === id).forEach((d) => entry.docs.push({ id: d.id, data: d.data() }));
+    entry.v = sd.assignmentsVersion ?? null;
+    entry.av = { ...(sd.assignmentVersions || {}) };
   }
   for (const id of Object.keys(asgCache)) if (!visibleSectionIds.includes(id)) delete asgCache[id];
   if (!viewCtx) writeCache(dataUID(), asgCache);

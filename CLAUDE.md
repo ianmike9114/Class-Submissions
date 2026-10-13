@@ -406,6 +406,15 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   settings behind `getHiddenSectionIds()` are cached 30 min
   (`lms.termCache.<uid>`), so an archive/term switch reaches students within
   30 min. Sign-out clears all `lms.*Cache.*` stores.
+- **Per-assignment delta (`sections/{id}.assignmentVersions`).** The section
+  doc carries `{ assignmentId: timestamp }` plus `assignmentVersionsComplete`;
+  `js/teacher.js` `touchSection(sectionId, { changed, deleted })` maintains it
+  (**new assignment write paths must pass the ids**) and
+  `backfillAssignmentVersions()` writes the full map once when a teacher opens
+  the section. Students (`js/assignment-cache.js` `assignmentDelta()`) then
+  re-read only changed/new ids via `where(documentId(), "in", ...)` and drop
+  deleted ones; sections without a complete map keep the whole-class refetch on
+  `assignmentsVersion` change. No rules change, no index.
 - **Notification bell has third bucket, "new joins".** `js/student.js`'s
   `enroll()` stamps every new enrollment with `seen: false`;
   `js/teacher.js`'s `getNotifications()` queries `seen == false`

@@ -1,5 +1,5 @@
 import { db, ADMIN_EMAIL, isSuperAdmin } from "./firebase-config.js";
-import { guardPage, signOutUser } from "./auth.js?v=5";
+import { guardPage, signOutUser } from "./auth.js?v=6";
 import {
   collection, addDoc, doc, setDoc, updateDoc, deleteDoc, deleteField, writeBatch, getDoc, getDocs, getCountFromServer, query, where, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -364,18 +364,46 @@ async function deleteWhere(collectionName, field, value) {
   await Promise.all(snap.docs.map((d) => deleteDoc(d.ref)));
 }
 
-// Stamps sections/{id}.assignmentsVersion so students' cached assignment lists
-// (js/assignment-cache.js) refetch that class on their next load. Call after
-// EVERY assignment add/edit/delete - a missed path leaves students on the old
-// list for up to the cache's 6h TTL. Best-effort: never blocks the save.
-// Allowed by the existing sections update rule (canActAsOwner).
-async function touchSection(sectionId) {
+// Stamps sections/{id}.assignmentsVersion plus the per-assignment map
+// assignmentVersions.<id> so students' cached assignment lists
+// (js/assignment-cache.js) re-read ONLY the changed/new assignments (and drop
+// deleted ones) on their next load. Call after EVERY assignment add/edit/delete
+// with the affected ids - a missed path leaves students on the old copy for up
+// to the cache's 6h TTL. Best-effort: never blocks the save. Allowed by the
+// existing sections update rule (canActAsOwner).
+async function touchSection(sectionId, { changed = [], deleted = [] } = {}) {
   invalidateStructure();
   if (!sectionId) return;
+  const now = Date.now();
+  const patch = { assignmentsVersion: now };
+  changed.filter(Boolean).forEach((id) => { patch[`assignmentVersions.${id}`] = now; });
+  deleted.filter(Boolean).forEach((id) => { patch[`assignmentVersions.${id}`] = deleteField(); });
   try {
-    await updateDoc(doc(db, "sections", sectionId), { assignmentsVersion: Date.now() });
+    await updateDoc(doc(db, "sections", sectionId), patch);
   } catch (err) {
     console.error("touchSection failed (students refresh within 6h):", err);
+  }
+}
+
+// One-time per section: make sections/{id}.assignmentVersions list EVERY
+// assignment in the class (existing timestamps kept), then flag it complete so
+// students switch from whole-class refetches to per-assignment deltas. Runs
+// when the teacher opens the section (loadAssignments() already has the list).
+async function backfillAssignmentVersions(sectionId, assignmentIds) {
+  try {
+    const sec = (await cachedOwnerDocs("sections", "sections")).docs.find((d) => d.id === sectionId)?.data()
+      || (await getDoc(doc(db, "sections", sectionId))).data() || {};
+    const map = sec.assignmentVersions || {};
+    const keys = Object.keys(map);
+    const same = sec.assignmentVersionsComplete === true && keys.length === assignmentIds.length
+      && assignmentIds.every((id) => id in map);
+    if (same) return;
+    const now = Date.now();
+    const full = Object.fromEntries(assignmentIds.map((id) => [id, map[id] || now]));
+    await updateDoc(doc(db, "sections", sectionId), { assignmentVersions: full, assignmentVersionsComplete: true });
+    invalidateStructure();
+  } catch (err) {
+    console.error("assignmentVersions backfill failed (students do whole-class refetches):", err);
   }
 }
 
@@ -2546,7 +2574,7 @@ async function renameTopic(i) {
   const snap = await getDocs(query(collection(db, "assignments"), where("sectionId", "==", state.sectionId)));
   const targets = snap.docs.filter((d) => ownedByViewAs(d.data()) && (d.data().lesson || "") === oldName);
   await Promise.all(targets.map((d) => updateDoc(doc(db, "assignments", d.id), { lesson: newName })));
-  if (targets.length) await touchSection(state.sectionId);
+  if (targets.length) await touchSection(state.sectionId, { changed: targets.map((d) => d.id) });
   loadAssignments();
 }
 
@@ -3021,6 +3049,7 @@ document.addEventListener("click", (e) => {
 async function loadAssignments() {
   const q = query(collection(db, "assignments"), where("sectionId", "==", state.sectionId));
   const [snap, counts] = await Promise.all([getDocs(q), getPendingCounts()]);
+  backfillAssignmentVersions(state.sectionId, snap.docs.map((d) => d.id)); // not awaited - background, once per section
   // Materials aren't graded activities - keep them out of the Written/
   // Performance points overview.
   renderActivitiesSummary(snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((a) => a.type !== "material"));
@@ -3177,7 +3206,7 @@ async function loadAssignments() {
       if (!ok) return;
       b.disabled = true;
       await cascadeDeleteAssignment(b.dataset.deleteAssignment);
-      await touchSection(state.sectionId);
+      await touchSection(state.sectionId, { deleted: [b.dataset.deleteAssignment] });
       alert("Deleted.");
       loadAssignments();
     }));
@@ -3510,7 +3539,7 @@ el("add-assignment-form").addEventListener("submit", async (e) => {
     payload.totalPoints = quizData.totalPoints;
   }
   const ref = await addDoc(collection(db, "assignments"), payload);
-  await touchSection(payload.sectionId);
+  await touchSection(payload.sectionId, { changed: [ref.id] });
   if (quizData) {
     // Answer key in its own owner-only doc. If that write is refused (e.g.
     // the quizKeys rule isn't deployed yet), don't leave behind a quiz with
@@ -3520,7 +3549,7 @@ el("add-assignment-form").addEventListener("submit", async (e) => {
     } catch (err) {
       console.error(err);
       await deleteDoc(ref).catch(() => {});
-      await touchSection(payload.sectionId);
+      await touchSection(payload.sectionId, { deleted: [ref.id] });
       alert("Couldn't save the quiz answer key, so the quiz was not created. (Are the latest Firestore rules deployed?) " + err.message);
       return;
     }
@@ -3570,7 +3599,7 @@ el("bulk-due-apply").addEventListener("click", async () => {
 
   statusEl.textContent = "Applying...";
   await Promise.all(ids.map((id) => updateDoc(doc(db, "assignments", id), { dueDate: date })));
-  await touchSection(state.sectionId);
+  await touchSection(state.sectionId, { changed: ids });
   statusEl.textContent = `Set ${date} on ${ids.length} assignment(s).`;
   loadAssignments();
 });
@@ -3742,7 +3771,7 @@ el("edit-assignment-form").addEventListener("submit", async (e) => {
     }
   }
   await updateDoc(doc(db, "assignments", assignmentId), payload);
-  await touchSection(state.assignmentSectionId);
+  await touchSection(state.assignmentSectionId, { changed: [assignmentId] });
   alert("Saved.");
   await openAssignment(assignmentId);
 });

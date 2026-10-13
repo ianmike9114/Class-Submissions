@@ -32,7 +32,7 @@ of them with `--name value`.
 
 | Action | Code | Reads (default assumptions) |
 |---|---|---|
-| Student dashboard load | `js/student.js` `loadEverything()` + `js/assignment-cache.js` | ~45: enrollments + sections, plus subjects/settings on a 30-min miss, assignments only for changed classes, own submissions only for sections the teacher graded since |
+| Student dashboard load | `js/student.js` `loadEverything()` + `js/assignment-cache.js` | ~23: enrollments + sections, plus subjects/settings on a 30-min miss, only the assignments a teacher added/edited (`assignmentDelta()`), own submissions only for sections the teacher graded since |
 | Student submit | submit form → `loadEverything()` reload | ~13 reads + 2 writes (submission + own `subsVersion` stamp) |
 | Teacher Home visit | `loadSubjects()`, `getNotifications()` | ~46 with warm caches (term settings, subjects, inbox) |
 | Teacher structure refresh | `cachedOwnerDocs` structure keys + `computeMissingWorkCounts()` | ~147: first visit, then every 10-15 min or after own edits |
@@ -70,6 +70,14 @@ other devices refresh) - or after 1 hour. Photo-heavy sections that would
 overflow localStorage (`fitToBudget()`) simply stay uncached. Subjects + term
 settings are remembered for 30 minutes. About 104 reads per student per day,
 ~360 students/day with 10 teachers.
+
+**Only changed assignments are re-read.** `sections/{id}.assignmentVersions`
+maps every assignment id to a timestamp (`touchSection(sectionId, { changed,
+deleted })` on each write, backfilled once per section by
+`backfillAssignmentVersions()` when the teacher opens it). Students re-read
+just the ids whose timestamp moved (`documentId() in` query) and drop deleted
+ones, instead of the whole class. About 60 reads per student per day, ~620
+students/day with 10 teachers.
 
 ## Check against reality
 

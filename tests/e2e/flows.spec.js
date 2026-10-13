@@ -143,6 +143,35 @@ test("student's cached assignment list picks up a teacher edit on reload", async
   await page.reload();
   await expect(page.locator('.outline-item[data-title="E2E Essay v2"]').first()).toBeAttached();
   await expect(page.locator('.outline-item[data-title="E2E Essay"]')).toHaveCount(0);
+
+  // Add + delete reach the warm cache too (per-assignment delta path).
+  const t2 = await page.context().browser().newPage();
+  await blockProduction(t2);
+  t2.on("dialog", (d) => d.accept());
+  await signIn(t2, TEACHER, "Teacher One");
+  await t2.waitForURL(/teacher\.html/);
+  await t2.locator("#subjects-list [data-open]").first().click();
+  await t2.locator("#sections-list [data-open]").first().click();
+  await t2.locator("#view-section summary", { hasText: "Create" }).click();
+  await t2.locator('[data-create-type="assignment"]').click();
+  await t2.fill("#assignment-title", "E2E Temp");
+  await t2.fill("#assignment-total-points", "5");
+  await t2.locator("#create-submit-btn").click();
+  await expect(t2.locator("#assignments-list")).toContainText("E2E Temp");
+  await page.reload();
+  await expect(page.locator('.outline-item[data-title="E2E Temp"]').first()).toBeAttached();
+  await expect(page.locator('.outline-item[data-title="E2E Essay v2"]').first()).toBeAttached();
+
+  const tempRow = t2.locator(".assign-row", { hasText: "E2E Temp" }).first();
+  await tempRow.locator("details.menu > summary").click();
+  t2.removeAllListeners("dialog");
+  t2.on("dialog", (d) => (d.type() === "prompt" ? d.accept("E2E Temp") : d.accept()));
+  await tempRow.locator("[data-delete-assignment]").click();
+  await expect(t2.locator("#assignments-list")).not.toContainText("E2E Temp");
+  await t2.close();
+  await page.reload();
+  await expect(page.locator('.outline-item[data-title="E2E Essay v2"]').first()).toBeAttached();
+  await expect(page.locator('.outline-item[data-title="E2E Temp"]')).toHaveCount(0);
   expect(errors, errors.join(" | ")).toEqual([]);
 });
 
