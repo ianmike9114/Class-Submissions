@@ -318,8 +318,9 @@ test("Android app without Play Services signs in with a pasted email link", asyn
   await expect(page.locator("#app-email-status")).toContainText("Link sent");
   const res = await fetch("http://127.0.0.1:9099/emulator/v1/projects/demo-lms-e2e/oobCodes");
   const link = (await res.json()).oobCodes.filter((c) => c.email === email && c.requestType === "EMAIL_SIGNIN").pop().oobLink;
+  await expect(page.locator("#app-step2")).toBeVisible();
+  // Pasting a real link signs in on its own (no extra tap).
   await page.locator("#app-link-paste").fill(link);
-  await page.locator("#app-link-signin").click();
   await page.waitForURL(/student\.html/);
   expect(errors, errors.join(" | ")).toEqual([]);
   await ctx.close();
