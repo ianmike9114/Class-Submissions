@@ -3,9 +3,10 @@
 // browser, so the website behaves exactly as before.
 //
 // Why the app exists: a web page can never block screenshots. The app's
-// PrivacyScreen plugin sets Android's FLAG_SECURE on the whole student page
-// (modules, scores, quizzes), so screenshots/screen recordings come out black.
-// The flag outlives page loads, so the sign-in and teacher pages turn it off. Google also refuses its
+// PrivacyScreen plugin sets Android's FLAG_SECURE while a module (material) or
+// quiz is open, so screenshots/screen recordings come out black there; other
+// screens stay screenshot-able for error reports. The flag outlives page
+// loads, so the sign-in and teacher pages turn it off. Google also refuses its
 // sign-in inside WebViews (disallowed_useragent), so in the app sign-in goes
 // through the native FirebaseAuthentication plugin and only the resulting ID
 // token is handed to the page's Firebase JS SDK (js/auth.js).
@@ -37,7 +38,7 @@ function plugin(name) {
   }
 }
 
-// On for the student page, off for sign-in/teacher. Never throws - a failure just means the
+// On while a module/quiz is open, off otherwise. Never throws - a failure just means the
 // screenshot block isn't active (the web anti-cheat still runs).
 export async function setScreenshotBlock(on) {
   if (!isLmsApp()) return;

@@ -632,6 +632,7 @@ async function loadEverything() {
   // empty-state prompt showing. Cards are appended after this and stay
   // hidden (CSS .outline-mode) until an outline item opens one.
   list.innerHTML = '<div id="assignment-empty" class="muted">Pick an assignment from the course outline to open it.</div>';
+  syncScreenshotBlock(); // nothing open now
   el("course-outline-body").innerHTML = "";
   el("course-outline").classList.add("hidden");
   el("assignment-nav")?.classList.add("hidden"); // nothing open yet on a fresh render
@@ -810,6 +811,7 @@ async function loadEverything() {
         // Read-only reference material: no due date, no points, no submit
         // form. Just the title, any instructions, the embedded material, and a
         // student-facing "mark done" toggle (personal progress, not graded).
+        row.dataset.material = "1"; // screenshot-blocked in the app (syncScreenshotBlock)
         const isDone = doneMaterialIds.has(aDoc.id);
         row.innerHTML = `
           <strong>${a.title}</strong> <span class="status-ai-drafted">Material</span>
@@ -1355,7 +1357,17 @@ function openAssignment(assignmentId) {
     el("course-outline").open = false;
   }
   renderAssignmentNav(assignmentId);
+  syncScreenshotBlock();
   card.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// Android app only (no-op in browsers): screenshots/recordings come out black
+// while a module (material) card or a quiz is on screen. Everything else stays
+// screenshot-able so students can still send the teacher error screenshots.
+function syncScreenshotBlock() {
+  const moduleOpen = !el("assignments-panel")?.classList.contains("hidden")
+    && !!el("assignments-list")?.querySelector(".card.is-open[data-material]");
+  setScreenshotBlock(moduleOpen || document.body.classList.contains("quiz-open"));
 }
 
 // Client-side only - the outline is the navigation now, so search narrows the
@@ -1804,6 +1816,7 @@ function setStudentTab(tab) {
   el("tab-quizzes").setAttribute("aria-selected", String(quizzes));
   el("tab-assignments").setAttribute("aria-selected", String(!quizzes));
   try { localStorage.setItem("studentTab", quizzes ? "quizzes" : "assignments"); } catch { /* storage blocked */ }
+  syncScreenshotBlock();
 }
 document.addEventListener("click", (e) => {
   const t = e.target.closest("[data-student-tab]");
@@ -2192,10 +2205,10 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
     window.removeEventListener("orientationchange", checkSplit);
     window.screen?.removeEventListener?.("change", checkSecondScreen);
     document.removeEventListener("fullscreenchange", onFsChange);
-    // Screenshot block stays on: the whole student page is protected in the app.
     if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
     overlay.remove();
     document.body.classList.remove("quiz-open");
+    syncScreenshotBlock(); // off again unless a module card is still open
   }
 
   function currentAnswer(q) {
@@ -2409,9 +2422,7 @@ function showConnectionError(err) {
 guardPage("student").then(async (user) => {
   if (!user) return;
   currentUser = user;
-  // Android app only: screenshots/recordings come out black on every student
-  // screen (modules, scores, quizzes). No-op in browsers.
-  setScreenshotBlock(true);
+  syncScreenshotBlock(); // off until a module/quiz opens (FLAG_SECURE outlives page loads)
   // Header account: Google profile photo when available, else a circle with the
   // email initial; real display name beside it, full email on hover.
   const av = el("student-avatar");

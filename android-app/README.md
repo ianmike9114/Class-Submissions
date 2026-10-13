@@ -3,11 +3,11 @@
 A thin **Capacitor** wrapper (not React Native) that opens the live site
 `https://deped-class-submissions.vercel.app` and adds two native things:
 
-- **Screenshot blocking on every student screen** (modules, scores,
-  quizzes). `js/app-bridge.js` turns on the PrivacyScreen plugin (Android
-  `FLAG_SECURE`) when the student page loads; the sign-in and teacher pages
-  turn it off. While it's on, screenshots and screen recordings come out
-  black.
+- **Screenshot blocking on modules and quizzes**. `js/app-bridge.js` turns
+  on the PrivacyScreen plugin (Android `FLAG_SECURE`) while a module
+  (material) or quiz is open and off otherwise, so students can still
+  screenshot errors for the teacher. While it's on, screenshots and screen
+  recordings come out black.
 - **Native Google sign-in**. Google blocks its web sign-in button inside
   apps, so the app's account picker gets the ID token and the page signs in
   with it.
