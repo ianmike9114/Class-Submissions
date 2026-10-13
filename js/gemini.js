@@ -290,7 +290,7 @@ Rules:
 // parsed JSON - js/quiz.js's parseGeneratedQuiz() sanitizes it into builder
 // items, and the teacher reviews/edits every item before saving.
 // types: subset of ["mc","tf","id"].
-export async function generateQuiz({ topic, count = 10, types = ["mc"], gradeLevel = "11" }) {
+export async function generateQuiz({ topic, count = 10, types = ["mc"], gradeLevel = "11", avoid = [] }) {
   if (!topic || !topic.trim()) throw new Error("Type the quiz topic first.");
 
   const typeLines = {
@@ -312,7 +312,9 @@ Rules:
 - Prefer questions that check understanding and application (short scenarios, examples, "which of these") over pure word-for-word recall.
 - Multiple choice: exactly 4 plausible choices, only one correct, no "all of the above"/"none of the above". Vary the position of the correct answer.
 - True/False: avoid trick wording and double negatives.
-- Identification: the answer must be short and unambiguous.
+- Identification: the answer must be short and unambiguous.${avoid.length ? `
+- These questions already exist - write NEW ones that do not repeat or closely reword them:
+${avoid.filter(Boolean).slice(0, 60).map((p) => "  * " + p.trim().slice(0, 160)).join("\n")}` : ""}
 
 Return ONLY valid JSON, no markdown fences, in this exact shape:
 {"items":[ ...items as shown above... ]}`;

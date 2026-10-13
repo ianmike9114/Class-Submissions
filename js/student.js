@@ -6,7 +6,7 @@ import {
 import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=2";
 import { runJava } from "./runner.js";
 import { codeBlockHtml, highlightWithin } from "./highlight.js";
-import { seededShuffle, quizDeadlineMs } from "./quiz.js?v=1";
+import { seededShuffle, quizDeadlineMs, servedQuestions } from "./quiz.js?v=2";
 
 let currentUser = null;
 function el(id) { return document.getElementById(id); }
@@ -1654,13 +1654,17 @@ try { if (localStorage.getItem("studentTab") === "quizzes") setStudentTab("quizz
 //    blocked, printing hides the quiz;
 //  - leaving the screen (switching to ChatGPT, another tab/app) is counted
 //    and shown to the teacher, and the question blurs while focus is away;
-//  - a faint watermark with the student's name/email over the quiz, so a
-//    leaked screenshot shows who shared it.
+//  - a faint watermark with the student's name/email over the quiz, plus a
+//    drifting name + live-clock badge, so a leaked screenshot shows who took
+//    it and exactly when (iPhone screenshots can't be detected at all);
+//  - question bank: with quiz.drawCount each student gets a different random
+//    subset (servedQuestions), so one screenshot only covers part of it.
 // Scoring happens on the teacher's side against quizKeys (never readable
 // here), so nothing in this file knows the correct answers.
 
 function renderQuizIntro(assignmentId, a) {
-  const n = a.quiz?.questions?.length || 0;
+  const total = a.quiz?.questions?.length || 0;
+  const n = a.quiz?.drawCount && a.quiz.drawCount < total ? a.quiz.drawCount : total;
   const secs = a.quiz?.secondsPerItem || 60;
   return `
     <div class="quiz-intro">
@@ -1732,7 +1736,7 @@ document.addEventListener("click", async (e) => {
 
 function runQuiz(assignmentId, a, startedAtMs, resuming) {
   const seed = currentUser.uid + assignmentId;
-  const questions = seededShuffle(a.quiz.questions, seed);
+  const questions = servedQuestions(a.quiz.questions, a.quiz.drawCount, seed);
   const secsPerItem = a.quiz.secondsPerItem || 60;
   const deadline = quizDeadlineMs(startedAtMs, questions.length, secsPerItem);
   const saved = loadQuizState(assignmentId) || {};
@@ -1758,6 +1762,7 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
   overlay.setAttribute("aria-modal", "true");
   overlay.innerHTML = `
     <div class="quiz-watermark" aria-hidden="true">${Array.from({ length: 40 }, () => `<span>${who}</span>`).join("")}</div>
+    <div class="quiz-mover" aria-hidden="true"><span>${who}</span> · <span class="quiz-mover-time"></span></div>
     <div class="quiz-panel">
       <div class="quiz-top">
         <span class="quiz-title">${esc(a.title)}</span>
@@ -1779,6 +1784,23 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
   const warn = overlay.querySelector(".quiz-warn");
   let finished = false;
   let tick = null;
+
+  // Drifting name + live clock badge: lands in every screenshot, wherever on
+  // the screen it is, with the exact time it was taken.
+  const mover = overlay.querySelector(".quiz-mover");
+  const moverTime = overlay.querySelector(".quiz-mover-time");
+  const moveBadge = () => {
+    const maxX = Math.max(0, window.innerWidth - mover.offsetWidth - 8);
+    const maxY = Math.max(0, window.innerHeight - mover.offsetHeight - 8);
+    mover.style.transform = `translate(${Math.round(Math.random() * maxX)}px, ${Math.round(Math.random() * maxY)}px)`;
+  };
+  const updateMoverTime = () => {
+    moverTime.textContent = new Date(now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  };
+  updateMoverTime();
+  moveBadge();
+  const moverTimer = setInterval(moveBadge, 3000);
+  const moverClock = setInterval(updateMoverTime, 1000);
 
   // --- anti-copy ---
   const block = (ev) => ev.preventDefault();
@@ -1840,6 +1862,8 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
   function cleanup() {
     finished = true;
     clearInterval(tick);
+    clearInterval(moverTimer);
+    clearInterval(moverClock);
     document.removeEventListener("keyup", onKeyUp);
     document.removeEventListener("keydown", onKeyDown);
     document.removeEventListener("visibilitychange", onVisibility);
@@ -1946,7 +1970,7 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
     body.innerHTML = `<div class="quiz-q">Submitting your answers…</div>`;
     nextBtn.classList.add("hidden");
     // Only keep answers for real question ids (strip anything stale).
-    const ids = new Set(a.quiz.questions.map((x) => x.id));
+    const ids = new Set(questions.map((x) => x.id));
     const quizAnswers = Object.fromEntries(Object.entries(st.answers).filter(([k, v]) => ids.has(k) && v !== "" && v !== undefined));
     try {
       await addDoc(collection(db, "submissions"), {
@@ -1958,6 +1982,9 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
         codeOutput: "",
         photoPages: [],
         quizAnswers,
+        // Exactly which items this student was shown (question bank draw),
+        // so the teacher scores against them even if the quiz is edited later.
+        quizServed: questions.map((x) => x.id),
         quizLog: {
           leftCount: st.leftCount,
           leftEvents: st.leftEvents,

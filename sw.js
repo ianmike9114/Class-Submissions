@@ -22,7 +22,7 @@
  * activate handler deletes every cache that isn't the current one.
  */
 
-const CACHE_NAME = "class-submissions-v20";
+const CACHE_NAME = "class-submissions-v21";
 
 self.addEventListener("install", () => {
   // Activate this worker as soon as it's installed, don't wait for old tabs
