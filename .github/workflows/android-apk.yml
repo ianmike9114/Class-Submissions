@@ -41,7 +41,9 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: android-actions/setup-android@v3
+      # GitHub's ubuntu runner ships the Android SDK (ANDROID_HOME) with
+      # licenses accepted; Gradle fetches any missing platform itself.
+      # (android-actions/setup-android failed on the 'tools' package.)
 
       - run: npm install --no-audit --no-fund
       - name: Generate native project
