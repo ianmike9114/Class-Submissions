@@ -8,6 +8,9 @@
 import { extractDriveFileId } from "./embed.js";
 
 const STORAGE_KEY = "geminiApiKey";
+// "-latest" alias tracks Google's current Flash model, so
+// a pinned version (was gemini-2.0-flash) can't break when Google retires it.
+const GEMINI_MODEL = "gemini-flash-latest";
 
 export function getGeminiKey() {
   return localStorage.getItem(STORAGE_KEY) || "";
@@ -15,6 +18,83 @@ export function getGeminiKey() {
 
 export function setGeminiKey(key) {
   localStorage.setItem(STORAGE_KEY, key.trim());
+}
+
+// Groq (free key from console.groq.com, no credit card) is tried FIRST for the
+// text-only drafting tools (quiz + code examples); Gemini is the fallback if
+// Groq has no key, is down, or is rate-limited. The rubric-check stays
+// Gemini-only (it sends images). Same localStorage-only storage as Gemini.
+const GROQ_STORAGE_KEY = "groqApiKey";
+const GROQ_MODEL = "llama-3.3-70b-versatile";
+
+export function getGroqKey() {
+  return localStorage.getItem(GROQ_STORAGE_KEY) || "";
+}
+
+export function setGroqKey(key) {
+  localStorage.setItem(GROQ_STORAGE_KEY, key.trim());
+}
+
+async function callGroq(promptText, json) {
+  const body = {
+    model: GROQ_MODEL,
+    messages: [{ role: "user", content: promptText }],
+    temperature: 0.7,
+  };
+  if (json) body.response_format = { type: "json_object" };
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getGroqKey()}` },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`Groq request failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
+  }
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content || "";
+}
+
+async function callGemini(promptText, json) {
+  const body = { contents: [{ parts: [{ text: promptText }] }] };
+  if (json) body.generationConfig = { responseMimeType: "application/json" };
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${getGeminiKey()}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  );
+  if (!res.ok) {
+    throw new Error(`Gemini request failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
+  }
+  const data = await res.json();
+  return data.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
+}
+
+// Text-only drafting call: Groq first, Gemini fallback. Throws only if no key
+// is set or every configured provider failed.
+async function draftText(promptText, { json = false } = {}) {
+  const hasGroq = !!getGroqKey();
+  const hasGemini = !!getGeminiKey();
+  if (!hasGroq && !hasGemini) {
+    throw new Error("No AI key set. Add a free Groq key (console.groq.com) in Settings (gear icon) first.");
+  }
+  let groqError = null;
+  if (hasGroq) {
+    try {
+      return await callGroq(promptText, json);
+    } catch (err) {
+      groqError = err;
+      if (!hasGemini) throw err;
+    }
+  }
+  try {
+    return await callGemini(promptText, json);
+  } catch (err) {
+    if (groqError) throw new Error(`${groqError.message} | Gemini fallback also failed: ${err.message}`);
+    throw err;
+  }
 }
 
 function isYouTubeLink(url) {
@@ -106,7 +186,7 @@ Score each criterion using its own max-points scale, exactly as named above (the
   };
 
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -123,7 +203,7 @@ Score each criterion using its own max-points scale, exactly as named above (the
   try {
     return JSON.parse(cleaned);
   } catch {
-    throw new Error("Gemini didn't return valid JSON: " + rawText.slice(0, 300));
+    throw new Error("The AI didn't return valid JSON: " + rawText.slice(0, 300));
   }
 }
 
@@ -133,8 +213,6 @@ Score each criterion using its own max-points scale, exactly as named above (the
 // style: "starter" (skeleton with TODOs), "solution" (complete worked
 // example), or "commented" (complete + heavily explained line by line).
 export async function generateCodeExample({ topic, language = "Java", style = "commented" }) {
-  const apiKey = getGeminiKey();
-  if (!apiKey) throw new Error("No Gemini API key set. Add one in Settings first.");
   if (!topic || !topic.trim()) throw new Error("Describe what the example should do first.");
 
   const styleLine = {
@@ -152,33 +230,17 @@ Rules:
 - If it is ${language} and a runnable program, put the entry point in a public class named Main so it can be run as-is.
 - Keep it appropriate for a beginner Grade 11-12 student.`;
 
-  const body = { contents: [{ parts: [{ text: promptText }] }] };
-
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }
-  );
-  if (!res.ok) {
-    throw new Error(`Gemini request failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
-  }
-  const data = await res.json();
-  const rawText = data.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
+  const rawText = await draftText(promptText);
   // Strip any stray markdown fences the model adds despite the instruction.
   return rawText.replace(/^```[a-zA-Z]*\s*/i, "").replace(/```\s*$/, "").trim();
 }
 
 // Teacher-only: draft quiz items for a topic. Same browser-direct call and
-// "Return ONLY valid JSON" pattern as runRubricCheck. Returns Gemini's raw
+// "Return ONLY valid JSON" pattern as runRubricCheck. Returns the model's raw
 // parsed JSON - js/quiz.js's parseGeneratedQuiz() sanitizes it into builder
 // items, and the teacher reviews/edits every item before saving.
 // types: subset of ["mc","tf","id"].
 export async function generateQuiz({ topic, count = 10, types = ["mc"], gradeLevel = "11" }) {
-  const apiKey = getGeminiKey();
-  if (!apiKey) throw new Error("No Gemini API key set. Add one in Settings (gear icon) first.");
   if (!topic || !topic.trim()) throw new Error("Type the quiz topic first.");
 
   const typeLines = {
@@ -205,29 +267,12 @@ Rules:
 Return ONLY valid JSON, no markdown fences, in this exact shape:
 {"items":[ ...items as shown above... ]}`;
 
-  const body = {
-    contents: [{ parts: [{ text: promptText }] }],
-    generationConfig: { responseMimeType: "application/json" },
-  };
-
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }
-  );
-  if (!res.ok) {
-    throw new Error(`Gemini request failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
-  }
-  const data = await res.json();
-  const rawText = data.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
+  const rawText = await draftText(promptText, { json: true });
   const cleaned = rawText.replace(/^```json\s*/i, "").replace(/```$/, "").trim();
 
   try {
     return JSON.parse(cleaned);
   } catch {
-    throw new Error("Gemini didn't return valid JSON: " + rawText.slice(0, 300));
+    throw new Error("The AI didn't return valid JSON: " + rawText.slice(0, 300));
   }
 }

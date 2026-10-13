@@ -78,9 +78,12 @@
       <h2>General Settings</h2>
       <form id="settings-form">
         <div id="gemini-settings-section" class="hidden">
-          <label>Gemini API key (for the Code Examples generator)</label>
+          <label>Groq API key (recommended - drafts quizzes and code examples)</label>
+          <input id="groq-key" type="password" placeholder="Paste your key from console.groq.com/keys" />
+          <p class="muted">Free, no credit card: sign in at console.groq.com with Gmail, open API Keys, then Create API Key.</p>
+          <label>Gemini API key (optional backup)</label>
           <input id="gemini-key" type="password" placeholder="Paste your key from aistudio.google.com/apikey" />
-          <p class="muted">Free key from aistudio.google.com/apikey. Kept in this browser only - never saved to the repo or seen by students.</p>
+          <p class="muted">Used only if Groq is unavailable. Free key from aistudio.google.com/apikey (leave billing off so it stays free). Both keys are kept in this browser only - never saved to the repo or seen by students.</p>
         </div>
         <label>Notify students by email on new assignment (EmailJS)</label>
         <input id="emailjs-service-id" placeholder="Service ID" />
@@ -112,7 +115,7 @@
     <section id="view-code-gen" class="hidden">
       <div class="card">
         <h2>&#128187; Code Examples</h2>
-        <p class="muted">Draft a starter or worked program to hand to your students. Needs your free Gemini API key (add it in Settings). Runs from your browser using your own key - students never see it.</p>
+        <p class="muted">Draft a starter or worked program to hand to your students. Needs your free Groq (or Gemini) API key (add it in Settings). Runs from your browser using your own key - students never see it.</p>
         <form id="codegen-form">
           <label>What should the example do?</label>
           <textarea id="codegen-topic" rows="3" required placeholder="e.g. Sort an array of customer transaction amounts using bubble sort, then print them in order"></textarea>
@@ -536,7 +539,7 @@
     <button type="button" id="photo-lightbox-close" aria-label="Close preview">&times;</button>
   </div>
 
-  <script type="module" src="js/teacher.js?v=94"></script>
+  <script type="module" src="js/teacher.js?v=96"></script>
 
   <!-- PWA: register the service worker (see sw.js). Failure swallowed. -->
   <script>

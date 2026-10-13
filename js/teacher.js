@@ -3,7 +3,7 @@ import { guardPage, signOutUser } from "./auth.js";
 import {
   collection, addDoc, doc, setDoc, updateDoc, deleteDoc, deleteField, writeBatch, getDoc, getDocs, getCountFromServer, query, where, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { getGeminiKey, setGeminiKey, runRubricCheck, generateCodeExample, generateQuiz } from "./gemini.js?v=2";
+import { getGeminiKey, setGeminiKey, getGroqKey, setGroqKey, runRubricCheck, generateCodeExample, generateQuiz } from "./gemini.js?v=4";
 import {
   QUIZ_MIN_ITEMS, QUIZ_MAX_ITEMS, QUIZ_TYPES, QUIZ_GRACE_SECONDS, splitQuiz, joinQuiz, validateQuizItems,
   parseGeneratedQuiz, newItemId, splitAccepted, scoreQuiz, quizTimeLimitSeconds, formatDuration,
@@ -5416,7 +5416,10 @@ wireOpenInChromeButtons(el("assignment-context"));
 // ---------- settings (Gemini key + EmailJS config, kept in localStorage only) ----------
 el("settings-form").addEventListener("submit", (e) => {
   e.preventDefault();
-  if (GEMINI_KEY_NEEDED) setGeminiKey(el("gemini-key").value);
+  if (GEMINI_KEY_NEEDED) {
+    setGroqKey(el("groq-key").value);
+    setGeminiKey(el("gemini-key").value);
+  }
   saveEmailConfig({
     serviceId: el("emailjs-service-id").value,
     templateId: el("emailjs-template-id").value,
@@ -5765,6 +5768,7 @@ guardPage("teacher").then(async (user) => {
   // The Gemini key box is shown whenever a feature needs it (the hidden AI
   // rubric-check OR the Code Examples generator).
   if (GEMINI_KEY_NEEDED) {
+    el("groq-key").value = getGroqKey();
     el("gemini-key").value = getGeminiKey();
     el("gemini-settings-section").classList.remove("hidden");
   }
