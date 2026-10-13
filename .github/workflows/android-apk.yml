@@ -1,0 +1,90 @@
+name: Android APK
+
+# Builds the optional Android app (android-app/, a Capacitor wrapper around the
+# live site) and publishes class-submissions.apk to a GitHub Release, which is
+# what js/app-bridge.js's APP_APK_URL downloads. Runs only on an app-v* tag or
+# by hand - normal site pushes never touch it. Free (GitHub-hosted runner).
+#
+# Needs repo secrets (Settings -> Secrets and variables -> Actions):
+#   ANDROID_KEYSTORE_BASE64   base64 of the release keystore (.jks)
+#   ANDROID_KEYSTORE_PASSWORD keystore password
+#   ANDROID_KEY_ALIAS         key alias inside the keystore
+#   ANDROID_KEY_PASSWORD      key password
+# Keep the same keystore forever: Android refuses to update an app signed
+# with a different key, and Firebase's Google sign-in is tied to its SHA-1.
+
+on:
+  push:
+    tags: ["app-v*"]
+  workflow_dispatch:
+  # PRs touching the app: build check only (dummy Firebase config, unsigned,
+  # nothing published).
+  pull_request:
+    paths: ["android-app/**", ".github/workflows/android-apk.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    name: Build signed APK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      # GitHub's ubuntu runner ships the Android SDK (ANDROID_HOME) with
+      # licenses accepted; Gradle fetches any missing platform itself.
+      # (android-actions/setup-android failed on the 'tools' package.)
+
+      - run: npm install --no-audit --no-fund
+      - name: Generate native project
+        env:
+          APP_VERSION_CODE: ${{ github.run_number }}
+          ALLOW_DUMMY_GOOGLE_SERVICES: ${{ github.event_name == 'pull_request' && '1' || '' }}
+          APP_VERSION_NAME: ${{ startsWith(github.ref_name, 'app-v') && github.ref_name || '0.0.0-dev' }}
+        run: bash scripts/prepare-android.sh
+
+      - name: Build release APK (unsigned)
+        working-directory: android-app/android
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Sign APK
+        if: github.event_name != 'pull_request'
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KS_B64" ]; then echo "::error::Signing secrets are not set - see the comment at the top of this workflow."; exit 1; fi
+          echo "$KS_B64" | base64 -d > release.jks
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$BT/zipalign" -f -p 4 android/app/build/outputs/apk/release/app-release-unsigned.apk aligned.apk
+          "$BT/apksigner" sign --ks release.jks --ks-pass env:KS_PASS --ks-key-alias "$KEY_ALIAS" --key-pass env:KEY_PASS --out class-submissions.apk aligned.apk
+          "$BT/apksigner" verify --print-certs class-submissions.apk | head -5
+          rm -f release.jks
+
+      - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
+        with:
+          name: class-submissions-apk
+          path: android-app/class-submissions.apk
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/app-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: android-app/class-submissions.apk
+          make_latest: true
+          body: |
+            Class Submissions Android app. Download **class-submissions.apk** on an Android phone, open it, allow "install unknown apps" if asked, then Install.
+            Screenshots are blocked while a quiz is open.
