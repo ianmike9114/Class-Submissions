@@ -552,6 +552,16 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   🚨). iPhone Safari has no element full screen and no screenshot event — gate
   never shows there, only app-switching counts. Blocking screenshots needs a
   native Android wrapper (`FLAG_SECURE`) — noted as a future project, not built.
+  **Android app bridge** (`js/app-bridge.js`, inert in browsers): the
+  optional Capacitor wrapper in `android-app/` loads the live site;
+  `isLmsApp()` detects it. Inside the app `runQuiz` calls
+  `setScreenshotBlock(true/false)` (PrivacyScreen plugin → Android
+  `FLAG_SECURE`, screenshots/recordings black) and skips the full-screen gate;
+  `index.html` replaces Google's web button (blocked in WebViews) with the
+  native picker → `signInWithGoogleIdToken()`. Teacher option
+  `quiz.requireApp` ("Android students must use the app") makes Android
+  browsers show a Download-the-app gate (`APP_APK_URL`, GitHub Releases)
+  instead of Start — client-side deterrence, spoofable like the rest.
   `gemini.js`/`quiz.js` imports carry their own `?v=` (bump when changed —
   `scripts/bump-version.mjs` doesn't cover sub-modules).
 

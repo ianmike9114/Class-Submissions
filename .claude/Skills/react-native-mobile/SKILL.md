@@ -5,6 +5,12 @@ description: React Native companion app for the DepEd Student LMS — same Fireb
 
 # React Native mobile app
 
+> **Superseded for now (2026-10-13):** the user chose a thin **Capacitor
+> wrapper** (`android-app/`, loads the live site, adds screenshot blocking
+> during quizzes + native Google sign-in) instead of this full rewrite. See
+> `js/app-bridge.js` and the CLAUDE.md quiz bullet. Keep this file only as
+> the reference if a full native rewrite is ever requested.
+
 **`/mobile` doesn't exist in this repo yet.** This skill documents the
 intended architecture so the first scaffolding and every session after
 follow one plan instead of improvising per-session. Once real code
