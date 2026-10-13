@@ -626,7 +626,10 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   no input is focused — the keyboard), counting `quizLog.splitScreen` (teacher
   flag). Not a breach, so a false positive can't auto-submit. The Android app
   also sets `resizeableActivity="false"` (`prepare-android.sh`), so phones
-  refuse split screen for it outright.
+  refuse split screen for it outright. **Second monitor**: `hasSecondScreen()`
+  (`screen.isExtended`, Chrome/Edge only) sets `quizLog.secondScreen` + a
+  student warning and the teacher flag "Second screen connected" — a flag, not
+  a breach (docked laptops/projectors also trigger it).
   **Android app bridge** (`js/app-bridge.js`, inert in browsers): the
   optional Capacitor wrapper in `android-app/` loads the live site;
   `isLmsApp()` detects it. Inside the app `runQuiz` calls

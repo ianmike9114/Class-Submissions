@@ -4,8 +4,15 @@ import {
   hashSeed, seededShuffle, normalizeAnswer, splitAccepted, isCorrect, scoreQuiz,
   quizDeadlineMs, splitQuiz, joinQuiz, validateQuizItems, parseGeneratedQuiz, formatDuration,
   servedQuestions, QUIZ_MAX_BANK, choiceLengthWarning, countChoiceLengthWarnings, QUIZ_BREACH_LIMIT,
-  balanceAnswerPositions, answerPatternWarning, isSplitWindow,
+  balanceAnswerPositions, answerPatternWarning, isSplitWindow, hasSecondScreen,
 } from "../../js/quiz.js";
+
+describe("hasSecondScreen", () => {
+  it("flags an extended display", () => expect(hasSecondScreen({ isExtended: true })).toBe(true));
+  it("single display is fine", () => expect(hasSecondScreen({ isExtended: false })).toBe(false));
+  it("unsupported browser (no isExtended) never flags", () => expect(hasSecondScreen({})).toBe(false));
+  it("missing screen never flags", () => expect(hasSecondScreen(undefined)).toBe(false));
+});
 
 describe("isSplitWindow", () => {
   const phone = { touch: true, typing: false, screenWidth: 400, screenHeight: 860 };

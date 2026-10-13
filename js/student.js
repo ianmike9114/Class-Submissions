@@ -7,7 +7,7 @@ import {
 import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=2";
 import { runJava } from "./runner.js";
 import { codeBlockHtml, highlightWithin } from "./highlight.js";
-import { seededShuffle, quizDeadlineMs, servedQuestions, QUIZ_BREACH_LIMIT, isSplitWindow } from "./quiz.js?v=6";
+import { seededShuffle, quizDeadlineMs, servedQuestions, QUIZ_BREACH_LIMIT, isSplitWindow, hasSecondScreen } from "./quiz.js?v=7";
 import {
   readCache, writeCache, staleSectionIds, assignmentDelta, asDoc, chunk, readStore, writeStore, fitToBudget,
   SUB_PREFIX, SUB_CACHE_TTL_MS, TERM_PREFIX, TERM_CACHE_TTL_MS,
@@ -1951,6 +1951,7 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
     breachEvents: saved.breachEvents || [],
     fullscreenExits: saved.fullscreenExits || 0,
     splitScreen: saved.splitScreen || 0,
+    secondScreen: saved.secondScreen || false,
     resumes: (saved.resumes || 0) + (resuming ? 1 : 0),
     itemStartedAt: saved.itemStartedAt || null,
     skew: saved.skew || 0,
@@ -2149,6 +2150,21 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
   window.addEventListener("resize", checkSplit);
   window.addEventListener("orientationchange", checkSplit);
 
+  // --- second monitor (laptop/desktop) ---
+  // Notes on another display never blur the full-screen quiz. Can't be
+  // blocked, so it's a teacher flag + warning, not a breach (a docked laptop
+  // or projector would be a false positive).
+  const checkSecondScreen = () => {
+    if (finished || !hasSecondScreen(window.screen)) return;
+    if (!st.secondScreen) {
+      st.secondScreen = true;
+      persist();
+    }
+    showWarn("A second screen is connected - your teacher will see this.");
+  };
+  checkSecondScreen();
+  window.screen?.addEventListener?.("change", checkSecondScreen);
+
   document.addEventListener("visibilitychange", onVisibility);
   window.addEventListener("blur", onBlur);
   window.addEventListener("focus", onFocus);
@@ -2174,6 +2190,7 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
     window.removeEventListener("beforeunload", onBeforeUnload);
     window.removeEventListener("resize", checkSplit);
     window.removeEventListener("orientationchange", checkSplit);
+    window.screen?.removeEventListener?.("change", checkSecondScreen);
     document.removeEventListener("fullscreenchange", onFsChange);
     setScreenshotBlock(false);
     if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
@@ -2303,6 +2320,7 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
           breachEvents: st.breachEvents,
           fullscreenExits: st.fullscreenExits,
           splitScreen: st.splitScreen,
+          secondScreen: st.secondScreen,
           breachSubmitted: !!byBreach,
           answered: Object.keys(quizAnswers).length,
         },
