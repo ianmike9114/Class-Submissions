@@ -1,0 +1,39 @@
+name: Production smoke
+
+# Read-only check of the LIVE site (tests/prod/prod-smoke.spec.js): pages
+# load, signed-out guards redirect, versioned assets are served, and the
+# deployed ?v= numbers match the deployed commit. Never signs in and aborts
+# every Firestore/Auth/AI request, so it costs zero Spark quota. A failed run
+# emails the repo owner (GitHub's default Actions notification).
+
+on:
+  # Vercel reports each deployment back to GitHub.
+  deployment_status:
+  # Daily at 06:00 Philippine time - catches CDN / Google sign-in / SDK outages.
+  schedule:
+    - cron: "0 22 * * *"
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    name: Live site smoke (Playwright)
+    # Only successful Production deployments (not previews), plus cron/manual.
+    if: >
+      github.event_name != 'deployment_status' ||
+      (github.event.deployment_status.state == 'success' &&
+       github.event.deployment.environment == 'Production')
+    runs-on: ubuntu-latest
+    env:
+      PROD_URL: https://deped-class-submissions.vercel.app
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Compare against exactly the commit that was deployed.
+          ref: ${{ github.event.deployment.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e:prod

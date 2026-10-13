@@ -96,11 +96,34 @@ underlying behavior. If you drive real sign-in, use the **Auth emulator**
 off email/uid not `sign_in_provider`, so an emulator email/password user
 exercises the same role routing.
 
+### 2b. User flows against the emulators (`npm run e2e:flows`)
+
+`tests/e2e/flows.spec.js` (config `playwright.flows.config.js`) drives the real
+pages with `?emu=1` — `js/firebase-config.js` connects to the local Auth +
+Firestore emulators **only on localhost** and switches to project
+`demo-lms-e2e`. Sign-in uses the Auth emulator's fake Google tokens
+(`tests/e2e/helpers.js` `signIn()`), teachers are seeded with
+`withSecurityRulesDisabled`. Covers: teacher creates subject/section/
+assignment → student joins by code → teacher approves → student submits →
+teacher grades + publishes → student sees 9/10; quiz with a question bank
+(gets 5 of 6, teacher sees "/ 5"); a second teacher can't see the first
+teacher's subject. CI job "User flows". Locally, if port 8420 is busy:
+`PW_PORT=8433 npm run e2e:flows`.
+
+### 2c. Production smoke (`npm run e2e:prod`)
+
+`tests/prod/prod-smoke.spec.js` (config `playwright.prod.config.js`) checks
+the LIVE site read-only: login reaches signed-out state, dashboards redirect
+when signed out, every `?v=` asset/SW/manifest/icon returns 200, and the live
+`?v=` numbers match the commit. Aborts all Firestore/Auth/AI requests — zero
+quota. `.github/workflows/prod-smoke.yml` runs it after each Vercel
+production deploy, daily, and on demand.
+
 ### 3. "Load" → Spark quota budget (the real deploy-safety artifact)
 
 A local emulator has **no quotas**, so it cannot validate Spark limits. What
 protects a Spark deploy is a **reads/writes-per-session budget**, not a load
-generator. See `tests/load/quota-budget.md`: it counts Firestore ops per key
+generator. See `tests/load/quota-budget.md` + `npm run budget -- --students N --teachers M` (`scripts/quota-budget.mjs`, formulas in `tests/load/session-costs.json`): it counts Firestore ops per key
 session (student/teacher dashboard load, `getNotifications()` fan-out, submit,
 grade) × realistic concurrent users vs the 50k read / 20k write daily cap.
 Pair with the `deployment-critic` skill for the full read-load analysis.

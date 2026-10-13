@@ -10,8 +10,14 @@ import { defineConfig, devices } from "@playwright/test";
 // brittle. The high-value functional/security coverage lives in the
 // emulator-backed rules suite (npm run test:rules). Add data-testid hooks +
 // flows here incrementally.
+// PW_PORT lets a local run avoid a port another preview server already uses.
+const PORT = Number(process.env.PW_PORT || 8420);
+
 export default defineConfig({
   testDir: "tests/e2e",
+  // flows.spec.js needs the Firebase emulators - run it via
+  // `npm run e2e:flows` (playwright.flows.config.js), not the plain smoke run.
+  testIgnore: ["**/flows.spec.js"],
   timeout: 30000,
   fullyParallel: true,
   // The login smoke loads Google's third-party sign-in widget, which can throw
@@ -20,7 +26,7 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "list" : [["list"]],
   use: {
-    baseURL: "http://localhost:8420",
+    baseURL: `http://localhost:${PORT}`,
     trace: "on-first-retry",
     // Default: Playwright's bundled Chromium (CI installs it via
     // `npx playwright install chromium`). Set PW_CHANNEL to use an already
@@ -34,8 +40,8 @@ export default defineConfig({
     { name: "mobile", use: { ...devices["Pixel 5"] } },
   ],
   webServer: {
-    command: "python -m http.server 8420",
-    url: "http://localhost:8420",
+    command: `python -m http.server ${PORT}`,
+    url: `http://localhost:${PORT}`,
     reuseExistingServer: !process.env.CI,
     timeout: 30000,
   },

@@ -10,7 +10,10 @@
     "test:rules": "firebase emulators:exec --only firestore --project demo-lms-rules \"vitest run --config vitest.rules.config.js\"",
     "emu": "firebase emulators:start --only firestore,auth",
     "e2e": "playwright test",
-    "bump": "node scripts/bump-version.mjs"
+    "bump": "node scripts/bump-version.mjs",
+    "e2e:flows": "firebase emulators:exec --only auth,firestore --project demo-lms-e2e \"playwright test -c playwright.flows.config.js\"",
+    "e2e:prod": "playwright test -c playwright.prod.config.js",
+    "budget": "node scripts/quota-budget.mjs"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.2",

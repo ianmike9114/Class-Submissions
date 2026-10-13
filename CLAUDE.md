@@ -70,6 +70,12 @@ below). Nothing to `npm install`/build/lint/test.
 
 - **Preview locally**: `python -m http.server 8420` from repo root (also
   configured in `.claude/launch.json`), then open `http://localhost:8420`.
+- **Tests** (dev-only, see `.claude/Skills/qa-testing`): `npm test` (unit),
+  `npm run test:rules` (rules on emulator), `npm run e2e` (page smoke),
+  `npm run e2e:flows` (full user flows on Auth+Firestore emulators via the
+  localhost-only `?emu=1` switch in `js/firebase-config.js`), `npm run e2e:prod`
+  (read-only live-site smoke; also runs after each deploy + daily), `npm run
+  budget -- --students N --teachers M` (Spark daily read/write estimate).
 - **Deploy Firestore rules** (only real "build artifact" in repo):
   `firebase deploy --only firestore:rules`, after `firebase login`. Full
   deploy steps (Firebase project setup, GitHub Pages): `README.md`.

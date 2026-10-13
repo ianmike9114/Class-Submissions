@@ -1,1 +1,5 @@
 android-app/
+tests/
+scripts/
+playwright*.config.js
+vitest*.config.js
