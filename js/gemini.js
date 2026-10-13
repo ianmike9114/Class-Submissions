@@ -25,7 +25,18 @@ export function setGeminiKey(key) {
 // Groq has no key, is down, or is rate-limited. The rubric-check stays
 // Gemini-only (it sends images). Same localStorage-only storage as Gemini.
 const GROQ_STORAGE_KEY = "groqApiKey";
-const GROQ_MODEL = "llama-3.3-70b-versatile";
+// Groq retires models (llama-3.3-70b-versatile was shut down Aug 2026), so
+// the model isn't hard-wired: try these in order, and on "model_not_found"
+// ask Groq's /models endpoint which ones this key can use and pick the first
+// match (or any chat model). The working choice is remembered per browser.
+const GROQ_MODEL_PREFS = [
+  "openai/gpt-oss-120b",
+  "qwen/qwen3.6-27b",
+  "openai/gpt-oss-20b",
+  "llama-3.3-70b-versatile",
+  "llama-3.1-8b-instant",
+];
+const GROQ_MODEL_STORAGE_KEY = "groqModel";
 
 export function getGroqKey() {
   return localStorage.getItem(GROQ_STORAGE_KEY) || "";
@@ -35,41 +46,80 @@ export function setGroqKey(key) {
   localStorage.setItem(GROQ_STORAGE_KEY, key.trim());
 }
 
-async function callGroq(promptText, json) {
+async function pickGroqModel() {
+  const res = await fetch("https://api.groq.com/openai/v1/models", {
+    headers: { Authorization: `Bearer ${getGroqKey()}` },
+  });
+  if (!res.ok) throw new Error(`Groq model list failed (${res.status})`);
+  const ids = ((await res.json()).data || []).map((m) => m.id);
+  const pick = GROQ_MODEL_PREFS.find((m) => ids.includes(m))
+    || ids.find((id) => !/whisper|tts|guard|playai|orpheus|compound|prompt-guard/i.test(id));
+  if (!pick) throw new Error("Groq has no usable chat model for this key.");
+  localStorage.setItem(GROQ_MODEL_STORAGE_KEY, pick);
+  return pick;
+}
+
+async function groqRequest(model, promptText, json) {
   const body = {
-    model: GROQ_MODEL,
+    model,
     messages: [{ role: "user", content: promptText }],
     temperature: 0.7,
   };
   if (json) body.response_format = { type: "json_object" };
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+  // gpt-oss models "think" first; keep it short so drafts stay fast.
+  if (model.startsWith("openai/gpt-oss")) body.reasoning_effort = "low";
+  // Qwen puts its <think> notes in the reply text unless hidden.
+  if (model.startsWith("qwen/")) body.reasoning_format = "hidden";
+  return fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${getGroqKey()}` },
     body: JSON.stringify(body),
   });
+}
+
+async function callGroq(promptText, json) {
+  let model = localStorage.getItem(GROQ_MODEL_STORAGE_KEY) || GROQ_MODEL_PREFS[0];
+  let res = await groqRequest(model, promptText, json);
+  if (res.status === 404 || res.status === 400) {
+    const text = await res.text();
+    if (!/model_not_found|decommissioned|does not exist/i.test(text)) {
+      throw new Error(`Groq request failed (${res.status}): ${text.slice(0, 300)}`);
+    }
+    model = await pickGroqModel();
+    res = await groqRequest(model, promptText, json);
+  }
   if (!res.ok) {
     throw new Error(`Groq request failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
   }
   const data = await res.json();
-  return data.choices?.[0]?.message?.content || "";
+  return (data.choices?.[0]?.message?.content || "").replace(/<think>[\s\S]*?<\/think>/g, "").trim();
 }
 
+// Gemini returns 503 "high demand" in spikes - retry once after a short wait,
+// then try the lighter Flash-Lite model before giving up.
 async function callGemini(promptText, json) {
   const body = { contents: [{ parts: [{ text: promptText }] }] };
   if (json) body.generationConfig = { responseMimeType: "application/json" };
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${getGeminiKey()}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+  const attempts = [GEMINI_MODEL, GEMINI_MODEL, "gemini-flash-lite-latest"];
+  let lastError = null;
+  for (let i = 0; i < attempts.length; i++) {
+    if (i > 0) await new Promise((r) => setTimeout(r, 2000));
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${attempts[i]}:generateContent?key=${getGeminiKey()}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }
+    );
+    if (res.ok) {
+      const data = await res.json();
+      return data.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
     }
-  );
-  if (!res.ok) {
-    throw new Error(`Gemini request failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
+    lastError = new Error(`Gemini request failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
+    if (res.status !== 503 && res.status !== 429 && res.status !== 500) throw lastError;
   }
-  const data = await res.json();
-  return data.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
+  throw lastError;
 }
 
 // Text-only drafting call: Groq first, Gemini fallback. Throws only if no key

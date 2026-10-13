@@ -526,7 +526,7 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   quiz fails (the app removes the half-made assignment and says so).
   **AI provider: Groq first, Gemini fallback.** `js/gemini.js`'s `draftText()`
   backs `generateQuiz()`/`generateCodeExample()`: tries Groq
-  (`llama-3.3-70b-versatile`, OpenAI-compatible, free key from console.groq.com,
+  (model auto-picked: `openai/gpt-oss-120b` first, falls back via `/models` on model_not_found — llama-3.3-70b was retired Aug 2026; OpenAI-compatible, free key from console.groq.com,
   stored as `groqApiKey` in localStorage like the Gemini key) and falls back to
   Gemini (`gemini-flash-latest` alias) if Groq has no key or fails. Rubric-check stays Gemini-only (images).
   `gemini.js`/`quiz.js` imports carry their own `?v=` (bump when changed —
