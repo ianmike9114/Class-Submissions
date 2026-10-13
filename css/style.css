@@ -1325,6 +1325,39 @@ body.quiz-open { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .quiz-mover { transition: none; }
 }
+/* Breach (left full screen / switched apps / screenshot key): red blink. */
+.quiz-breach-flash::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+  background: #b91c1c;
+  pointer-events: none;
+  animation: quiz-breach-blink 0.9s steps(1, end);
+}
+@keyframes quiz-breach-blink {
+  0%, 33%, 66% { opacity: 0.55; }
+  16%, 50%, 83%, 100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .quiz-breach-flash::after { animation: none; opacity: 0.35; }
+}
+/* "Continue in full screen" gate - covers the question until re-entered. */
+.quiz-fs-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  background: var(--gray-bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1.5rem;
+  text-align: center;
+}
+.quiz-fs-gate.hidden { display: none; }
+.quiz-fs-gate .quiz-fs-btn { min-height: 44px; }
 .quiz-panel {
   position: relative;
   z-index: 1;

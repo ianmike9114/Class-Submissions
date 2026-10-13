@@ -543,6 +543,15 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   longest by ≥25% and ≥8 chars; the builder shows it live per item and asks to
   confirm on save (warning, not a block). `generateQuiz()`'s prompt tells the AI
   to keep all 4 choices similar in length with the answer never the longest.
+  **Full-screen breach mode** (developer feedback, decoded via the
+  `pangasinan-feedback-triage` skill): `runQuiz` shows a "Continue in full
+  screen" gate (fresh tap = user gesture) where `document.fullscreenEnabled`;
+  exiting full screen, leaving the page, or the PrintScreen key is a breach
+  (`recordBreach()`, 1.5s dedupe) → red blink + "Breach N of 3"; the 3rd
+  (`QUIZ_BREACH_LIMIT`) auto-submits (`quizLog.breachSubmitted`, teacher sees
+  🚨). iPhone Safari has no element full screen and no screenshot event — gate
+  never shows there, only app-switching counts. Blocking screenshots needs a
+  native Android wrapper (`FLAG_SECURE`) — noted as a future project, not built.
   `gemini.js`/`quiz.js` imports carry their own `?v=` (bump when changed —
   `scripts/bump-version.mjs` doesn't cover sub-modules).
 

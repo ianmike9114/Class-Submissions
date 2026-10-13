@@ -26,6 +26,9 @@ export const QUIZ_TYPES = { mc: "Multiple choice", tf: "True / False", id: "Iden
 // Extra seconds allowed past the official time limit before the teacher's
 // review flags a submission as "over time" (slow networks, auto-submit lag).
 export const QUIZ_GRACE_SECONDS = 60;
+// Leaving full screen, switching apps, or the screenshot key = a "breach";
+// this many auto-submits the quiz with the answers so far.
+export const QUIZ_BREACH_LIMIT = 3;
 
 // FNV-1a 32-bit - turns "uid + assignmentId" into a stable shuffle seed, so a
 // refresh shows the same order (no rerolling for an easier order).
