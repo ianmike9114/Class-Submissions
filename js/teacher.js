@@ -7,7 +7,8 @@ import { getGeminiKey, setGeminiKey, getGroqKey, setGroqKey, runRubricCheck, gen
 import {
   QUIZ_MIN_ITEMS, QUIZ_MAX_ITEMS, QUIZ_MAX_BANK, servedQuestions, choiceLengthWarning, countChoiceLengthWarnings, QUIZ_TYPES, QUIZ_GRACE_SECONDS, splitQuiz, joinQuiz, validateQuizItems,
   parseGeneratedQuiz, newItemId, splitAccepted, scoreQuiz, quizTimeLimitSeconds, formatDuration,
-} from "./quiz.js?v=4";
+  balanceAnswerPositions, answerPatternWarning,
+} from "./quiz.js?v=5";
 import { getEmailConfig, saveEmailConfig, notifySection } from "./notify.js";
 import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=2";
 import { loadWorkbook, readExamScores, pickBestSheet } from "./class-record.js";
@@ -3172,9 +3173,11 @@ async function loadAssignments() {
 // signed-in user). Pure helpers live in js/quiz.js.
 const quizBuilders = new Map(); // host element id -> builder
 
-function mountQuizBuilder(hostId, { items = [], secondsPerItem = 60, topic = "", drawCount = 0, requireApp = false } = {}) {
+// locked: students have already started this quiz (edit view) - their saved
+// answers are original choice indexes, so answer positions must not move.
+function mountQuizBuilder(hostId, { items = [], secondsPerItem = 60, topic = "", drawCount = 0, requireApp = false, locked = false } = {}) {
   const host = el(hostId);
-  const b = { items: items.map((it) => ({ ...it, choices: it.choices ? [...it.choices] : undefined })), secondsPerItem, drawCount: Number(drawCount) || 0, requireApp: !!requireApp };
+  const b = { items: items.map((it) => ({ ...it, choices: it.choices ? [...it.choices] : undefined })), secondsPerItem, drawCount: Number(drawCount) || 0, requireApp: !!requireApp, locked: !!locked };
   quizBuilders.set(hostId, b);
   const secOpts = [20, 30, 45, 60, 90, 120]
     .map((n) => `<option value="${n}" ${n === Number(secondsPerItem) ? "selected" : ""}>${n} seconds</option>`).join("");
@@ -3207,9 +3210,20 @@ function mountQuizBuilder(hostId, { items = [], secondsPerItem = 60, topic = "",
         <p class="qb-status muted"></p>
       </details>
       <ol class="qb-items"></ol>
+      <p class="qb-pattern-warn status-pending hidden"></p>
       <button type="button" class="secondary qb-add">+ Add item</button>
+      <button type="button" class="secondary qb-spread" ${b.locked ? 'disabled title="Students have already started this quiz - answer positions can\'t be moved now."' : 'title="Move the correct answers so they are spread evenly over A, B, C and D"'}>&#128256; Spread answers A–D</button>
       <span class="muted qb-count-label"></span>
+      ${b.locked ? '<p class="muted">Students have already started this quiz - answer positions can\'t be moved now (their saved answers would be marked wrong).</p>' : ""}
     </div>`;
+
+  // Whole-quiz answer pattern (answerPatternWarning in js/quiz.js).
+  const refreshPattern = () => {
+    const box = host.querySelector(".qb-pattern-warn");
+    const w = answerPatternWarning(b.items);
+    box.textContent = w ? "\u26A0 " + w : "";
+    box.classList.toggle("hidden", !w);
+  };
 
   const list = host.querySelector(".qb-items");
   const render = () => {
@@ -3227,8 +3241,14 @@ function mountQuizBuilder(hostId, { items = [], secondsPerItem = 60, topic = "",
     host.querySelector(".qb-count-label").textContent = b.drawCount
       ? ` ${n} items in the bank · each student gets ${per} random items = ${per} point(s).`
       : ` ${n} item(s) = ${n} point(s). Need ${QUIZ_MIN_ITEMS}-${QUIZ_MAX_ITEMS} (or up to ${QUIZ_MAX_BANK} with "Each student gets").`;
+    refreshPattern();
   };
   render();
+  host.querySelector(".qb-spread").addEventListener("click", () => {
+    if (b.locked) return;
+    b.items = balanceAnswerPositions(b.items);
+    render();
+  });
 
   host.querySelector(".qb-seconds").addEventListener("change", (e) => { b.secondsPerItem = Number(e.target.value); });
   host.querySelector(".qb-require-app").addEventListener("change", (e) => { b.requireApp = e.target.checked; });
@@ -3262,8 +3282,8 @@ function mountQuizBuilder(hostId, { items = [], secondsPerItem = 60, topic = "",
       if (it.type === "tf") { it.answer = true; }
       if (it.type === "id") { it.answer = []; }
       render();
-    } else if (f === "mc-answer") { it.answer = Number(e.target.value); refreshLengthWarn(li, it); }
-    else if (f === "tf-answer") it.answer = e.target.value === "true";
+    } else if (f === "mc-answer") { it.answer = Number(e.target.value); refreshLengthWarn(li, it); refreshPattern(); }
+    else if (f === "tf-answer") { it.answer = e.target.value === "true"; refreshPattern(); }
   });
   list.addEventListener("click", (e) => {
     const del = e.target.closest("[data-qdel]");
@@ -3293,7 +3313,9 @@ function mountQuizBuilder(hostId, { items = [], secondsPerItem = 60, topic = "",
         gradeLevel: host.querySelector(".qb-grade").value,
         avoid: append ? b.items.map((it) => it.prompt) : [],
       });
-      const items = parseGeneratedQuiz(raw).slice(0, append ? QUIZ_MAX_BANK - b.items.length : QUIZ_MAX_ITEMS);
+      // AI drafts nearly always put the right answer at A - spread the NEW
+      // items over A-D (existing items are left alone).
+      const items = balanceAnswerPositions(parseGeneratedQuiz(raw).slice(0, append ? QUIZ_MAX_BANK - b.items.length : QUIZ_MAX_ITEMS));
       if (items.length === 0) throw new Error("The AI didn't return usable items - try again or reword the topic.");
       b.items = append ? [...b.items, ...items] : items;
       host.querySelector(".qb-append").checked = true;
@@ -3381,7 +3403,14 @@ function readQuizBuilder(hostId) {
   }
   const longest = countChoiceLengthWarnings(items);
   if (longest && !confirm(`${longest} item(s) have the correct answer as the longest choice - students may guess them. Save anyway?`)) return null;
-  const { questions, answers } = splitQuiz(items);
+  // MC answers bunched on one letter: offer to spread them (never once
+  // students have started - see mountQuizBuilder's locked).
+  const pattern = answerPatternWarning(items);
+  if (pattern && !b.locked && /multiple-choice/.test(pattern)
+    && confirm(`${pattern}\n\nSpread the answers over A–D now? (Cancel saves as it is.)`)) {
+    b.items = balanceAnswerPositions(b.items);
+  }
+  const { questions, answers } = splitQuiz(b.items);
   return {
     quiz: { questions, secondsPerItem: b.secondsPerItem || 60, oneWay: true, drawCount: b.drawCount || 0, requireApp: !!b.requireApp },
     answers,
@@ -3624,9 +3653,15 @@ async function openAssignment(assignmentId) {
   el("edit-assignment-total-points").required = !isMaterial;
   resetQuizBuilder("edit-assignment-quiz-builder");
   if (!isMaterial && data.allowedFileTypes === "quiz") {
-    const keySnap = await getDoc(doc(db, "quizKeys", assignmentId)).catch(() => null);
+    const [keySnap, started] = await Promise.all([
+      getDoc(doc(db, "quizKeys", assignmentId)).catch(() => null),
+      // Anyone started? (1 read) Unknown = treat as started, the safe side.
+      getCountFromServer(ownerScopedQuery("quizAttempts", where("assignmentId", "==", assignmentId)))
+        .then((snap) => snap.data().count > 0).catch(() => true),
+    ]);
     const answers = keySnap?.exists() ? keySnap.data().answers : {};
     mountQuizBuilder("edit-assignment-quiz-builder", {
+      locked: started,
       items: joinQuiz(data.quiz?.questions, answers),
       secondsPerItem: data.quiz?.secondsPerItem || 60,
       topic: data.title || "",

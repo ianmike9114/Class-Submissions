@@ -7,7 +7,7 @@ import {
 import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=2";
 import { runJava } from "./runner.js";
 import { codeBlockHtml, highlightWithin } from "./highlight.js";
-import { seededShuffle, quizDeadlineMs, servedQuestions, QUIZ_BREACH_LIMIT } from "./quiz.js?v=4";
+import { seededShuffle, quizDeadlineMs, servedQuestions, QUIZ_BREACH_LIMIT } from "./quiz.js?v=5";
 import { readCache, writeCache, staleSectionIds, asDoc, chunk } from "./assignment-cache.js?v=1";
 
 let currentUser = null;

@@ -194,6 +194,67 @@ export function countChoiceLengthWarnings(items) {
   return (items || []).filter((it) => it.type === "mc" && choiceLengthWarning(it.choices, it.answer)).length;
 }
 
+// AI drafts (and many hand-typed quizzes) put the correct answer at A. Students
+// already see choices in a per-student shuffled order (js/student.js
+// renderItem), but the saved bank - what the teacher sees, prints or leaks -
+// shouldn't have a pattern either. Moves each MC item's correct choice to a
+// target slot from a shuffled round-robin over A-D (10 items -> 3/3/2/2, no
+// long runs) and shuffles the wrong choices into the rest. Returns new items;
+// non-MC items are returned unchanged. NEVER run on a quiz students have
+// started: their saved answers are original choice indexes.
+export function balanceAnswerPositions(items, rand = Math.random) {
+  const shuffle = (arr) => {
+    const out = arr.slice();
+    for (let i = out.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [out[i], out[j]] = [out[j], out[i]];
+    }
+    return out;
+  };
+  const mcCount = (items || []).filter(isBalanceableMc).length;
+  const targets = [];
+  while (targets.length < mcCount) targets.push(...shuffle([0, 1, 2, 3]));
+  const slots = shuffle(targets.slice(0, mcCount));
+  let k = 0;
+  return (items || []).map((it) => {
+    if (!isBalanceableMc(it)) return it;
+    const correct = it.choices[Number(it.answer)];
+    const wrong = shuffle(it.choices.filter((_, i) => i !== Number(it.answer)));
+    const target = slots[k++];
+    const choices = [...wrong.slice(0, target), correct, ...wrong.slice(target)];
+    return { ...it, choices, answer: target };
+  });
+}
+
+function isBalanceableMc(it) {
+  return it && it.type === "mc" && Array.isArray(it.choices) && it.choices.length === 4
+    && [0, 1, 2, 3].includes(Number(it.answer));
+}
+
+// Pattern a student could exploit across the whole quiz: one letter holding
+// most MC answers, or True/False items that are almost all the same answer.
+// Returns a warning string or null.
+export function answerPatternWarning(items) {
+  const mc = (items || []).filter(isBalanceableMc);
+  if (mc.length >= 4) {
+    const counts = [0, 0, 0, 0];
+    mc.forEach((it) => counts[Number(it.answer)]++);
+    const top = Math.max(...counts);
+    if (top > mc.length / 2) {
+      return `${top} of ${mc.length} multiple-choice answers are ${"ABCD"[counts.indexOf(top)]} - students may spot the pattern. Use "Spread answers A–D".`;
+    }
+  }
+  const tf = (items || []).filter((it) => it && it.type === "tf" && typeof it.answer === "boolean");
+  if (tf.length >= 4) {
+    const trues = tf.filter((it) => it.answer === true).length;
+    const top = Math.max(trues, tf.length - trues);
+    if (top >= tf.length * 0.8) {
+      return `${top} of ${tf.length} True/False answers are ${trues >= tf.length - trues ? "True" : "False"} - reword a few statements so the answers are mixed.`;
+    }
+  }
+  return null;
+}
+
 export function newItemId() {
   return "q" + Math.random().toString(36).slice(2, 10);
 }
