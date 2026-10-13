@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "1077801155399",
+    "project_id": "simple-lms-40950",
+    "storage_bucket": "simple-lms-40950.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1077801155399:android:b96d345129aed122dbaa62",
+        "android_client_info": {
+          "package_name": "com.classsubmissions.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1077801155399-2o6t0le8qejtunouhtqfkaij66rasf9g.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.classsubmissions.app",
+            "certificate_hash": "373cbb862793c1092d2e18c9c8d3cd99d5a1026c"
+          }
+        },
+        {
+          "client_id": "1077801155399-94fs3d8c4k1guh7h0tg77j8gg3lbthtv.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCq5vvrT0JYwFVsUTLuLosVB8kJUn44Xs8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1077801155399-94fs3d8c4k1guh7h0tg77j8gg3lbthtv.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
