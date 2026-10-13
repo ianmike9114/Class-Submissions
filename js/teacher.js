@@ -13,6 +13,7 @@ import { getEmailConfig, saveEmailConfig, notifySection } from "./notify.js";
 import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=2";
 import { loadWorkbook, readExamScores, pickBestSheet } from "./class-record.js";
 import { runJava } from "./runner.js";
+import { setScreenshotBlock } from "./app-bridge.js?v=1";
 import { codeBlockHtml, highlightWithin } from "./highlight.js";
 import { ttlForKey, STRUCTURE_KEYS, MISSING_TTL_MS, subjectShown, patchedDoc, approvedHeadcount } from "./teacher-reads.js?v=1";
 
@@ -6038,6 +6039,7 @@ function showDebugBanner(err) {
 guardPage("teacher").then(async (user) => {
   if (!user) return;
   currentUser = user;
+  setScreenshotBlock(false); // Android app: undo the student page's block
   state.viewAsEmail = user.email;
   // Header account: Google profile photo when available, else a circle with
   // the email initial; real display name beside it; full email on hover.
