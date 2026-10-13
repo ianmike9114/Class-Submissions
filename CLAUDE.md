@@ -529,6 +529,15 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   (model auto-picked: `openai/gpt-oss-120b` first, falls back via `/models` on model_not_found — llama-3.3-70b was retired Aug 2026; OpenAI-compatible, free key from console.groq.com,
   stored as `groqApiKey` in localStorage like the Gemini key) and falls back to
   Gemini (`gemini-flash-latest` alias) if Groq has no key or fails. Rubric-check stays Gemini-only (images).
+  **Question bank + moving watermark** (screenshot deterrence — iPhone
+  screenshots are undetectable): optional `assignment.quiz.drawCount`; when <
+  item count, each student gets a stable random subset via `js/quiz.js`'s
+  `servedQuestions(questions, drawCount, studentUID + assignmentId)` (bank up to
+  `QUIZ_MAX_BANK` 60, per-student max still 20, `totalPoints = drawCount`). The
+  submission records `quizServed` (ids shown); teacher scoring (`servedFor()`)
+  uses it, or rebuilds from the seed for older submissions. AI drafting can
+  append to the bank (passes existing prompts as `avoid`). `runQuiz` also shows
+  a drifting `.quiz-mover` badge (name · email · live clock).
   `gemini.js`/`quiz.js` imports carry their own `?v=` (bump when changed —
   `scripts/bump-version.mjs` doesn't cover sub-modules).
 

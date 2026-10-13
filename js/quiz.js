@@ -18,6 +18,10 @@
 
 export const QUIZ_MIN_ITEMS = 5;
 export const QUIZ_MAX_ITEMS = 20;
+// Question bank: the teacher may write more items than each student gets
+// (quiz.drawCount); each student is served a stable random subset, so a
+// shared screenshot only covers part of what classmates see.
+export const QUIZ_MAX_BANK = 60;
 export const QUIZ_TYPES = { mc: "Multiple choice", tf: "True / False", id: "Identification" };
 // Extra seconds allowed past the official time limit before the teacher's
 // review flags a submission as "over time" (slow networks, auto-submit lag).
@@ -54,6 +58,17 @@ export function seededShuffle(arr, seed) {
     [out[i], out[j]] = [out[j], out[i]];
   }
   return out;
+}
+
+// The questions one student actually gets: the whole quiz in a stable
+// per-student order, or - when drawCount is a valid bank size - the first
+// drawCount of that order. Same seed (studentUID + assignmentId) on both the
+// student and teacher side, so the teacher can rebuild it for old
+// submissions that predate submission.quizServed.
+export function servedQuestions(questions, drawCount, seed) {
+  const order = seededShuffle(questions || [], seed);
+  const n = Number(drawCount);
+  return Number.isInteger(n) && n > 0 && n < order.length ? order.slice(0, n) : order;
 }
 
 // Lenient Identification matching: case, accents, spaces and punctuation
@@ -132,7 +147,7 @@ export function joinQuiz(questions, answers) {
 // Returns an error string for the first problem, or null if the quiz is ready.
 export function validateQuizItems(items) {
   if (!Array.isArray(items) || items.length < QUIZ_MIN_ITEMS) return `A quiz needs at least ${QUIZ_MIN_ITEMS} items.`;
-  if (items.length > QUIZ_MAX_ITEMS) return `A quiz can have at most ${QUIZ_MAX_ITEMS} items.`;
+  if (items.length > QUIZ_MAX_BANK) return `A quiz can have at most ${QUIZ_MAX_BANK} items.`;
   for (let i = 0; i < items.length; i++) {
     const it = items[i];
     const n = i + 1;

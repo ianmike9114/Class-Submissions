@@ -1304,6 +1304,27 @@ body.quiz-open { overflow: hidden; }
   z-index: 0;
   color: var(--text);
 }
+/* Drifting "who + when" badge (js/student.js runQuiz) - visible enough to
+   show in any screenshot, never blocks taps. Above the question text, below
+   nothing interactive (pointer-events: none). */
+.quiz-mover {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  background: var(--blue);
+  color: #fff;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  opacity: 0.35;
+  pointer-events: none;
+  transition: transform 2.5s linear;
+}
+@media (prefers-reduced-motion: reduce) {
+  .quiz-mover { transition: none; }
+}
 .quiz-panel {
   position: relative;
   z-index: 1;

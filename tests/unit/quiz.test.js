@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   hashSeed, seededShuffle, normalizeAnswer, splitAccepted, isCorrect, scoreQuiz,
   quizDeadlineMs, splitQuiz, joinQuiz, validateQuizItems, parseGeneratedQuiz, formatDuration,
+  servedQuestions, QUIZ_MAX_BANK,
 } from "../../js/quiz.js";
 
 describe("seededShuffle", () => {
@@ -114,5 +115,29 @@ describe("parseGeneratedQuiz", () => {
     expect(out[1].answer).toBe(false);
     expect(out[2].answer).toEqual(["CPU"]);
     expect(out[0].id).toMatch(/^q/);
+  });
+});
+
+describe("servedQuestions", () => {
+  const qs = Array.from({ length: 30 }, (_, i) => ({ id: "q" + i }));
+  it("returns every question (old order) when there is no bank", () => {
+    expect(servedQuestions(qs, undefined, "uA1")).toEqual(seededShuffle(qs, "uA1"));
+    expect(servedQuestions(qs, 30, "uA1")).toHaveLength(30);
+    expect(servedQuestions(qs, 99, "uA1")).toHaveLength(30);
+  });
+  it("draws a stable subset per seed", () => {
+    const a = servedQuestions(qs, 10, "uA1");
+    expect(a).toHaveLength(10);
+    expect(servedQuestions(qs, 10, "uA1")).toEqual(a);
+  });
+  it("gives different students different subsets", () => {
+    const a = servedQuestions(qs, 10, "uA1").map((q) => q.id).sort().join();
+    const b = servedQuestions(qs, 10, "uB1").map((q) => q.id).sort().join();
+    expect(a).not.toBe(b);
+  });
+  it("lets the bank exceed the per-student max", () => {
+    const items = Array.from({ length: QUIZ_MAX_BANK }, (_, i) => ({ id: "q" + i, type: "tf", prompt: "p" + i, answer: true }));
+    expect(validateQuizItems(items)).toBeNull();
+    expect(validateQuizItems([...items, items[0]])).toMatch(/at most/);
   });
 });

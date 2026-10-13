@@ -3,11 +3,11 @@ import { guardPage, signOutUser } from "./auth.js?v=2";
 import {
   collection, addDoc, doc, setDoc, updateDoc, deleteDoc, deleteField, writeBatch, getDoc, getDocs, getCountFromServer, query, where, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { getGeminiKey, setGeminiKey, getGroqKey, setGroqKey, runRubricCheck, generateCodeExample, generateQuiz } from "./gemini.js?v=5";
+import { getGeminiKey, setGeminiKey, getGroqKey, setGroqKey, runRubricCheck, generateCodeExample, generateQuiz } from "./gemini.js?v=6";
 import {
-  QUIZ_MIN_ITEMS, QUIZ_MAX_ITEMS, QUIZ_TYPES, QUIZ_GRACE_SECONDS, splitQuiz, joinQuiz, validateQuizItems,
+  QUIZ_MIN_ITEMS, QUIZ_MAX_ITEMS, QUIZ_MAX_BANK, servedQuestions, QUIZ_TYPES, QUIZ_GRACE_SECONDS, splitQuiz, joinQuiz, validateQuizItems,
   parseGeneratedQuiz, newItemId, splitAccepted, scoreQuiz, quizTimeLimitSeconds, formatDuration,
-} from "./quiz.js?v=1";
+} from "./quiz.js?v=2";
 import { getEmailConfig, saveEmailConfig, notifySection } from "./notify.js";
 import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=2";
 import { loadWorkbook, readExamScores, pickBestSheet } from "./class-record.js";
@@ -2947,7 +2947,7 @@ async function loadAssignments() {
       ? "Reading material · not graded"
       : [a.dueDate ? `Due ${escAttr(a.dueDate)}` : "No due date",
          a.totalPoints !== undefined && a.totalPoints !== "" ? `${escAttr(a.totalPoints)} pts` : "",
-         isQuiz ? `${a.quiz?.questions?.length || 0} items · ${a.quiz?.secondsPerItem || 60}s each`
+         isQuiz ? `${quizSizeLabel(a)} · ${a.quiz?.secondsPerItem || 60}s each`
            : a.allowedFileTypes ? escAttr(a.allowedFileTypes) : ""].filter(Boolean).join(" · ");
     return `
       <div class="assign-row">
@@ -3059,9 +3059,9 @@ async function loadAssignments() {
 // signed-in user). Pure helpers live in js/quiz.js.
 const quizBuilders = new Map(); // host element id -> builder
 
-function mountQuizBuilder(hostId, { items = [], secondsPerItem = 60, topic = "" } = {}) {
+function mountQuizBuilder(hostId, { items = [], secondsPerItem = 60, topic = "", drawCount = 0 } = {}) {
   const host = el(hostId);
-  const b = { items: items.map((it) => ({ ...it, choices: it.choices ? [...it.choices] : undefined })), secondsPerItem };
+  const b = { items: items.map((it) => ({ ...it, choices: it.choices ? [...it.choices] : undefined })), secondsPerItem, drawCount: Number(drawCount) || 0 };
   quizBuilders.set(hostId, b);
   const secOpts = [20, 30, 45, 60, 90, 120]
     .map((n) => `<option value="${n}" ${n === Number(secondsPerItem) ? "selected" : ""}>${n} seconds</option>`).join("");
@@ -3071,8 +3071,11 @@ function mountQuizBuilder(hostId, { items = [], secondsPerItem = 60, topic = "" 
     <div class="quiz-builder card">
       <strong>Quiz questions</strong>
       <p class="muted" style="margin-top:0.25rem;">Students answer one item at a time with a timer, can't go back, can't copy the text, and leaving the screen is recorded for you. Correct answers are never sent to students.</p>
-      <label>Time per item</label>
-      <select class="qb-seconds">${secOpts}</select>
+      <div class="qb-grid">
+        <div><label>Time per item</label><select class="qb-seconds">${secOpts}</select></div>
+        <div><label>Each student gets</label><select class="qb-draw"></select></div>
+      </div>
+      <p class="muted qb-draw-hint">Question bank: write more items than each student gets - everyone receives a different random set, so a shared screenshot only covers part of the quiz.</p>
       <details class="qb-ai" ${b.items.length ? "" : "open"}>
         <summary><strong>&#10024; Draft questions with AI</strong></summary>
         <label>Topic (what the quiz should cover - paste the lesson's key points for better items)</label>
@@ -3085,6 +3088,7 @@ function mountQuizBuilder(hostId, { items = [], secondsPerItem = 60, topic = "" 
         <div class="qb-types">
           ${Object.entries(QUIZ_TYPES).map(([k, v]) => `<label class="qb-check"><input type="checkbox" value="${k}" ${k !== "id" ? "checked" : ""} /> ${v}</label>`).join("")}
         </div>
+        <label class="qb-check"><input type="checkbox" class="qb-append" ${b.items.length ? "checked" : ""} /> Add to the items below (build a bigger question bank) instead of replacing them</label>
         <button type="button" class="qb-generate">&#10024; Generate</button>
         <p class="qb-status muted"></p>
       </details>
@@ -3096,14 +3100,26 @@ function mountQuizBuilder(hostId, { items = [], secondsPerItem = 60, topic = "" 
   const list = host.querySelector(".qb-items");
   const render = () => {
     list.innerHTML = b.items.map((it, i) => quizItemEditorHtml(it, i)).join("");
-    host.querySelector(".qb-count-label").textContent =
-      ` ${b.items.length} item(s) = ${b.items.length} point(s). Need ${QUIZ_MIN_ITEMS}-${QUIZ_MAX_ITEMS}.`;
+    // "Each student gets": All, or a bank draw of 5..min(20, bank-1).
+    const n = b.items.length;
+    const maxDraw = Math.min(QUIZ_MAX_ITEMS, n - 1);
+    if (b.drawCount && (b.drawCount > maxDraw || b.drawCount < QUIZ_MIN_ITEMS)) b.drawCount = 0;
+    const drawOpts = [`<option value="0">All ${n} items</option>`];
+    for (let k = QUIZ_MIN_ITEMS; k <= maxDraw; k++) {
+      drawOpts.push(`<option value="${k}" ${k === b.drawCount ? "selected" : ""}>${k} random items</option>`);
+    }
+    host.querySelector(".qb-draw").innerHTML = drawOpts.join("");
+    const per = b.drawCount || n;
+    host.querySelector(".qb-count-label").textContent = b.drawCount
+      ? ` ${n} items in the bank · each student gets ${per} random items = ${per} point(s).`
+      : ` ${n} item(s) = ${n} point(s). Need ${QUIZ_MIN_ITEMS}-${QUIZ_MAX_ITEMS} (or up to ${QUIZ_MAX_BANK} with "Each student gets").`;
   };
   render();
 
   host.querySelector(".qb-seconds").addEventListener("change", (e) => { b.secondsPerItem = Number(e.target.value); });
+  host.querySelector(".qb-draw").addEventListener("change", (e) => { b.drawCount = Number(e.target.value) || 0; render(); });
   host.querySelector(".qb-add").addEventListener("click", () => {
-    if (b.items.length >= QUIZ_MAX_ITEMS) { alert(`A quiz can have at most ${QUIZ_MAX_ITEMS} items.`); return; }
+    if (b.items.length >= QUIZ_MAX_BANK) { alert(`A quiz can have at most ${QUIZ_MAX_BANK} items.`); return; }
     b.items.push({ id: newItemId(), type: "mc", prompt: "", choices: ["", "", "", ""], answer: 0 });
     render();
     list.lastElementChild?.querySelector("textarea")?.focus();
@@ -3146,7 +3162,12 @@ function mountQuizBuilder(hostId, { items = [], secondsPerItem = 60, topic = "" 
     const status = host.querySelector(".qb-status");
     const types = [...host.querySelectorAll(".qb-types input:checked")].map((c) => c.value);
     const count = Number(host.querySelector(".qb-count").value);
-    if (b.items.length && !confirm(`Replace the ${b.items.length} item(s) below with new AI drafts?`)) return;
+    const append = host.querySelector(".qb-append").checked && b.items.length > 0;
+    if (append && b.items.length + count > QUIZ_MAX_BANK) {
+      alert(`The bank can hold at most ${QUIZ_MAX_BANK} items - you have ${b.items.length}. Draft ${QUIZ_MAX_BANK - b.items.length} or fewer.`);
+      return;
+    }
+    if (!append && b.items.length && !confirm(`Replace the ${b.items.length} item(s) below with new AI drafts?`)) return;
     btn.disabled = true;
     status.textContent = "Drafting questions... (10-30 seconds)";
     try {
@@ -3155,12 +3176,14 @@ function mountQuizBuilder(hostId, { items = [], secondsPerItem = 60, topic = "" 
         count,
         types,
         gradeLevel: host.querySelector(".qb-grade").value,
+        avoid: append ? b.items.map((it) => it.prompt) : [],
       });
-      const items = parseGeneratedQuiz(raw).slice(0, QUIZ_MAX_ITEMS);
+      const items = parseGeneratedQuiz(raw).slice(0, append ? QUIZ_MAX_BANK - b.items.length : QUIZ_MAX_ITEMS);
       if (items.length === 0) throw new Error("The AI didn't return usable items - try again or reword the topic.");
-      b.items = items;
+      b.items = append ? [...b.items, ...items] : items;
+      host.querySelector(".qb-append").checked = true;
       render();
-      status.textContent = `Drafted ${items.length} item(s). Read each one and fix anything wrong before saving - the AI can make mistakes.`;
+      status.textContent = `Drafted ${items.length} item(s)${append ? ` (bank now ${b.items.length})` : ""}. Read each one and fix anything wrong before saving - the AI can make mistakes.`;
     } catch (err) {
       status.textContent = err.message;
     } finally {
@@ -3227,11 +3250,16 @@ function readQuizBuilder(hostId) {
   const items = b ? b.items : [];
   const problem = validateQuizItems(items);
   if (problem) { alert(problem); return null; }
+  if (!b.drawCount && items.length > QUIZ_MAX_ITEMS) {
+    alert(`Each student can get at most ${QUIZ_MAX_ITEMS} items. With ${items.length} items, set "Each student gets" to how many random items each student should answer.`);
+    return null;
+  }
   const { questions, answers } = splitQuiz(items);
   return {
-    quiz: { questions, secondsPerItem: b.secondsPerItem || 60, oneWay: true },
+    quiz: { questions, secondsPerItem: b.secondsPerItem || 60, oneWay: true, drawCount: b.drawCount || 0 },
     answers,
-    totalPoints: questions.length,
+    // A bank draw is what each student actually answers (and is scored on).
+    totalPoints: b.drawCount || questions.length,
   };
 }
 
@@ -3471,6 +3499,7 @@ async function openAssignment(assignmentId) {
       items: joinQuiz(data.quiz?.questions, answers),
       secondsPerItem: data.quiz?.secondsPerItem || 60,
       topic: data.title || "",
+      drawCount: data.quiz?.drawCount || 0,
     });
   }
   syncQuizBuilderVisibility("edit-");
@@ -4286,6 +4315,8 @@ async function loadQuizReviewData(assignmentId, a, ownedDocs) {
   const attempts = new Map();
   (attemptsSnap?.docs || []).forEach((d) => attempts.set(d.data().studentUID, { id: d.id, ...d.data() }));
   const questions = a.quiz?.questions || [];
+  const drawCount = a.quiz?.drawCount && a.quiz.drawCount < questions.length ? a.quiz.drawCount : 0;
+  const perStudent = drawCount || questions.length;
   const submittedUIDs = new Set(ownedDocs.map((d) => d.data().studentUID));
 
   // Started but never submitted (closed the app, lost signal, still taking
@@ -4294,13 +4325,31 @@ async function loadQuizReviewData(assignmentId, a, ownedDocs) {
   const unfinishedCard = document.createElement("div");
   unfinishedCard.className = "card";
   unfinishedCard.innerHTML = `
-    <strong>Quiz</strong> <span class="muted">${questions.length} items · ${formatDuration(quizTimeLimitSeconds(questions.length, a.quiz?.secondsPerItem) * 1000)} time limit</span>
+    <strong>Quiz</strong> <span class="muted">${drawCount ? `Bank: ${questions.length} items · each student gets ${drawCount}` : `${questions.length} items`} · ${formatDuration(quizTimeLimitSeconds(perStudent, a.quiz?.secondsPerItem) * 1000)} time limit</span>
     ${key ? "" : `<p class="status-pending">Answer key not found - auto-check is off; grade by hand.</p>`}
     ${unfinished.length ? `<div style="margin-top:0.5rem;"><div class="muted">Started but not submitted (may still be taking it):</div>
       ${unfinished.map((t) => `<div class="quiz-unfinished">${displayStudentName(t.studentName || t.studentUID)}
         <span class="muted">started ${t.startedAt?.toDate ? t.startedAt.toDate().toLocaleString() : ""}</span>
         <button type="button" class="secondary" data-quiz-reset-attempt="${t.id}">Allow retake</button></div>`).join("")}</div>` : ""}`;
-  return { key, attempts, questions, overrides: new Map(), unfinishedCard };
+  return { key, attempts, questions, assignment: a, overrides: new Map(), unfinishedCard };
+}
+
+// "20 items", or "30-item bank · 10 each" when students get a random draw.
+function quizSizeLabel(a) {
+  const n = a.quiz?.questions?.length || 0;
+  const d = a.quiz?.drawCount;
+  return d && d < n ? `${n}-item bank · ${d} each` : `${n} items`;
+}
+
+// The items this student was actually shown: recorded on the submission
+// (quizServed), or rebuilt from the same per-student seed for older ones.
+function servedFor(s, a) {
+  const all = a.quiz?.questions || [];
+  if (Array.isArray(s.quizServed) && s.quizServed.length) {
+    const byId = new Map(all.map((q) => [q.id, q]));
+    return s.quizServed.map((id) => byId.get(id)).filter(Boolean);
+  }
+  return servedQuestions(all, a.quiz?.drawCount, s.studentUID + s.assignmentId);
 }
 
 function describeQuizAnswer(q, val) {
@@ -4316,7 +4365,8 @@ function describeQuizKey(q, keyVal) {
 }
 
 function quizResultHtml(submissionId, s, a, quiz) {
-  const { key, attempts, questions } = quiz;
+  const { key, attempts } = quiz;
+  const questions = servedFor(s, a);
   const log = s.quizLog || {};
   const attempt = attempts.get(s.studentUID);
   const limitSec = quizTimeLimitSeconds(questions.length, a.quiz?.secondsPerItem);
@@ -4371,7 +4421,7 @@ function wireQuizReview(list, ownedDocs, quiz) {
     if (cb.checked) ov[cb.dataset.qid] = true; else delete ov[cb.dataset.qid];
     quiz.overrides.set(subId, ov);
     const s = ownedDocs.find((d) => d.id === subId)?.data();
-    const { score } = scoreQuiz(quiz.questions, quiz.key, s?.quizAnswers || {}, ov);
+    const { score } = scoreQuiz(s ? servedFor(s, quiz.assignment) : quiz.questions, quiz.key, s?.quizAnswers || {}, ov);
     quizAutoScores.set(subId, score);
     const scoreEl = list.querySelector(`[data-quiz-score="${subId}"]`);
     if (scoreEl) scoreEl.textContent = score;
@@ -4833,7 +4883,7 @@ async function openQuizzes() {
         <strong>${escAttr(subjects.get(sec.subjectId).name || "")}</strong> <span class="muted">· ${escAttr(sec.sectionName || "")}</span>
         ${bySection.get(sec.id).map((d) => {
           const a = d.data();
-          const meta = [`${a.quiz?.questions?.length || 0} items`, `${a.quiz?.secondsPerItem || 60}s each`,
+          const meta = [quizSizeLabel(a), `${a.quiz?.secondsPerItem || 60}s each`,
             a.dueDate ? `Due ${escAttr(a.dueDate)}` : "No due date"].join(" · ");
           return `<div class="assign-row">
             <div class="assign-main">
