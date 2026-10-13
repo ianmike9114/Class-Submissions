@@ -1,5 +1,5 @@
 import { db, ADMIN_EMAIL, isSuperAdmin } from "./firebase-config.js";
-import { guardPage, signOutUser } from "./auth.js";
+import { guardPage, signOutUser } from "./auth.js?v=2";
 import {
   collection, addDoc, doc, setDoc, updateDoc, deleteDoc, deleteField, writeBatch, getDoc, getDocs, getCountFromServer, query, where, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -3571,7 +3571,8 @@ async function downloadPhotosZip(withPhotos, filename, buttonEl) {
       const safeName = s.name.replace(/[/\\:*?"<>|]/g, "-");
       s.photos.forEach((p, i) => {
         const base64 = p.split(",")[1];
-        zip.file(`${safeName}-page${i + 1}.jpg`, base64, { base64: true });
+        const ext = p.startsWith("data:image/webp") ? "webp" : p.startsWith("data:image/png") ? "png" : "jpg";
+        zip.file(`${safeName}-page${i + 1}.${ext}`, base64, { base64: true });
       });
     });
     const blob = await zip.generateAsync({ type: "blob" });

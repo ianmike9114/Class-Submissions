@@ -244,10 +244,13 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   `<input type="file" accept="image/*">` — no `capture` attribute, so
   OS's native chooser offers both) only exists for "image" and
   "document" assignments, as alternative to pasting link — not general
-  file-upload feature. Capped at `MAX_PHOTOS` (10) pages per submission —
+  file-upload feature. Capped at `MAX_PHOTOS` (15) pages per submission —
   not unlimited (shared 1MiB Firestore doc budget across however many
   pages added). `js/student.js`'s `compressImage()` keeps each photo under
-  `PER_PHOTO_MAX_LEN` (100,000 chars/photo, so 10 photos stay under 1MiB cap
+  `PER_PHOTO_MAX_LEN` (64,000 chars/photo, encoded **WebP** where the browser
+  can — `photoMime()` checks, iOS Safari falls back to JPEG — and the add
+  handler also enforces a 15×64k total so edited older submissions holding
+  100k JPEG pages still fit; so 15 photos stay under 1MiB cap
   alongside rest of submission's fields) by **stepping the max dimension down**
   (1280 → 1024 → 800 → 640px), dropping JPEG quality to a 0.3 floor at each
   size, and accepting the first that fits. Earlier it tried only 1280px + the
@@ -256,6 +259,21 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   large even after compression" and couldn't submit. The dimension ladder makes
   those fit at the cost of more sharpness loss on the densest shots; student can
   still fall back to the Drive-link path instead.
+- **"Remember this device" + sign-in bounce breaker.** `js/auth.js` stores
+  the signed-in email (`lms.rememberEmail`, email only — no token) when the
+  login page's "Remember this device" box is ticked (default; opt-out per
+  device in `lms.rememberOptOut` for shared lab PCs). When the Firebase session
+  is gone (iOS 7-day storage purge, home-screen app's separate storage),
+  `initGoogleSignIn(..., { autoEmail })` runs Google One Tap with
+  `auto_select`/`login_hint`/`itp_support` so the user signs straight back in;
+  the normal button stays as fallback (Brave has no FedCM). `signOutUser()`
+  calls `forgetDevice()` so sign-out never auto-signs back in. Bounce breaker:
+  `recordAuthHop()` timestamps each index → dashboard redirect in
+  sessionStorage; 3 within 15s (dashboard keeps finding no session) stops the
+  redirect and shows `#bounce-warning` instead of looping. `guardPage()`
+  clears the hops on success and shows a Retry card if `isTeacherEmail()`
+  fails. `auth.js` imports carry their own `?v=` (index.html, student.js,
+  teacher.js). No rules change.
 - **Teacher can decline a leave request without removing the student.**
   On a flagged `leaveRequested` row in Enrolled Students, `js/teacher.js`'s
   `openEnrolled()` renders a **"Keep in class"** button
