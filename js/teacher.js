@@ -1,5 +1,5 @@
 import { db, ADMIN_EMAIL, isSuperAdmin } from "./firebase-config.js";
-import { guardPage, signOutUser } from "./auth.js?v=4";
+import { guardPage, signOutUser } from "./auth.js?v=5";
 import {
   collection, addDoc, doc, setDoc, updateDoc, deleteDoc, deleteField, writeBatch, getDoc, getDocs, getCountFromServer, query, where, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -376,6 +376,24 @@ async function touchSection(sectionId) {
     await updateDoc(doc(db, "sections", sectionId), { assignmentsVersion: Date.now() });
   } catch (err) {
     console.error("touchSection failed (students refresh within 6h):", err);
+  }
+}
+
+// Stamps the student's enrollment.subsVersion in that section so their cached
+// submissions (js/student.js, lms.subCache) refetch on next load - call after
+// EVERY teacher write that changes what the student sees on a submission
+// (publish, return, allow redo, delete, quiz retake). A missed path shows the
+// student stale status for up to the cache's 1h TTL. Best-effort: 1 read
+// (owner-scoped enrollment lookup) + 1 write, never blocks the action.
+async function touchStudentSubs(studentUID, sectionId) {
+  if (!studentUID || !sectionId) return;
+  try {
+    const snap = await getDocs(ownerScopedQuery("enrollments",
+      where("studentUID", "==", studentUID), where("sectionId", "==", sectionId)));
+    await Promise.all(snap.docs.filter((d) => ownedByViewAs(d.data()))
+      .map((d) => updateDoc(d.ref, { subsVersion: Date.now() })));
+  } catch (err) {
+    console.error("touchStudentSubs failed (student refreshes within 1h):", err);
   }
 }
 
@@ -4433,6 +4451,7 @@ async function loadSubmissions(opts = {}) {
         resubmitRequested: false,
         returnedAt: Date.now(),
       });
+      await touchStudentSubs(ownedDocs.find((d) => d.id === b.dataset.allowRedo)?.data().studentUID, a.sectionId);
       alert("Reopened — the student can now edit and resubmit.");
       loadSubmissions();
       refreshNotifications();
@@ -4447,6 +4466,7 @@ async function loadSubmissions(opts = {}) {
       if (!ok) return;
       b.disabled = true;
       await deleteDoc(doc(db, "submissions", b.dataset.deleteSub));
+      await touchStudentSubs(s?.studentUID, a.sectionId);
       // Also drop any archived returned-version snapshots for this submission.
       await deleteWhere("submissionAttempts", "submissionId", b.dataset.deleteSub).catch(() => {});
       alert("Deleted.");
@@ -4625,6 +4645,7 @@ function wireQuizReview(list, ownedDocs, quiz) {
       if (!confirm(`Let ${s.studentName || "this student"} take the quiz again? Their current answers and score are deleted.`)) return;
       b.disabled = true;
       await deleteDoc(doc(db, "submissions", b.dataset.quizRetake));
+      await touchStudentSubs(s.studentUID, subsMemo?.aDoc?.data()?.sectionId);
       const attempt = quiz.attempts.get(s.studentUID);
       if (attempt) await resetAttempt(attempt.id);
       alert("Done - the student can start the quiz again.");
@@ -4781,6 +4802,7 @@ async function openReview(submissionId) {
       publishedAt: Date.now(),
     };
     await updateDoc(ref, published);
+    await touchStudentSubs(s.studentUID, a.sectionId);
     alert("Published — the student can now see their grade and feedback.");
     // Re-render + bell from memory (no re-read of the class) - see subsMemo.
     resolvedLocally.add(submissionId);
@@ -4829,6 +4851,7 @@ async function openReview(submissionId) {
       returnedAt: Date.now(),
     };
     await updateDoc(ref, returned);
+    await touchStudentSubs(s.studentUID, a.sectionId);
     alert("Returned for revision — the student can now redo and resubmit.");
     resolvedLocally.add(submissionId);
     loadSubmissions({ reuse: true, patch: { id: submissionId, data: returned } });

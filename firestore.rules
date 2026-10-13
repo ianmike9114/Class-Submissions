@@ -300,11 +300,13 @@ service cloud.firestore {
       // ever touch those two fields on their own enrollment. Everything
       // else (which subject/section, studentEmail) stays owner-controlled,
       // and delete stays owner-only below - a request is just a flag, the
-      // owning teacher still has to act on it.
+      // owning teacher still has to act on it. subsVersion is a cache marker
+      // (a timestamp) the student stamps after changing their own submission so
+      // their other devices refetch - see js/student.js afterOwnSubmissionWrite.
       allow update: if canActAsOwner(resource.data)
                     || (isSignedIn()
                         && resource.data.studentUID == request.auth.uid
-                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['studentName', 'leaveRequested', 'doneMaterials']));
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['studentName', 'leaveRequested', 'doneMaterials', 'subsVersion']));
       allow delete: if canActAsOwner(resource.data);
     }
   }

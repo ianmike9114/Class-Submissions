@@ -9,7 +9,7 @@ import {
   signInWithEmailLink,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { clearAllCaches } from "./assignment-cache.js?v=1";
+import { clearAllCaches } from "./assignment-cache.js?v=2";
 
 // Uses Google Identity Services directly (the accounts.google.com/gsi/client
 // script tag on index.html) instead of Firebase's signInWithPopup/Redirect.

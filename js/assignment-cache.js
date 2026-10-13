@@ -29,13 +29,58 @@ export function writeCache(uid, cache, storage = globalThis.localStorage) {
   }
 }
 
+// The student's OWN submissions, per section, keyed by the enrollment's
+// subsVersion (stamped by the teacher's touchStudentSubs() on publish/return/
+// redo/delete and by the student's own writes) - 1h TTL safety net. Photo-heavy
+// sections can be big, so writes go through fitToBudget().
+export const SUB_CACHE_TTL_MS = 60 * 60 * 1000;
+export const SUB_PREFIX = "lms.subCache.";
+// subjects + term settings behind getHiddenSectionIds() (30 min).
+export const TERM_CACHE_TTL_MS = 30 * 60 * 1000;
+export const TERM_PREFIX = "lms.termCache.";
+const ALL_PREFIXES = [PREFIX, SUB_PREFIX, TERM_PREFIX];
+
+export function readStore(prefix, uid, storage = globalThis.localStorage) {
+  try {
+    const raw = storage && storage.getItem(prefix + uid);
+    const obj = raw ? JSON.parse(raw) : {};
+    return obj && typeof obj === "object" ? obj : {};
+  } catch {
+    return {};
+  }
+}
+
+export function writeStore(prefix, uid, value, storage = globalThis.localStorage) {
+  try {
+    storage && storage.setItem(prefix + uid, JSON.stringify(value));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Drops the biggest section entries (photo pages are base64) until the whole
+// cache serializes under maxChars, and any single entry over maxEntryChars -
+// those sections just stay uncached (re-read each load, as before).
+export function fitToBudget(cache, maxChars = 1_500_000, maxEntryChars = 400_000) {
+  const sizes = Object.entries(cache).map(([k, v]) => [k, JSON.stringify(v).length]);
+  const out = {};
+  let total = 2;
+  for (const [k, n] of sizes.sort((x, y) => x[1] - y[1])) {
+    if (n > maxEntryChars || total + n + k.length + 4 > maxChars) continue;
+    out[k] = cache[k];
+    total += n + k.length + 4;
+  }
+  return out;
+}
+
 // Sign-out housekeeping (shared lab PCs). Assignments are readable by any
 // signed-in user anyway, so this is tidiness, not a security boundary.
 export function clearAllCaches(storage = globalThis.localStorage) {
   try {
     for (let i = storage.length - 1; i >= 0; i--) {
       const k = storage.key(i);
-      if (k && k.startsWith(PREFIX)) storage.removeItem(k);
+      if (k && ALL_PREFIXES.some((p) => k.startsWith(p))) storage.removeItem(k);
     }
   } catch {
     /* storage blocked */

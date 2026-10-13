@@ -32,8 +32,8 @@ of them with `--name value`.
 
 | Action | Code | Reads (default assumptions) |
 |---|---|---|
-| Student dashboard load | `js/student.js` `loadEverything()` + `js/assignment-cache.js` | ~73: class info + assignments only for classes a teacher changed + this term's own submissions |
-| Student submit | submit form → `loadEverything()` reload | ~38 reads + 1 write (reuses cached class info and assignments) |
+| Student dashboard load | `js/student.js` `loadEverything()` + `js/assignment-cache.js` | ~45: enrollments + sections, plus subjects/settings on a 30-min miss, assignments only for changed classes, own submissions only for sections the teacher graded since |
+| Student submit | submit form → `loadEverything()` reload | ~13 reads + 2 writes (submission + own `subsVersion` stamp) |
 | Teacher Home visit | `loadSubjects()`, `getNotifications()` | ~46 with warm caches (term settings, subjects, inbox) |
 | Teacher structure refresh | `cachedOwnerDocs` structure keys + `computeMissingWorkCounts()` | ~147: first visit, then every 10-15 min or after own edits |
 | Grade one assignment | `loadSubmissions()` (memoized) + `openReview()` + publish | ~123 reads + 1 write per score (40 students) |
@@ -61,6 +61,15 @@ badge uses count() headcounts for the shown subjects only and is cached 15
 minutes, and Publish/Return re-render and update the bell from memory. A
 teacher's day (10 Home visits, 2 classes graded) is ~1,150 reads instead of
 roughly 20,000.
+
+**Own submissions are cached too.** Each section's submissions live in
+`lms.subCache.<uid>` and are re-read only when that enrollment's
+`subsVersion` changes - stamped by the teacher's `touchStudentSubs()` on
+publish/return/redo/delete/retake and by the student's own writes (so their
+other devices refresh) - or after 1 hour. Photo-heavy sections that would
+overflow localStorage (`fitToBudget()`) simply stay uncached. Subjects + term
+settings are remembered for 30 minutes. About 104 reads per student per day,
+~360 students/day with 10 teachers.
 
 ## Check against reality
 

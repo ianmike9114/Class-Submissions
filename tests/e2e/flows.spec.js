@@ -199,6 +199,49 @@ test("quiz with a question bank:student gets 5 of 6, teacher sees score out of 5
   expect(errors, errors.join(" | ")).toEqual([]);
 });
 
+test("a submission made on one device shows on the student's other device", async ({ page }) => {
+  const errors = trackPageErrors(page);
+  // Teacher adds a second assignment.
+  const tpage = await page.context().browser().newPage();
+  await blockProduction(tpage);
+  tpage.on("dialog", (d) => d.accept());
+  await signIn(tpage, TEACHER, "Teacher One");
+  await tpage.waitForURL(/teacher\.html/);
+  await tpage.locator("#subjects-list [data-open]").first().click();
+  await tpage.locator("#sections-list [data-open]").first().click();
+  await tpage.locator("#view-section summary", { hasText: "Create" }).click();
+  await tpage.locator('[data-create-type="assignment"]').click();
+  await tpage.fill("#assignment-title", "E2E Essay 2");
+  await tpage.fill("#assignment-total-points", "10");
+  await tpage.locator("#create-submit-btn").click();
+  await expect(tpage.locator("#assignments-list")).toContainText("E2E Essay 2");
+  await tpage.close();
+
+  // "Phone" (this page) and "PC" (another browser context) both load - warm caches.
+  await signIn(page, STUDENT, "Juan Dela Cruz");
+  await page.waitForURL(/student\.html/);
+  const pc = await page.context().browser().newPage();
+  await blockProduction(pc);
+  pc.on("dialog", (d) => d.accept());
+  await signIn(pc, STUDENT, "Juan Dela Cruz");
+  await pc.waitForURL(/student\.html/);
+  await expect(pc.locator('.outline-item[data-title="E2E Essay 2"]').first()).toBeAttached();
+  await expect(pc.locator('.outline-item[data-title="E2E Essay 2"]').first()).not.toContainText("Submitted");
+
+  // Submit on the "phone".
+  await page.locator('.outline-item[data-title="E2E Essay 2"]').first().click();
+  const form = page.locator('.card[data-title="E2E Essay 2"] .submit-form').first();
+  await form.locator(".submission-link").fill("https://docs.google.com/document/d/e2eSecondDoc/edit");
+  await form.locator("button[type=submit]").click();
+  await expect(page.locator('.outline-item[data-title="E2E Essay 2"]').first()).toContainText("Submitted");
+
+  // The "PC" picks it up on reload via enrollment.subsVersion.
+  await pc.reload();
+  await expect(pc.locator('.outline-item[data-title="E2E Essay 2"]').first()).toContainText("Submitted");
+  await pc.close();
+  expect(errors, errors.join(" | ")).toEqual([]);
+});
+
 test("quiz builder spreads multiple-choice answers over A-D", async ({ page }) => {
   const errors = trackPageErrors(page);
   await signIn(page, TEACHER, "Teacher One");
