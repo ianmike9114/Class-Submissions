@@ -8,7 +8,7 @@ import {
   QUIZ_MIN_ITEMS, QUIZ_MAX_ITEMS, QUIZ_MAX_BANK, servedQuestions, choiceLengthWarning, countChoiceLengthWarnings, QUIZ_TYPES, QUIZ_GRACE_SECONDS, splitQuiz, joinQuiz, validateQuizItems,
   parseGeneratedQuiz, newItemId, splitAccepted, scoreQuiz, quizTimeLimitSeconds, formatDuration,
   balanceAnswerPositions, answerPatternWarning,
-} from "./quiz.js?v=5";
+} from "./quiz.js?v=6";
 import { getEmailConfig, saveEmailConfig, notifySection } from "./notify.js";
 import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=2";
 import { loadWorkbook, readExamScores, pickBestSheet } from "./class-record.js";
@@ -4608,6 +4608,7 @@ function quizResultHtml(submissionId, s, a, quiz) {
   if (log.breachSubmitted) flags.push(`&#128680; Auto-submitted after ${log.breaches || 3} breaches`);
   if (log.fullscreenExits > 0) flags.push(`&#9888; Exited full screen ${log.fullscreenExits}&times;`);
   if (log.leftCount > 0) flags.push(`&#9888; Left the quiz screen ${log.leftCount}&times;`);
+  if (log.splitScreen > 0) flags.push(`&#9888; Used split screen / pop-up window ${log.splitScreen}&times;`);
   if (log.screenshotKeys > 0) flags.push(`&#9888; Pressed screenshot key ${log.screenshotKeys}&times;`);
   if (log.pasteBlocked > 0) flags.push(`&#9888; Tried to paste ${log.pasteBlocked}&times;`);
   if (log.resumes > 0) flags.push(`Reopened mid-quiz ${log.resumes}&times;`);

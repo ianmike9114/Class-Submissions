@@ -18,6 +18,12 @@ fi
 rm -rf android
 npx cap add android
 
+# No split screen / pop-up view: a quiz half next to notes or AI defeats the
+# screenshot block. Android honors this on phones (ignored on 600dp+ tablets
+# from Android 12, where the web quiz's split-screen pause still applies).
+sed -i 's/<activity/<activity android:resizeableActivity="false"/' android/app/src/main/AndroidManifest.xml
+grep -q 'resizeableActivity="false"' android/app/src/main/AndroidManifest.xml
+
 # Native Google sign-in for @capacitor-firebase/authentication.
 sed -i 's/^ext {/ext {\n    rgcfaIncludeGoogle = true/' android/variables.gradle
 

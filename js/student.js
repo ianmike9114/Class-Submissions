@@ -7,7 +7,7 @@ import {
 import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=2";
 import { runJava } from "./runner.js";
 import { codeBlockHtml, highlightWithin } from "./highlight.js";
-import { seededShuffle, quizDeadlineMs, servedQuestions, QUIZ_BREACH_LIMIT } from "./quiz.js?v=5";
+import { seededShuffle, quizDeadlineMs, servedQuestions, QUIZ_BREACH_LIMIT, isSplitWindow } from "./quiz.js?v=6";
 import {
   readCache, writeCache, staleSectionIds, assignmentDelta, asDoc, chunk, readStore, writeStore, fitToBudget,
   SUB_PREFIX, SUB_CACHE_TTL_MS, TERM_PREFIX, TERM_CACHE_TTL_MS,
@@ -1950,6 +1950,7 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
     breaches: saved.breaches || 0,
     breachEvents: saved.breachEvents || [],
     fullscreenExits: saved.fullscreenExits || 0,
+    splitScreen: saved.splitScreen || 0,
     resumes: (saved.resumes || 0) + (resuming ? 1 : 0),
     itemStartedAt: saved.itemStartedAt || null,
     skew: saved.skew || 0,
@@ -1982,6 +1983,10 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
       <p class="muted">Leaving full screen counts as a breach. ${QUIZ_BREACH_LIMIT} breaches submits your quiz automatically.</p>
       <p class="quiz-fs-msg status-pending"></p>
       <button type="button" class="quiz-fs-btn">Continue in full screen</button>
+    </div>
+    <div class="quiz-split-gate hidden" role="alert">
+      <p><strong>Close split screen or the pop-up window.</strong></p>
+      <p class="muted">The quiz is hidden until it fills the whole screen. Your timer keeps running. Your teacher will see this.</p>
     </div>`;
   document.body.appendChild(overlay);
   document.body.classList.add("quiz-open");
@@ -2114,6 +2119,36 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
     if (!finished && st.leftCount > 0) showWarn(`You left the quiz screen (${st.leftCount}×). Your teacher will see this.`);
   };
   const onBeforeUnload = (ev) => { if (!finished) { ev.preventDefault(); ev.returnValue = ""; } };
+
+  // --- split screen / pop-up window (phones and tablets) ---
+  // A student can read notes or AI in the other half without ever tapping it,
+  // so no blur fires. While the window is clearly smaller than the screen
+  // (js/quiz.js isSplitWindow) the question is covered - no breach, since a
+  // false positive must not auto-submit.
+  const splitGate = overlay.querySelector(".quiz-split-gate");
+  const touch = !!window.matchMedia?.("(pointer: coarse)").matches;
+  let splitShown = false;
+  const checkSplit = () => {
+    if (finished) return;
+    const split = isSplitWindow({
+      touch,
+      typing: document.activeElement?.tagName === "INPUT",
+      innerWidth: window.innerWidth,
+      innerHeight: window.innerHeight,
+      screenWidth: screen.width,
+      screenHeight: screen.height,
+    });
+    if (split && !splitShown) {
+      st.splitScreen++;
+      persist();
+    }
+    splitShown = split;
+    splitGate.classList.toggle("hidden", !split);
+  };
+  checkSplit();
+  window.addEventListener("resize", checkSplit);
+  window.addEventListener("orientationchange", checkSplit);
+
   document.addEventListener("visibilitychange", onVisibility);
   window.addEventListener("blur", onBlur);
   window.addEventListener("focus", onFocus);
@@ -2137,6 +2172,8 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
     window.removeEventListener("blur", onBlur);
     window.removeEventListener("focus", onFocus);
     window.removeEventListener("beforeunload", onBeforeUnload);
+    window.removeEventListener("resize", checkSplit);
+    window.removeEventListener("orientationchange", checkSplit);
     document.removeEventListener("fullscreenchange", onFsChange);
     setScreenshotBlock(false);
     if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
@@ -2265,6 +2302,7 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
           breaches: st.breaches,
           breachEvents: st.breachEvents,
           fullscreenExits: st.fullscreenExits,
+          splitScreen: st.splitScreen,
           breachSubmitted: !!byBreach,
           answered: Object.keys(quizAnswers).length,
         },

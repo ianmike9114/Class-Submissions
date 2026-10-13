@@ -58,5 +58,8 @@ tap **Install**. Sign in with the same Gmail.
 
 - Android only. iPhones keep the web anti-cheat (question bank, watermark,
   breach counting). iOS can't block screenshots for web content.
+- No split screen or pop-up view: the app sets `resizeableActivity="false"`,
+  which phones honor (Android 12+ ignores it on tablets/foldables, where the
+  web quiz's split-screen pause still hides the questions).
 - The "app required" check runs in the student's browser, so it deters but
   can be spoofed, like the rest of the quiz anti-cheat.
