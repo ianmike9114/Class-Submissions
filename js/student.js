@@ -1984,7 +1984,7 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
       <p class="quiz-fs-msg status-pending"></p>
       <button type="button" class="quiz-fs-btn">Continue in full screen</button>
     </div>
-    <div class="quiz-fs-gate quiz-split-gate hidden" role="alert">
+    <div class="quiz-split-gate hidden" role="alert">
       <p><strong>Close split screen or the pop-up window.</strong></p>
       <p class="muted">The quiz is hidden until it fills the whole screen. Your timer keeps running. Your teacher will see this.</p>
     </div>`;

@@ -1345,7 +1345,8 @@ body.quiz-open { overflow: hidden; }
   .quiz-breach-flash::after { animation: none; opacity: 0.35; }
 }
 /* "Continue in full screen" gate - covers the question until re-entered. */
-.quiz-fs-gate {
+.quiz-fs-gate,
+.quiz-split-gate {
   position: fixed;
   inset: 0;
   z-index: 4;
@@ -1358,7 +1359,8 @@ body.quiz-open { overflow: hidden; }
   padding: 1.5rem;
   text-align: center;
 }
-.quiz-fs-gate.hidden { display: none; }
+.quiz-fs-gate.hidden,
+.quiz-split-gate.hidden { display: none; }
 .quiz-split-gate { z-index: 5; }
 .quiz-fs-gate .quiz-fs-btn { min-height: 44px; }
 .quiz-panel {
