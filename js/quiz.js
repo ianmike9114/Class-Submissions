@@ -40,6 +40,13 @@ export function isSplitWindow({ touch, typing, innerWidth, innerHeight, screenWi
   return innerWidth < screenWidth * 0.85 || (!typing && innerHeight < screenHeight * 0.6);
 }
 
+// More than one display attached (Chrome/Edge `screen.isExtended`; undefined
+// on Safari, Firefox and phones, so those never flag). It says a second
+// screen exists, not that the student looked at it.
+export function hasSecondScreen(scr) {
+  return scr?.isExtended === true;
+}
+
 // FNV-1a 32-bit - turns "uid + assignmentId" into a stable shuffle seed, so a
 // refresh shows the same order (no rerolling for an easier order).
 export function hashSeed(str) {
