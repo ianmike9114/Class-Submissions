@@ -9,7 +9,7 @@ import {
   parseGeneratedQuiz, newItemId, splitAccepted, scoreQuiz, quizTimeLimitSeconds, formatDuration,
 } from "./quiz.js?v=1";
 import { getEmailConfig, saveEmailConfig, notifySection } from "./notify.js";
-import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons } from "./embed.js";
+import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=2";
 import { loadWorkbook, readExamScores, pickBestSheet } from "./class-record.js";
 import { runJava } from "./runner.js";
 import { codeBlockHtml, highlightWithin } from "./highlight.js";
@@ -3423,8 +3423,9 @@ function showEmailClassPrompt(built) {
 // ---------- submissions ----------
 function renderAssignmentContext(a) {
   const container = el("assignment-context");
-  const instructionsEmbed = a.instructionsLink ? toEmbedUrl(a.instructionsLink) : null;
-  const rubricEmbed = a.rubricReferenceLink ? toEmbedUrl(a.rubricReferenceLink) : null;
+  // Same as the student side: a Drive/Docs link pasted into the instructions
+  // TEXT (not the file field) is shown inline too.
+  const instructionsLink = a.instructionsLink || extractFirstEmbeddableUrl(a.instructions);
   const nothingToShow = !a.instructions && !a.instructionsLink && !a.rubricReferenceLink;
   container.innerHTML = `
     <details class="card">
@@ -3432,17 +3433,11 @@ function renderAssignmentContext(a) {
       <div style="margin-top:0.75rem;">
         ${nothingToShow ? '<p class="muted">No instructions or rubric reference set for this assignment.</p>' : ""}
         ${a.instructions ? `<p>${a.instructions}</p>` : ""}
-        ${a.instructionsLink
-          ? (instructionsEmbed
-            ? `<iframe src="${instructionsEmbed}" class="submission-preview"></iframe>`
-            : `<div class="muted"><a href="${a.instructionsLink}" target="_blank" rel="noopener">Instructions file</a>${openInChromeButton(a.instructionsLink)}</div>`)
-          : ""}
+        ${embedBlockFor(instructionsLink, { label: "Instructions file" })}
         ${a.uploadFolderLink ? `<div class="muted"><a href="${a.uploadFolderLink}" target="_blank" rel="noopener">Upload folder</a>${openInChromeButton(a.uploadFolderLink)}</div>` : ""}
         ${a.rubricReferenceLink ? `
           <label style="margin-top:0.75rem;">Rubric reference</label>
-          ${rubricEmbed
-            ? `<iframe src="${rubricEmbed}" class="submission-preview"></iframe>`
-            : `<div class="muted"><a href="${a.rubricReferenceLink}" target="_blank" rel="noopener">${a.rubricReferenceLink}</a>${openInChromeButton(a.rubricReferenceLink)}</div>`}` : ""}
+          ${embedBlockFor(a.rubricReferenceLink, { label: a.rubricReferenceLink })}` : ""}
       </div>
     </details>`;
 }

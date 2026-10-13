@@ -62,7 +62,12 @@ export function embedBlockFor(link, { variant = "", label = "Open file" } = {}) 
   const embed = toEmbedUrl(link);
   if (embed) {
     const cls = variant ? `submission-preview ${variant}` : "submission-preview";
-    return `<iframe src="${embed}" class="${cls}"></iframe>`;
+    // The iframe shows an empty gray box (no error the page can detect) when
+    // the file isn't shared "Anyone with the link" or the browser blocks
+    // Google's viewer (Brave Shields, strict tracking protection) - so
+    // always give a plain way to open it directly.
+    return `<iframe src="${embed}" class="${cls}"></iframe>
+      <div class="muted embed-fallback">Blank box? <a href="${link}" target="_blank" rel="noopener">Open in new tab</a>${openInChromeButton(link)} - the file must be shared "Anyone with the link can view".</div>`;
   }
   return `<div class="muted"><a href="${link}" target="_blank" rel="noopener">${label}</a>${openInChromeButton(link)}</div>`;
 }
