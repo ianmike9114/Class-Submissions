@@ -175,10 +175,12 @@ export function isEmailSignInLink(href = window.location.href) {
 // the Messenger -> Mail app -> real-browser hop, since localStorage doesn't
 // carry across browsers. Throws Error("NO_EMAIL") in that case so the caller
 // knows to prompt for the email and retry.
-export async function completeEmailLinkSignIn(emailOverride) {
+// href: the link itself - this page's URL normally, or a link pasted into the
+// Android app (phones without Google Play Services, see index.html).
+export async function completeEmailLinkSignIn(emailOverride, href = window.location.href) {
   const email = emailOverride || window.localStorage.getItem(EMAIL_STORAGE_KEY);
   if (!email) throw new Error("NO_EMAIL");
-  await signInWithEmailLink(auth, email, window.location.href);
+  await signInWithEmailLink(auth, email, href);
   window.localStorage.removeItem(EMAIL_STORAGE_KEY);
 }
 

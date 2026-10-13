@@ -63,6 +63,25 @@
 
       <div id="google-signin-button" style="display:flex; justify-content:center;"></div>
 
+      <!-- Android app only: phones without Google Play Services (e.g. Huawei)
+           can't use the native Google picker, so sign in with an emailed link
+           that is PASTED back here (tapping it would open the browser instead,
+           leaving the app signed out). See initAppSignIn() below. -->
+      <p id="app-email-link-toggle" class="hidden" style="margin-top:0.75rem;">
+        <a href="#" id="app-email-link-open">Can't sign in with Google? Use an email link</a>
+      </p>
+      <div id="app-email-link" class="hidden" style="text-align:left; border:1px solid var(--amber); border-radius:6px; padding:0.75rem; margin-top:1rem;">
+        <p><strong>Sign in with an email link</strong></p>
+        <p class="muted">1. Enter your Gmail and send yourself a sign-in link.</p>
+        <input type="email" id="app-email-input" placeholder="your-email@gmail.com" />
+        <button type="button" id="app-email-send" style="margin-top:0.5rem;">Send link</button>
+        <p class="muted" style="margin-top:0.75rem;">2. In your email, <strong>press and hold</strong> the sign-in link and choose <strong>Copy link</strong>. Don't tap it - that opens your browser instead of this app.</p>
+        <p class="muted">3. Paste it here:</p>
+        <input type="url" id="app-link-paste" placeholder="Paste the link from your email" autocomplete="off" />
+        <button type="button" id="app-link-signin" style="margin-top:0.5rem;">Sign in</button>
+        <p id="app-email-status" class="muted hidden" style="margin-top:0.5rem;"></p>
+      </div>
+
       <label id="remember-row" class="hidden" style="display:flex; align-items:center; justify-content:center; gap:0.4rem; margin-top:0.75rem; font-weight:normal;">
         <input type="checkbox" id="remember-device" style="width:auto; margin:0;" checked />
         Remember this device (untick on shared computers)
@@ -90,7 +109,7 @@
        in document order right before DOMContentLoaded. -->
   <script src="https://accounts.google.com/gsi/client" defer></script>
   <script type="module">
-    import { initGoogleSignIn, isTeacherEmail, sendEmailSignInLink, isEmailSignInLink, completeEmailLinkSignIn, getRememberedEmail, rememberDevice, forgetDevice, isRememberOptedOut, setRememberOptOut, recordAuthHop, clearAuthHops, signInWithGoogleIdToken } from "./js/auth.js?v=6";
+    import { initGoogleSignIn, isTeacherEmail, sendEmailSignInLink, isEmailSignInLink, completeEmailLinkSignIn, getRememberedEmail, rememberDevice, forgetDevice, isRememberOptedOut, setRememberOptOut, recordAuthHop, clearAuthHops, signInWithGoogleIdToken } from "./js/auth.js?v=7";
     import { isLmsApp, nativeGoogleIdToken, setScreenshotBlock } from "./js/app-bridge.js?v=1";
     // The student page turns the app's screenshot block on and FLAG_SECURE
     // outlives page loads, so switch it off on the sign-in page.
@@ -115,6 +134,7 @@
       "auth/invalid-action-code": "That sign-in link is invalid or has already been used - request a new one.",
       "auth/expired-action-code": "That sign-in link has expired - request a new one.",
       "auth/operation-not-allowed": "Email-link sign-in isn't enabled yet for this app (Firebase Console).",
+      "auth/unauthorized-continue-uri": "Email-link sign-in isn't set up for this site yet - ask your teacher.",
     };
 
     // Carry any join ?code= through the whole sign-in hop so a student who
@@ -289,8 +309,55 @@
         } catch (err) {
           showError(FRIENDLY_ERRORS[err.code] || err.message || "Sign-in failed - please try again.");
           btn.disabled = false;
+          openAppEmailLink(); // e.g. no Google Play Services on this phone
         }
       });
+      document.getElementById("app-email-link-toggle").classList.remove("hidden");
+      document.getElementById("app-email-link-open").addEventListener("click", (e) => {
+        e.preventDefault();
+        openAppEmailLink();
+      });
+
+      const status = document.getElementById("app-email-status");
+      const say = (msg) => { status.textContent = msg; status.classList.remove("hidden"); };
+      const emailInput = document.getElementById("app-email-input");
+      document.getElementById("app-email-send").addEventListener("click", async () => {
+        const email = (emailInput.value || "").trim();
+        if (!email.includes("@")) { say("Enter a valid email address first."); return; }
+        say("Sending...");
+        try {
+          await sendEmailSignInLink(email, joinCode);
+          say("Link sent to " + email + " (check Spam/Promotions too). Press and hold it, Copy link, then paste it below.");
+        } catch (err) {
+          say(FRIENDLY_ERRORS[err.code] || err.message || "Couldn't send the link - please try again.");
+        }
+      });
+      document.getElementById("app-link-signin").addEventListener("click", async (e) => {
+        const btn = e.currentTarget;
+        const link = (document.getElementById("app-link-paste").value || "").trim();
+        if (!link || !isEmailSignInLink(link)) {
+          say("That isn't the sign-in link. Copy the whole link from the email and paste it again.");
+          return;
+        }
+        // Email saved by Send on this phone; else whatever is typed above.
+        const email = (emailInput.value || "").trim() || undefined;
+        btn.disabled = true;
+        say("Signing in...");
+        try {
+          await completeEmailLinkSignIn(email, link);
+          // onAuthStateChanged above redirects to the dashboard.
+        } catch (err) {
+          btn.disabled = false;
+          say(err.message === "NO_EMAIL"
+            ? "Enter the email you sent the link to (step 1), then tap Sign in again."
+            : FRIENDLY_ERRORS[err.code] || err.message || "That link is invalid or has expired - send a new one.");
+        }
+      });
+    }
+
+    function openAppEmailLink() {
+      document.getElementById("app-email-link-toggle").classList.add("hidden");
+      document.getElementById("app-email-link").classList.remove("hidden");
     }
 
     function initNormalSignIn() {

@@ -237,6 +237,11 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   — a one-time console step, not a code toggle; see README 2c. Free on
   Spark (Firebase Auth email link has no cost — only phone/SMS auth
   does), so it doesn't break the no-Blaze constraint.
+  **Also the Android app's fallback** when the native Google picker fails
+  (no Google Play Services, e.g. Huawei): `index.html`'s `initAppSignIn()`
+  shows `#app-email-link`, where the student sends the link and **pastes** it
+  back (`completeEmailLinkSignIn(email, href)` takes the pasted link) - tapping
+  it would complete sign-in in the browser, not the app.
 - Removing single enrollment ("Remove" button in Enrolled Students,
   `js/teacher.js`) still only deletes that one `enrollments` doc —
   narrower, still-deliberate case, not same as subject/section/

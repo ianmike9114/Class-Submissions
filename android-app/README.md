@@ -57,6 +57,12 @@ tap **Install**. Sign in with the same Gmail.
 
 ## Limits
 
+- Native Google sign-in needs Google Play Services. On phones without it
+  (Huawei, or Play Services off/outdated) it fails ("getCredentialAsync no
+  provider dependencies found"), and the sign-in page opens **"Use an email
+  link"**: the student emails themselves a Firebase sign-in link, long-presses
+  it, Copy link, and pastes it into the app (tapping it would open the browser
+  instead). Website-side, no APK change.
 - Android only. iPhones keep the web anti-cheat (question bank, watermark,
   breach counting). iOS can't block screenshots for web content.
 - No split screen or pop-up view: the app sets `resizeableActivity="false"`,

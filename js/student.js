@@ -1,5 +1,5 @@
 import { db, ADMIN_EMAIL, isSuperAdmin } from "./firebase-config.js";
-import { guardPage, signOutUser } from "./auth.js?v=6";
+import { guardPage, signOutUser } from "./auth.js?v=7";
 import { isLmsApp, isAndroid, setScreenshotBlock, APP_APK_URL } from "./app-bridge.js?v=1";
 import {
   collection, addDoc, setDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where, arrayUnion, arrayRemove, serverTimestamp, documentId,

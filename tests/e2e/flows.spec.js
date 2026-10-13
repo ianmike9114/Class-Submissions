@@ -301,6 +301,30 @@ test("quiz builder spreads multiple-choice answers over A-D", async ({ page }) =
   expect(errors, errors.join(" | ")).toEqual([]);
 });
 
+test("Android app without Play Services signs in with a pasted email link", async ({ browser }) => {
+  // The app's WebView user agent carries ClassSubmissionsApp/ (isLmsApp()).
+  // No Capacitor here, so the native Google picker fails - like a phone
+  // without Google Play Services - and the email-link panel must open.
+  const ctx = await browser.newContext({ userAgent: "Mozilla/5.0 (Linux; Android 13) Chrome/120 Mobile ClassSubmissionsApp/1" });
+  const page = await ctx.newPage();
+  await blockProduction(page);
+  const errors = trackPageErrors(page);
+  const email = "app.student@test.com";
+  await page.goto("/index.html?emu=1");
+  await page.locator("#app-google-signin").click();
+  await expect(page.locator("#app-email-link")).toBeVisible();
+  await page.locator("#app-email-input").fill(email);
+  await page.locator("#app-email-send").click();
+  await expect(page.locator("#app-email-status")).toContainText("Link sent");
+  const res = await fetch("http://127.0.0.1:9099/emulator/v1/projects/demo-lms-e2e/oobCodes");
+  const link = (await res.json()).oobCodes.filter((c) => c.email === email && c.requestType === "EMAIL_SIGNIN").pop().oobLink;
+  await page.locator("#app-link-paste").fill(link);
+  await page.locator("#app-link-signin").click();
+  await page.waitForURL(/student\.html/);
+  expect(errors, errors.join(" | ")).toEqual([]);
+  await ctx.close();
+});
+
 test("another teacher can't see the first teacher's subject", async ({ page }) => {
   await signIn(page, TEACHER2, "Teacher Two");
   await page.waitForURL(/teacher\.html/);
