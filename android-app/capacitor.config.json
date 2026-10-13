@@ -1,0 +1,21 @@
+{
+  "appId": "com.classsubmissions.app",
+  "appName": "Class Submissions",
+  "webDir": "www",
+  "server": {
+    "url": "https://deped-class-submissions.vercel.app",
+    "cleartext": false
+  },
+  "android": {
+    "appendUserAgent": "ClassSubmissionsApp/1"
+  },
+  "plugins": {
+    "PrivacyScreen": {
+      "enable": false
+    },
+    "FirebaseAuthentication": {
+      "skipNativeAuth": true,
+      "providers": ["google.com"]
+    }
+  }
+}

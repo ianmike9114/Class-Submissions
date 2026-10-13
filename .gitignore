@@ -13,3 +13,9 @@ test-results/
 playwright-report/
 .playwright/
 ui-debug.log
+
+# Android app: generated native project + build outputs (CI regenerates them)
+android-app/android/
+android-app/assets/
+android-app/*.apk
+android-app/*.jks
