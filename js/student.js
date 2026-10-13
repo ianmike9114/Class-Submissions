@@ -6,7 +6,7 @@ import {
 import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=2";
 import { runJava } from "./runner.js";
 import { codeBlockHtml, highlightWithin } from "./highlight.js";
-import { seededShuffle, quizDeadlineMs, servedQuestions } from "./quiz.js?v=2";
+import { seededShuffle, quizDeadlineMs, servedQuestions } from "./quiz.js?v=3";
 
 let currentUser = null;
 function el(id) { return document.getElementById(id); }
