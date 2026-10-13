@@ -1,5 +1,5 @@
 import { db, ADMIN_EMAIL, isSuperAdmin } from "./firebase-config.js";
-import { guardPage, signOutUser } from "./auth.js?v=3";
+import { guardPage, signOutUser } from "./auth.js?v=4";
 import { isLmsApp, isAndroid, setScreenshotBlock, APP_APK_URL } from "./app-bridge.js?v=1";
 import {
   collection, addDoc, setDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where, arrayUnion, arrayRemove, serverTimestamp,
@@ -8,6 +8,7 @@ import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEm
 import { runJava } from "./runner.js";
 import { codeBlockHtml, highlightWithin } from "./highlight.js";
 import { seededShuffle, quizDeadlineMs, servedQuestions, QUIZ_BREACH_LIMIT } from "./quiz.js?v=4";
+import { readCache, writeCache, staleSectionIds, asDoc, chunk } from "./assignment-cache.js?v=1";
 
 let currentUser = null;
 function el(id) { return document.getElementById(id); }
@@ -361,6 +362,9 @@ function normYear(v) {
 // if the rules aren't deployed yet (or the read fails) archived hiding still
 // works and no class is hidden by term. Any top-level read error returns an
 // empty set, so a hiccup never blanks the dashboard - the class stays visible.
+// Also returns the section docs it read (reused for topic order + the
+// assignment cache's assignmentsVersion check, so sections are read once), and
+// ok:false on a top-level failure so the caller doesn't cache that result.
 async function getHiddenSectionIds(sectionIds) {
   try {
     const sectionDocs = await getDocsByIds("sections", sectionIds);
@@ -423,12 +427,24 @@ async function getHiddenSectionIds(sectionIds) {
     for (const [sectionId, subjectId] of sectionToSubject) {
       if (hiddenSubjects.has(subjectId)) hiddenSections.add(sectionId);
     }
-    return hiddenSections;
+    return { hidden: hiddenSections, sectionDocs, ok: true };
   } catch (err) {
     console.error("hidden-section lookup failed (showing all classes):", err);
-    return new Set();
+    return { hidden: new Set(), sectionDocs: [], ok: false };
   }
 }
+
+// Spark read budget (tests/load/quota-budget.md): loadEverything() runs on
+// every page load AND after every student action, so the slow-changing parts -
+// the hidden-class lookup (sections/subjects/settings) - are reused in memory
+// for 10 minutes while the enrolled-section set is unchanged. A join/approval
+// changes the key and refetches; a page load always starts fresh. Enrollments
+// and submissions are always re-read (they're what an action changes).
+// Assignments live in the per-section cache (js/assignment-cache.js); the
+// teacher "View as" preview keeps it in memory only, never in localStorage.
+const PAGE_CACHE_MS = 10 * 60 * 1000;
+let pageCache = null; // { key, at, info }
+const memAsgCache = {};
 
 async function loadEverything() {
   const enrollSnap = await getDocs(
@@ -453,9 +469,16 @@ async function loadEverything() {
   // some legacy enrollments don't have. Filtering both arrays here hides the
   // class card, its assignments, and its outline group at once, since everything
   // downstream derives from them.
-  const hiddenSectionIds = await getHiddenSectionIds(
-    allEnrollments.map((en) => en.sectionId)
-  );
+  const allSectionIds = [...new Set(allEnrollments.map((en) => en.sectionId).filter(Boolean))].sort();
+  const pageKey = dataUID() + "|" + allSectionIds.join(",");
+  let hiddenInfo;
+  if (pageCache && pageCache.key === pageKey && Date.now() - pageCache.at < PAGE_CACHE_MS) {
+    hiddenInfo = pageCache.info;
+  } else {
+    hiddenInfo = await getHiddenSectionIds(allSectionIds);
+    pageCache = hiddenInfo.ok ? { key: pageKey, at: Date.now(), info: hiddenInfo } : null;
+  }
+  const hiddenSectionIds = hiddenInfo.hidden;
   if (hiddenSectionIds.size) {
     enrollments = enrollments.filter((en) => !hiddenSectionIds.has(en.sectionId));
     for (let i = pendingEnrollments.length - 1; i >= 0; i--) {
@@ -574,10 +597,36 @@ async function loadEverything() {
   updateQuizTabCount(0);
   if (sectionIds.length === 0) return;
 
-  // Firestore 'in' queries cap at 30 - fine for a solo class-load use case.
-  const assignSnap = await getDocs(
-    query(collection(db, "assignments"), where("sectionId", "in", sectionIds.slice(0, 30)))
-  );
+  // Assignments: served from the per-section cache, re-fetching only sections
+  // whose assignmentsVersion changed (teacher touchSection()), that have no
+  // entry, are past the 6h TTL, or whose section doc couldn't be read. Firestore
+  // 'in' queries cap at 30, hence the chunks. Sorted by id afterwards to keep
+  // Firestore's own default (document id) order the render relied on.
+  const visibleSectionIds = [...new Set(sectionIds)].slice(0, 30);
+  const versionById = new Map(hiddenInfo.sectionDocs.map((d) => [d.id, d.data().assignmentsVersion ?? null]));
+  const asgCache = viewCtx ? memAsgCache : readCache(dataUID());
+  const nowMs = Date.now();
+  const stale = new Set([
+    ...staleSectionIds(visibleSectionIds.map((id) => ({ id, version: versionById.get(id) ?? null })), asgCache, nowMs),
+    ...visibleSectionIds.filter((id) => !versionById.has(id)),
+  ]);
+  if (stale.size) {
+    const snaps = await Promise.all(chunk([...stale]).map((ids) =>
+      getDocs(query(collection(db, "assignments"), where("sectionId", "in", ids)))
+    ));
+    for (const id of stale) asgCache[id] = { v: versionById.get(id) ?? null, at: nowMs, docs: [] };
+    for (const snap of snaps) {
+      for (const d of snap.docs) asgCache[d.data().sectionId]?.docs.push({ id: d.id, data: d.data() });
+    }
+  }
+  for (const id of Object.keys(asgCache)) if (!visibleSectionIds.includes(id)) delete asgCache[id];
+  if (!viewCtx) writeCache(dataUID(), asgCache);
+  const assignSnap = {
+    docs: visibleSectionIds
+      .flatMap((id) => asgCache[id]?.docs || [])
+      .sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0))
+      .map((d) => asDoc(d.id, d.data)),
+  };
 
   // Group by subject so a student in multiple classes can tell which
   // assignment belongs to which - a flat list gave no such signal.
@@ -600,11 +649,28 @@ async function loadEverything() {
   // query (reads = their own submission count) and needs no composite index
   // (studentUID-only equality). Rules already allow a student to read their
   // own submissions (studentUID == request.auth.uid).
-  const mySubsSnap = await getDocs(
-    query(collection(db, "submissions"), where("studentUID", "==", dataUID()), ...ownerScope())
-  );
+  //
+  // Narrowed to the assignments actually shown (assignmentId 'in' chunks), so a
+  // student's past-term submissions - which only grow - aren't re-read on every
+  // load. Equality + 'in' is served by single-field index merging; if Firestore
+  // ever asks for a composite index (failed-precondition) or the query fails,
+  // fall back to the old unfiltered query so the dashboard never breaks.
+  let mySubDocs = [];
+  const shownIds = allADocs.map((d) => d.id);
+  try {
+    const snaps = await Promise.all(chunk(shownIds).map((ids) => getDocs(query(
+      collection(db, "submissions"), where("studentUID", "==", dataUID()), where("assignmentId", "in", ids), ...ownerScope()
+    ))));
+    mySubDocs = snaps.flatMap((s) => s.docs);
+  } catch (err) {
+    console.warn("filtered submissions query failed, using full query:", err);
+    const all = await getDocs(
+      query(collection(db, "submissions"), where("studentUID", "==", dataUID()), ...ownerScope())
+    );
+    mySubDocs = all.docs;
+  }
   const subDocsByAssignment = new Map();
-  mySubsSnap.forEach((d) => {
+  mySubDocs.forEach((d) => {
     const assignmentId = d.data().assignmentId;
     // Keep the first seen per assignment - matches the old per-assignment
     // query's .docs[0] (a student has at most one submission per assignment).
@@ -871,15 +937,14 @@ async function loadEverything() {
   saveAssignmentsSeen(seen);
 
   // Managed topic order per subject: read each enrolled section's ordered
-  // `topics` array (one get per section - a student has only a few) and merge
+  // `topics` array (from the section docs already read above) and merge
   // per subject. Rules allow a single-doc get on sections. Falls back to the
   // current first-seen order for any section without topics.
   const topicOrderBySubject = new Map();
-  const sectionDocs = await Promise.all(
-    [...new Set(sectionIds)].slice(0, 30).map((id) => getDoc(doc(db, "sections", id)).catch(() => null))
-  );
-  for (const sd of sectionDocs) {
-    if (!sd || !sd.exists()) continue;
+  // Section docs were already read by getHiddenSectionIds() - reused, not re-fetched.
+  const shownSections = new Set(visibleSectionIds);
+  for (const sd of hiddenInfo.sectionDocs) {
+    if (!shownSections.has(sd.id)) continue;
     const subj = sectionToSubject.get(sd.id) || "Other";
     if (!topicOrderBySubject.has(subj)) topicOrderBySubject.set(subj, []);
     const arr = topicOrderBySubject.get(subj);

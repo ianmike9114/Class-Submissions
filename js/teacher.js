@@ -1,5 +1,5 @@
 import { db, ADMIN_EMAIL, isSuperAdmin } from "./firebase-config.js";
-import { guardPage, signOutUser } from "./auth.js?v=3";
+import { guardPage, signOutUser } from "./auth.js?v=4";
 import {
   collection, addDoc, doc, setDoc, updateDoc, deleteDoc, deleteField, writeBatch, getDoc, getDocs, getCountFromServer, query, where, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -336,6 +336,20 @@ function renderSectionQR(sectionId, joinCode, label) {
 async function deleteWhere(collectionName, field, value) {
   const snap = await getDocs(ownerScopedQuery(collectionName, where(field, "==", value)));
   await Promise.all(snap.docs.map((d) => deleteDoc(d.ref)));
+}
+
+// Stamps sections/{id}.assignmentsVersion so students' cached assignment lists
+// (js/assignment-cache.js) refetch that class on their next load. Call after
+// EVERY assignment add/edit/delete - a missed path leaves students on the old
+// list for up to the cache's 6h TTL. Best-effort: never blocks the save.
+// Allowed by the existing sections update rule (canActAsOwner).
+async function touchSection(sectionId) {
+  if (!sectionId) return;
+  try {
+    await updateDoc(doc(db, "sections", sectionId), { assignmentsVersion: Date.now() });
+  } catch (err) {
+    console.error("touchSection failed (students refresh within 6h):", err);
+  }
 }
 
 async function cascadeDeleteAssignment(assignmentId) {
@@ -2416,6 +2430,7 @@ async function renameTopic(i) {
   const snap = await getDocs(query(collection(db, "assignments"), where("sectionId", "==", state.sectionId)));
   const targets = snap.docs.filter((d) => ownedByViewAs(d.data()) && (d.data().lesson || "") === oldName);
   await Promise.all(targets.map((d) => updateDoc(doc(db, "assignments", d.id), { lesson: newName })));
+  if (targets.length) await touchSection(state.sectionId);
   loadAssignments();
 }
 
@@ -3046,6 +3061,7 @@ async function loadAssignments() {
       if (!ok) return;
       b.disabled = true;
       await cascadeDeleteAssignment(b.dataset.deleteAssignment);
+      await touchSection(state.sectionId);
       alert("Deleted.");
       loadAssignments();
     }));
@@ -3350,6 +3366,7 @@ el("add-assignment-form").addEventListener("submit", async (e) => {
     payload.totalPoints = quizData.totalPoints;
   }
   const ref = await addDoc(collection(db, "assignments"), payload);
+  await touchSection(payload.sectionId);
   if (quizData) {
     // Answer key in its own owner-only doc. If that write is refused (e.g.
     // the quizKeys rule isn't deployed yet), don't leave behind a quiz with
@@ -3359,6 +3376,7 @@ el("add-assignment-form").addEventListener("submit", async (e) => {
     } catch (err) {
       console.error(err);
       await deleteDoc(ref).catch(() => {});
+      await touchSection(payload.sectionId);
       alert("Couldn't save the quiz answer key, so the quiz was not created. (Are the latest Firestore rules deployed?) " + err.message);
       return;
     }
@@ -3408,6 +3426,7 @@ el("bulk-due-apply").addEventListener("click", async () => {
 
   statusEl.textContent = "Applying...";
   await Promise.all(ids.map((id) => updateDoc(doc(db, "assignments", id), { dueDate: date })));
+  await touchSection(state.sectionId);
   statusEl.textContent = `Set ${date} on ${ids.length} assignment(s).`;
   loadAssignments();
 });
@@ -3487,6 +3506,7 @@ function renderAssignmentContext(a) {
 async function openAssignment(assignmentId) {
   state.assignmentId = assignmentId;
   const data = (await getDoc(doc(db, "assignments", assignmentId))).data();
+  state.assignmentSectionId = data.sectionId || null; // for touchSection() on save
   const isMaterial = data.type === "material";
   el("assignment-view-title").textContent = data.title;
   el("edit-assignment-title").value = data.title || "";
@@ -3572,6 +3592,7 @@ el("edit-assignment-form").addEventListener("submit", async (e) => {
     }
   }
   await updateDoc(doc(db, "assignments", assignmentId), payload);
+  await touchSection(state.assignmentSectionId);
   alert("Saved.");
   await openAssignment(assignmentId);
 });

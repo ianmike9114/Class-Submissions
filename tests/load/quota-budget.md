@@ -32,15 +32,25 @@ of them with `--name value`.
 
 | Action | Code | Reads (default assumptions) |
 |---|---|---|
-| Student dashboard load | `js/student.js` `loadEverything()` | ~174: every assignment in the student's classes plus their own submissions |
-| Student submit | submit form → `loadEverything()` reload | ~174 reads + 1 write |
+| Student dashboard load | `js/student.js` `loadEverything()` + `js/assignment-cache.js` | ~73: class info + assignments only for classes a teacher changed + this term's own submissions |
+| Student submit | submit form → `loadEverything()` reload | ~38 reads + 1 write (reuses cached class info and assignments) |
 | Teacher Home | `loadSubjects()`, `getNotifications()`, `getMissingWorkCounts()` | ~377, cached for the session |
 | Grade one assignment | `loadSubmissions()` + publish | ~43 reads + 1 write per score |
 
-**Reads are the bottleneck, not writes.** The biggest single cost is the
-student dashboard reading *every* assignment and *every* own submission on
-each load. Cutting that (for example, only the current term's assignments, or
-caching between page loads) is the lever if the budget goes RED.
+**How the student side stays cheap.** Before the assignment cache, every
+dashboard load and every reload after an action read *every* assignment and
+*every* submission the student ever made (~174 reads, ~72 students/day). Now:
+
+- Each class's assignments are remembered in the student's browser
+  (`lms.asgCache.<uid>`) and re-read only when `sections/{id}.assignmentsVersion`
+  changes. `js/teacher.js` `touchSection()` stamps it on every assignment
+  add/edit/delete, with a 6-hour TTL as a safety net.
+- Only submissions for the assignments on screen are read (this term), not
+  past terms.
+- After an action, the class/term lookup is reused for 10 minutes.
+
+With 10 teachers the free plan now fits about **200 active students/day**;
+teachers' own Home loads (~1,200 reads each per day) are now the next lever.
 
 ## Check against reality
 

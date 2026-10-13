@@ -360,6 +360,23 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   for search, re-downloaded every submission site-wide on each keystroke for
   the super admin). Remaining full reads (photo-ZIP panel, Overview's
   not-responding list) genuinely need the docs or are off the Home path.
+- **Student assignment cache + `assignmentsVersion` marker (Spark read
+  budget).** `js/student.js`'s `loadEverything()` runs on every load and after
+  every student action; it used to re-read every assignment and every
+  submission ever (~174 reads/load, ~72 students/day on Spark). Now
+  `js/assignment-cache.js` keeps each section's assignments in localStorage
+  (`lms.asgCache.<uid>`, memory-only in "View as", cleared by
+  `signOutUser()`) and refetches a section only when its
+  `sections/{id}.assignmentsVersion` changed, it has no entry, or the entry is
+  older than 6h. **Every assignment add/edit/delete path in `js/teacher.js` must
+  call `touchSection(sectionId)`** (currently: add, failed-quiz cleanup, edit,
+  delete, bulk due date, topic rename) - a missed path leaves students on the
+  old list for up to 6h. Submissions are read only for the shown assignments
+  (`assignmentId` 'in' chunks, falls back to the full query on any error), and
+  the hidden-class lookup (`getHiddenSectionIds()`, now also returning the
+  section docs it read so sections are read once) is reused in memory for 10
+  min while the enrolled-section set is unchanged. No rules change (section
+  update is already owner-allowed), no new index. Estimate: `npm run budget`.
 - **Notification bell has third bucket, "new joins".** `js/student.js`'s
   `enroll()` stamps every new enrollment with `seen: false`;
   `js/teacher.js`'s `getNotifications()` queries `seen == false`
