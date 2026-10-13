@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   hashSeed, seededShuffle, normalizeAnswer, splitAccepted, isCorrect, scoreQuiz,
   quizDeadlineMs, splitQuiz, joinQuiz, validateQuizItems, parseGeneratedQuiz, formatDuration,
-  servedQuestions, QUIZ_MAX_BANK, choiceLengthWarning, countChoiceLengthWarnings,
+  servedQuestions, QUIZ_MAX_BANK, choiceLengthWarning, countChoiceLengthWarnings, QUIZ_BREACH_LIMIT,
 } from "../../js/quiz.js";
 
 describe("seededShuffle", () => {
@@ -165,5 +165,11 @@ describe("choiceLengthWarning", () => {
       { type: "tf", answer: true },
     ];
     expect(countChoiceLengthWarnings(items)).toBe(1);
+  });
+});
+
+describe("QUIZ_BREACH_LIMIT", () => {
+  it("auto-submits on the 3rd breach", () => {
+    expect(QUIZ_BREACH_LIMIT).toBe(3);
   });
 });

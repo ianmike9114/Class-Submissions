@@ -6,7 +6,7 @@ import {
 import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=2";
 import { runJava } from "./runner.js";
 import { codeBlockHtml, highlightWithin } from "./highlight.js";
-import { seededShuffle, quizDeadlineMs, servedQuestions } from "./quiz.js?v=3";
+import { seededShuffle, quizDeadlineMs, servedQuestions, QUIZ_BREACH_LIMIT } from "./quiz.js?v=4";
 
 let currentUser = null;
 function el(id) { return document.getElementById(id); }
@@ -1673,10 +1673,17 @@ function renderQuizIntro(assignmentId, a) {
         <li>One question at a time. <strong>You can't go back.</strong></li>
         <li>You have <strong>${secs} seconds</strong> for each item.</li>
         <li>Leaving this screen (opening another app or tab) is <strong>recorded and shown to your teacher</strong>.</li>
+        <li>${quizFullscreenSupported() ? "The quiz runs in <strong>full screen</strong>. Leaving full screen, switching apps, or pressing the screenshot key" : "Switching apps or pressing the screenshot key"} counts as a <strong>breach</strong> - <strong>${QUIZ_BREACH_LIMIT} breaches submits your quiz automatically</strong>.</li>
         <li>You can take it <strong>only once</strong>. Make sure your internet is stable first.</li>
       </ul>
       <button type="button" class="quiz-start-btn" data-start-quiz="${assignmentId}">Start quiz</button>
     </div>`;
+}
+
+// Element full screen: Android Chrome / desktop yes, iPhone Safari no (there
+// the quiz runs as before and only app-switching counts as a breach).
+function quizFullscreenSupported() {
+  return !!(document.fullscreenEnabled && document.documentElement.requestFullscreen);
 }
 
 const QUIZ_STORE_PREFIX = "quizState:";
@@ -1747,6 +1754,9 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
     leftEvents: saved.leftEvents || [],
     screenshotKeys: saved.screenshotKeys || 0,
     pasteBlocked: saved.pasteBlocked || 0,
+    breaches: saved.breaches || 0,
+    breachEvents: saved.breachEvents || [],
+    fullscreenExits: saved.fullscreenExits || 0,
     resumes: (saved.resumes || 0) + (resuming ? 1 : 0),
     itemStartedAt: saved.itemStartedAt || null,
     skew: saved.skew || 0,
@@ -1773,6 +1783,12 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
       <div class="quiz-body"></div>
       <p class="quiz-warn hidden" role="alert"></p>
       <button type="button" class="quiz-next"></button>
+    </div>
+    <div class="quiz-fs-gate hidden">
+      <p><strong>The quiz runs in full screen.</strong></p>
+      <p class="muted">Leaving full screen counts as a breach. ${QUIZ_BREACH_LIMIT} breaches submits your quiz automatically.</p>
+      <p class="quiz-fs-msg status-pending"></p>
+      <button type="button" class="quiz-fs-btn">Continue in full screen</button>
     </div>`;
   document.body.appendChild(overlay);
   document.body.classList.add("quiz-open");
@@ -1818,6 +1834,7 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
       persist();
       try { navigator.clipboard?.writeText(""); } catch { /* ignore */ }
       showWarn("Screenshots are recorded and shown to your teacher.");
+      recordBreach("screenshot-key");
     }
   };
   const onKeyDown = (ev) => {
@@ -1838,10 +1855,64 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
     st.leftEvents.push(Math.round((t - startedAtMs) / 1000));
     if (st.leftEvents.length > 50) st.leftEvents.shift();
     persist();
+    recordBreach("left");
   };
+
+  // --- breaches (full screen exit / leaving / screenshot key) ---
+  // One event per real action: exiting full screen also fires blur and
+  // visibilitychange, so breaches share a 1.5s dedupe window.
+  let lastBreach = 0;
+  function recordBreach(kind) {
+    if (finished || submitting) return;
+    const t = now();
+    if (t - lastBreach < 1500) return;
+    lastBreach = t;
+    st.breaches++;
+    st.breachEvents.push({ kind, t: Math.round((t - startedAtMs) / 1000) });
+    if (st.breachEvents.length > 50) st.breachEvents.shift();
+    persist();
+    overlay.classList.remove("quiz-breach-flash");
+    void overlay.offsetWidth; // restart the animation
+    overlay.classList.add("quiz-breach-flash");
+    setTimeout(() => overlay.classList.remove("quiz-breach-flash"), 1000);
+    if (st.breaches >= QUIZ_BREACH_LIMIT) {
+      showWarn(`Breach ${st.breaches} of ${QUIZ_BREACH_LIMIT} - your quiz is being submitted.`);
+      submit(false, true);
+      return;
+    }
+    showWarn(`Breach ${st.breaches} of ${QUIZ_BREACH_LIMIT} - leaving full screen, switching apps or screenshots are recorded. At ${QUIZ_BREACH_LIMIT} your quiz submits automatically.`);
+  }
+
+  // --- full screen gate ---
+  // Entered from a tap on the gate button (a fresh user gesture - the Start
+  // tap is spent on its confirm() and Firestore awaits). Not supported on
+  // iPhone Safari, where the gate never shows.
+  const fsSupported = quizFullscreenSupported();
+  const gate = overlay.querySelector(".quiz-fs-gate");
+  let fsEntered = false;
+  const showGate = () => { if (fsSupported && !finished) gate.classList.remove("hidden"); };
+  gate.querySelector(".quiz-fs-btn").addEventListener("click", () => {
+    document.documentElement.requestFullscreen().catch(() => {
+      // Refused (rare) - don't trap the student behind the gate.
+      gate.classList.add("hidden");
+    });
+  });
+  const onFsChange = () => {
+    if (document.fullscreenElement) {
+      fsEntered = true;
+      gate.classList.add("hidden");
+    } else if (fsEntered && !finished) {
+      st.fullscreenExits++;
+      persist();
+      recordBreach("exit-fullscreen");
+      showGate();
+    }
+  };
+  document.addEventListener("fullscreenchange", onFsChange);
+  if (!document.fullscreenElement) showGate();
   const onVisibility = () => {
     if (document.visibilityState === "hidden") recordLeave();
-    else if (!finished) showWarn(`You left the quiz screen (${st.leftCount}×). Your teacher will see this.`);
+    else if (!finished && st.leftCount > 0) showWarn(`You left the quiz screen (${st.leftCount}×). Your teacher will see this.`);
   };
   const onBlur = () => { overlay.classList.add("quiz-blurred"); recordLeave(); };
   const onFocus = () => {
@@ -1857,6 +1928,8 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
   function showWarn(msg) {
     warn.textContent = "⚠ " + msg;
     warn.classList.remove("hidden");
+    // The full-screen gate covers the panel - repeat the warning there.
+    overlay.querySelector(".quiz-fs-msg").textContent = warn.textContent;
   }
 
   function cleanup() {
@@ -1870,6 +1943,8 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
     window.removeEventListener("blur", onBlur);
     window.removeEventListener("focus", onFocus);
     window.removeEventListener("beforeunload", onBeforeUnload);
+    document.removeEventListener("fullscreenchange", onFsChange);
+    if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
     overlay.remove();
     document.body.classList.remove("quiz-open");
   }
@@ -1959,7 +2034,7 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
   }
 
   let submitting = false;
-  async function submit(timedOut) {
+  async function submit(timedOut, byBreach = false) {
     if (submitting) return;
     submitting = true;
     clearInterval(tick);
@@ -1992,6 +2067,10 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
           pasteBlocked: st.pasteBlocked,
           resumes: st.resumes,
           timedOut: !!timedOut,
+          breaches: st.breaches,
+          breachEvents: st.breachEvents,
+          fullscreenExits: st.fullscreenExits,
+          breachSubmitted: !!byBreach,
           answered: Object.keys(quizAnswers).length,
         },
         quizSubmittedAt: serverTimestamp(),
@@ -2001,7 +2080,7 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
       });
       clearQuizState(assignmentId);
       cleanup();
-      alert((timedOut ? "Time's up! " : "") + "Quiz submitted. Your score will show here once your teacher checks it.");
+      alert((timedOut ? "Time's up! " : byBreach ? `${QUIZ_BREACH_LIMIT} breaches - your quiz was submitted automatically. ` : "") + "Quiz submitted. Your score will show here once your teacher checks it.");
       loadEverything();
     } catch (err) {
       console.error(err);
@@ -2011,7 +2090,7 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
         <p class="muted">Your answers are saved on this device. Tap Try again.</p>`;
       nextBtn.textContent = "Try again";
       nextBtn.classList.remove("hidden", "secondary");
-      retry = () => submit(timedOut);
+      retry = () => submit(timedOut, byBreach);
     }
   }
 

@@ -7,7 +7,7 @@ import { getGeminiKey, setGeminiKey, getGroqKey, setGroqKey, runRubricCheck, gen
 import {
   QUIZ_MIN_ITEMS, QUIZ_MAX_ITEMS, QUIZ_MAX_BANK, servedQuestions, choiceLengthWarning, countChoiceLengthWarnings, QUIZ_TYPES, QUIZ_GRACE_SECONDS, splitQuiz, joinQuiz, validateQuizItems,
   parseGeneratedQuiz, newItemId, splitAccepted, scoreQuiz, quizTimeLimitSeconds, formatDuration,
-} from "./quiz.js?v=3";
+} from "./quiz.js?v=4";
 import { getEmailConfig, saveEmailConfig, notifySection } from "./notify.js";
 import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=2";
 import { loadWorkbook, readExamScores, pickBestSheet } from "./class-record.js";
@@ -4383,6 +4383,8 @@ function quizResultHtml(submissionId, s, a, quiz) {
   const attempt = attempts.get(s.studentUID);
   const limitSec = quizTimeLimitSeconds(questions.length, a.quiz?.secondsPerItem);
   const flags = [];
+  if (log.breachSubmitted) flags.push(`&#128680; Auto-submitted after ${log.breaches || 3} breaches`);
+  if (log.fullscreenExits > 0) flags.push(`&#9888; Exited full screen ${log.fullscreenExits}&times;`);
   if (log.leftCount > 0) flags.push(`&#9888; Left the quiz screen ${log.leftCount}&times;`);
   if (log.screenshotKeys > 0) flags.push(`&#9888; Pressed screenshot key ${log.screenshotKeys}&times;`);
   if (log.pasteBlocked > 0) flags.push(`&#9888; Tried to paste ${log.pasteBlocked}&times;`);
