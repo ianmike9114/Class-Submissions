@@ -1,5 +1,6 @@
 import { db, ADMIN_EMAIL, isSuperAdmin } from "./firebase-config.js";
-import { guardPage, signOutUser } from "./auth.js?v=2";
+import { guardPage, signOutUser } from "./auth.js?v=3";
+import { isLmsApp, isAndroid, setScreenshotBlock, APP_APK_URL } from "./app-bridge.js?v=1";
 import {
   collection, addDoc, setDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where, arrayUnion, arrayRemove, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -1663,6 +1664,7 @@ try { if (localStorage.getItem("studentTab") === "quizzes") setStudentTab("quizz
 // here), so nothing in this file knows the correct answers.
 
 function renderQuizIntro(assignmentId, a) {
+  if (quizNeedsApp(a)) return renderGetAppGate();
   const total = a.quiz?.questions?.length || 0;
   const n = a.quiz?.drawCount && a.quiz.drawCount < total ? a.quiz.drawCount : total;
   const secs = a.quiz?.secondsPerItem || 60;
@@ -1683,7 +1685,30 @@ function renderQuizIntro(assignmentId, a) {
 // Element full screen: Android Chrome / desktop yes, iPhone Safari no (there
 // the quiz runs as before and only app-switching counts as a breach).
 function quizFullscreenSupported() {
+  // The Android app is already full screen (and blocks screenshots) - no gate.
+  if (isLmsApp()) return false;
   return !!(document.fullscreenEnabled && document.documentElement.requestFullscreen);
+}
+
+// Teacher ticked "Android students must use the app" (quiz.requireApp) and
+// this is an Android phone's normal browser - send them to the app instead.
+// Client-side check (deterrence, like the rest of the quiz anti-cheat).
+function quizNeedsApp(a) {
+  return !!a.quiz?.requireApp && isAndroid() && !isLmsApp();
+}
+
+function renderGetAppGate() {
+  return `
+    <div class="quiz-intro">
+      <p><strong>&#128241; This quiz must be taken in the Class Submissions app.</strong></p>
+      <p class="muted">The app blocks screenshots during quizzes. Install it once, sign in with the same Gmail, then open this quiz there.</p>
+      <a class="button" href="${APP_APK_URL}">&#11015; Download the app</a>
+      <ol class="muted quiz-rules">
+        <li>Open the downloaded file (class-submissions.apk).</li>
+        <li>If asked, allow your browser to "install unknown apps", then tap Install.</li>
+        <li>Open <strong>Class Submissions</strong>, sign in, and start the quiz.</li>
+      </ol>
+    </div>`;
 }
 
 const QUIZ_STORE_PREFIX = "quizState:";
@@ -1705,6 +1730,7 @@ document.addEventListener("click", async (e) => {
   const assignmentId = btn.dataset.startQuiz;
   const a = assignmentsById.get(assignmentId);
   if (!a || !a.quiz?.questions?.length) { alert("This quiz has no questions yet - tell your teacher."); return; }
+  if (quizNeedsApp(a)) { alert("This quiz must be taken in the Class Submissions app."); return; }
   if (isPastDue(a)) { alert("Deadline passed - this quiz is closed."); loadEverything(); return; }
   btn.disabled = true;
   const original = btn.textContent;
@@ -1800,6 +1826,7 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
   const warn = overlay.querySelector(".quiz-warn");
   let finished = false;
   let tick = null;
+  setScreenshotBlock(true); // Android app only: screenshots come out black
 
   // Drifting name + live clock badge: lands in every screenshot, wherever on
   // the screen it is, with the exact time it was taken.
@@ -1944,6 +1971,7 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
     window.removeEventListener("focus", onFocus);
     window.removeEventListener("beforeunload", onBeforeUnload);
     document.removeEventListener("fullscreenchange", onFsChange);
+    setScreenshotBlock(false);
     if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
     overlay.remove();
     document.body.classList.remove("quiz-open");

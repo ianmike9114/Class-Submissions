@@ -67,6 +67,14 @@ export function initGoogleSignIn(buttonElementId, onSignInError, { autoEmail = "
   }
 }
 
+// Android app (android-app/): Google's own button can't sign in inside a
+// WebView, so the app's native account picker supplies the ID token
+// (js/app-bridge.js nativeGoogleIdToken) and it is handed to Firebase here -
+// the same "token -> signInWithCredential" shape as initGoogleSignIn above.
+export async function signInWithGoogleIdToken(idToken) {
+  await signInWithCredential(auth, GoogleAuthProvider.credential(idToken));
+}
+
 // ---------- Remember this device ----------
 // Stores only the email (no token, no password) so index.html can offer an
 // automatic One Tap re-sign-in when the saved Firebase session is gone.

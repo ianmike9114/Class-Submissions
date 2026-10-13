@@ -1,5 +1,5 @@
 import { db, ADMIN_EMAIL, isSuperAdmin } from "./firebase-config.js";
-import { guardPage, signOutUser } from "./auth.js?v=2";
+import { guardPage, signOutUser } from "./auth.js?v=3";
 import {
   collection, addDoc, doc, setDoc, updateDoc, deleteDoc, deleteField, writeBatch, getDoc, getDocs, getCountFromServer, query, where, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -3059,9 +3059,9 @@ async function loadAssignments() {
 // signed-in user). Pure helpers live in js/quiz.js.
 const quizBuilders = new Map(); // host element id -> builder
 
-function mountQuizBuilder(hostId, { items = [], secondsPerItem = 60, topic = "", drawCount = 0 } = {}) {
+function mountQuizBuilder(hostId, { items = [], secondsPerItem = 60, topic = "", drawCount = 0, requireApp = false } = {}) {
   const host = el(hostId);
-  const b = { items: items.map((it) => ({ ...it, choices: it.choices ? [...it.choices] : undefined })), secondsPerItem, drawCount: Number(drawCount) || 0 };
+  const b = { items: items.map((it) => ({ ...it, choices: it.choices ? [...it.choices] : undefined })), secondsPerItem, drawCount: Number(drawCount) || 0, requireApp: !!requireApp };
   quizBuilders.set(hostId, b);
   const secOpts = [20, 30, 45, 60, 90, 120]
     .map((n) => `<option value="${n}" ${n === Number(secondsPerItem) ? "selected" : ""}>${n} seconds</option>`).join("");
@@ -3075,6 +3075,7 @@ function mountQuizBuilder(hostId, { items = [], secondsPerItem = 60, topic = "",
         <div><label>Time per item</label><select class="qb-seconds">${secOpts}</select></div>
         <div><label>Each student gets</label><select class="qb-draw"></select></div>
       </div>
+      <label class="qb-check"><input type="checkbox" class="qb-require-app" ${b.requireApp ? "checked" : ""} /> Android students must use the Class Submissions app (blocks screenshots during the quiz)</label>
       <p class="muted qb-draw-hint">Question bank: write more items than each student gets - everyone receives a different random set, so a shared screenshot only covers part of the quiz.</p>
       <details class="qb-ai" ${b.items.length ? "" : "open"}>
         <summary><strong>&#10024; Draft questions with AI</strong></summary>
@@ -3117,6 +3118,7 @@ function mountQuizBuilder(hostId, { items = [], secondsPerItem = 60, topic = "",
   render();
 
   host.querySelector(".qb-seconds").addEventListener("change", (e) => { b.secondsPerItem = Number(e.target.value); });
+  host.querySelector(".qb-require-app").addEventListener("change", (e) => { b.requireApp = e.target.checked; });
   host.querySelector(".qb-draw").addEventListener("change", (e) => { b.drawCount = Number(e.target.value) || 0; render(); });
   host.querySelector(".qb-add").addEventListener("click", () => {
     if (b.items.length >= QUIZ_MAX_BANK) { alert(`A quiz can have at most ${QUIZ_MAX_BANK} items.`); return; }
@@ -3268,7 +3270,7 @@ function readQuizBuilder(hostId) {
   if (longest && !confirm(`${longest} item(s) have the correct answer as the longest choice - students may guess them. Save anyway?`)) return null;
   const { questions, answers } = splitQuiz(items);
   return {
-    quiz: { questions, secondsPerItem: b.secondsPerItem || 60, oneWay: true, drawCount: b.drawCount || 0 },
+    quiz: { questions, secondsPerItem: b.secondsPerItem || 60, oneWay: true, drawCount: b.drawCount || 0, requireApp: !!b.requireApp },
     answers,
     // A bank draw is what each student actually answers (and is scored on).
     totalPoints: b.drawCount || questions.length,
@@ -3512,6 +3514,7 @@ async function openAssignment(assignmentId) {
       secondsPerItem: data.quiz?.secondsPerItem || 60,
       topic: data.title || "",
       drawCount: data.quiz?.drawCount || 0,
+      requireApp: !!data.quiz?.requireApp,
     });
   }
   syncQuizBuilderVisibility("edit-");
@@ -4350,7 +4353,8 @@ async function loadQuizReviewData(assignmentId, a, ownedDocs) {
 function quizSizeLabel(a) {
   const n = a.quiz?.questions?.length || 0;
   const d = a.quiz?.drawCount;
-  return d && d < n ? `${n}-item bank · ${d} each` : `${n} items`;
+  const size = d && d < n ? `${n}-item bank · ${d} each` : `${n} items`;
+  return a.quiz?.requireApp ? `${size} · 📱 app required on Android` : size;
 }
 
 // The items this student was actually shown: recorded on the submission

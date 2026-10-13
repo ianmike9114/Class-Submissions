@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=51" />
+  <link rel="stylesheet" href="css/style.css?v=52" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="theme-color" content="#002045" />
   <link rel="apple-touch-icon" href="/icons/icon-192.png" />
@@ -90,7 +90,8 @@
        in document order right before DOMContentLoaded. -->
   <script src="https://accounts.google.com/gsi/client" defer></script>
   <script type="module">
-    import { initGoogleSignIn, isTeacherEmail, sendEmailSignInLink, isEmailSignInLink, completeEmailLinkSignIn, getRememberedEmail, rememberDevice, forgetDevice, isRememberOptedOut, setRememberOptOut, recordAuthHop, clearAuthHops } from "./js/auth.js?v=2";
+    import { initGoogleSignIn, isTeacherEmail, sendEmailSignInLink, isEmailSignInLink, completeEmailLinkSignIn, getRememberedEmail, rememberDevice, forgetDevice, isRememberOptedOut, setRememberOptOut, recordAuthHop, clearAuthHops, signInWithGoogleIdToken } from "./js/auth.js?v=3";
+    import { isLmsApp, nativeGoogleIdToken } from "./js/app-bridge.js?v=1";
     import { auth } from "./js/firebase-config.js";
     import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
@@ -271,7 +272,26 @@
       }
     }
 
+    // Inside the Android app: Google's web button is blocked in WebViews, so
+    // use the app's native account picker instead (js/app-bridge.js).
+    function initAppSignIn() {
+      const host = document.getElementById("google-signin-button");
+      host.innerHTML = '<button type="button" id="app-google-signin">Sign in with Google</button>';
+      document.getElementById("app-google-signin").addEventListener("click", async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        try {
+          await signInWithGoogleIdToken(await nativeGoogleIdToken());
+          // onAuthStateChanged above redirects to the dashboard.
+        } catch (err) {
+          showError(FRIENDLY_ERRORS[err.code] || err.message || "Sign-in failed - please try again.");
+          btn.disabled = false;
+        }
+      });
+    }
+
     function initNormalSignIn() {
+      if (isLmsApp()) { initAppSignIn(); return; }
       if (isInAppBrowser()) {
         document.getElementById("in-app-browser-warning").classList.remove("hidden");
 
