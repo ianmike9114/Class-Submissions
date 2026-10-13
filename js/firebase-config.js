@@ -5,8 +5,8 @@
 // plan by using links (Drive/YouTube/Gist) instead of file uploads, and
 // calling Gemini directly from the browser (see js/gemini.js).
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getAuth, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getAuth, setPersistence, browserLocalPersistence, connectAuthEmulator } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, connectFirestoreEmulator } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyB4Xz-u22jxEgipf9tc3RuRo4VIzphJcDI",
@@ -47,9 +47,29 @@ export function isSuperAdmin(email) {
 // no error, on Edge/Brave/Safari alike. This avoids that hop entirely.
 export const GOOGLE_CLIENT_ID = "1077801155399-94fs3d8c4k1guh7h0tg77j8gg3lbthtv.apps.googleusercontent.com";
 
+// Local Firebase emulator, for the automated user-flow tests only
+// (tests/e2e/flows.spec.js, `npm run e2e:flows`). Turns on ONLY on a
+// localhost address AND with ?emu=1 (remembered for that tab), and switches
+// to the emulator-only "demo-" project, which can never reach real Firebase -
+// so the live site can never enter this branch or touch real data.
+const USE_EMULATOR = (() => {
+  if (!["localhost", "127.0.0.1"].includes(location.hostname)) return false;
+  try {
+    if (new URLSearchParams(location.search).get("emu") === "1") sessionStorage.setItem("lms.emu", "1");
+    return sessionStorage.getItem("lms.emu") === "1";
+  } catch {
+    return false;
+  }
+})();
+if (USE_EMULATOR) firebaseConfig.projectId = "demo-lms-e2e";
+
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+if (USE_EMULATOR) {
+  connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
+  connectFirestoreEmulator(db, "127.0.0.1", 8080);
+}
 
 // Explicit instead of relying on the SDK's implicit default - guarantees
 // the session survives a browser restart (IndexedDB-backed) instead of

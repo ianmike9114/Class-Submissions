@@ -61,3 +61,31 @@ jobs:
           python-version: "3.x"
       - run: npx playwright install --with-deps chromium
       - run: npm run e2e
+
+  flows:
+    name: User flows (emulator + Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # Auth + Firestore emulators need a JRE.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ runner.os }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      # Teacher creates class -> student joins -> approve -> submit -> grade ->
+      # student sees score; quiz with question bank; teacher isolation.
+      # Local emulators only (project demo-lms-e2e) - never production.
+      - run: npm run e2e:flows

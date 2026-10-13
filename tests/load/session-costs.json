@@ -1,0 +1,45 @@
+{
+  "_about": "Firestore reads/writes per user action, derived from the real code paths (see tests/load/quota-budget.md). Firestore bills 1 read per document returned (min 1 per query) and 1 read per up-to-1000 index entries for count() aggregations. Formulas use the 'assumptions' below; scripts/quota-budget.mjs evaluates them.",
+  "limits": { "readsPerDay": 50000, "writesPerDay": 20000 },
+  "assumptions": {
+    "classesPerStudent": 4,
+    "assignmentsPerClass": 25,
+    "submissionsPerStudent": 60,
+    "sectionsPerTeacher": 4,
+    "subjectsPerTeacher": 3,
+    "studentsPerSection": 40,
+    "pendingPerTeacher": 30,
+    "pastDueFraction": 0.7,
+    "studentSessionsPerDay": 2,
+    "studentSubmitsPerDay": 1,
+    "teacherSessionsPerDay": 3,
+    "teacherAssignmentsGradedPerDay": 2,
+    "studentsGradedPerAssignment": 40
+  },
+  "actions": {
+    "studentDashboardLoad": {
+      "where": "js/student.js loadEverything() + getHiddenSectionIds()",
+      "reads": "3*classesPerStudent + 2 + classesPerStudent*assignmentsPerClass + submissionsPerStudent",
+      "writes": "0",
+      "note": "enrollments + sections + subjects + owners' settings (~classes each) + admin/all-teachers settings (2) + every assignment in the student's classes + the student's own submissions"
+    },
+    "studentSubmit": {
+      "where": "js/student.js submit form -> addDoc/updateDoc, then loadEverything() reload",
+      "reads": "3*classesPerStudent + 2 + classesPerStudent*assignmentsPerClass + submissionsPerStudent",
+      "writes": "1",
+      "note": "the post-submit dashboard reload is what costs reads"
+    },
+    "teacherHomeLoad": {
+      "where": "js/teacher.js loadSubjects() + getNotifications() + getMissingWorkCounts() (cachedOwnerDocs, once per session)",
+      "reads": "subjectsPerTeacher + sectionsPerTeacher + sectionsPerTeacher*assignmentsPerClass + sectionsPerTeacher*studentsPerSection + pendingPerTeacher + 10 + sectionsPerTeacher*assignmentsPerClass*pastDueFraction",
+      "writes": "0",
+      "note": "owned subjects, sections, assignments, enrollments, pending submissions, small notification queries, plus one count() per past-due assignment"
+    },
+    "teacherGradeAssignment": {
+      "where": "js/teacher.js loadSubmissions() + publishing each score (updateDoc)",
+      "reads": "studentsGradedPerAssignment + 3",
+      "writes": "studentsGradedPerAssignment",
+      "note": "every submission of one assignment + the assignment + quiz key/attempts; one write per published score"
+    }
+  }
+}
