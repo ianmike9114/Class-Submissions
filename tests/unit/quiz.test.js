@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   hashSeed, seededShuffle, normalizeAnswer, splitAccepted, isCorrect, scoreQuiz,
   quizDeadlineMs, splitQuiz, joinQuiz, validateQuizItems, parseGeneratedQuiz, formatDuration,
-  servedQuestions, QUIZ_MAX_BANK,
+  servedQuestions, QUIZ_MAX_BANK, choiceLengthWarning, countChoiceLengthWarnings,
 } from "../../js/quiz.js";
 
 describe("seededShuffle", () => {
@@ -139,5 +139,31 @@ describe("servedQuestions", () => {
     const items = Array.from({ length: QUIZ_MAX_BANK }, (_, i) => ({ id: "q" + i, type: "tf", prompt: "p" + i, answer: true }));
     expect(validateQuizItems(items)).toBeNull();
     expect(validateQuizItems([...items, items[0]])).toMatch(/at most/);
+  });
+});
+
+describe("choiceLengthWarning", () => {
+  it("passes balanced choices", () => {
+    expect(choiceLengthWarning(["Phishing email", "Strong password", "Firewall rule", "Antivirus scan"], 1)).toBeNull();
+  });
+  it("flags a correct answer that is clearly the longest", () => {
+    expect(choiceLengthWarning(["CPU", "RAM", "A program that copies itself to other computers", "ROM"], 2)).toMatch(/longest/);
+  });
+  it("ignores it when a wrong choice is the longest", () => {
+    expect(choiceLengthWarning(["CPU", "RAM", "A program that copies itself to other computers", "ROM"], 0)).toBeNull();
+  });
+  it("ignores tiny differences", () => {
+    expect(choiceLengthWarning(["Router", "Switch", "Modem", "Hub of hubs"], 3)).toBeNull();
+  });
+  it("ignores unfinished items", () => {
+    expect(choiceLengthWarning(["A very long correct answer here", "", "", ""], 0)).toBeNull();
+  });
+  it("counts flagged MC items only", () => {
+    const items = [
+      { type: "mc", choices: ["a", "b", "c", "A program that copies itself"], answer: 3 },
+      { type: "mc", choices: ["a", "b", "c", "d"], answer: 0 },
+      { type: "tf", answer: true },
+    ];
+    expect(countChoiceLengthWarnings(items)).toBe(1);
   });
 });

@@ -3,11 +3,11 @@ import { guardPage, signOutUser } from "./auth.js?v=2";
 import {
   collection, addDoc, doc, setDoc, updateDoc, deleteDoc, deleteField, writeBatch, getDoc, getDocs, getCountFromServer, query, where, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { getGeminiKey, setGeminiKey, getGroqKey, setGroqKey, runRubricCheck, generateCodeExample, generateQuiz } from "./gemini.js?v=6";
+import { getGeminiKey, setGeminiKey, getGroqKey, setGroqKey, runRubricCheck, generateCodeExample, generateQuiz } from "./gemini.js?v=7";
 import {
-  QUIZ_MIN_ITEMS, QUIZ_MAX_ITEMS, QUIZ_MAX_BANK, servedQuestions, QUIZ_TYPES, QUIZ_GRACE_SECONDS, splitQuiz, joinQuiz, validateQuizItems,
+  QUIZ_MIN_ITEMS, QUIZ_MAX_ITEMS, QUIZ_MAX_BANK, servedQuestions, choiceLengthWarning, countChoiceLengthWarnings, QUIZ_TYPES, QUIZ_GRACE_SECONDS, splitQuiz, joinQuiz, validateQuizItems,
   parseGeneratedQuiz, newItemId, splitAccepted, scoreQuiz, quizTimeLimitSeconds, formatDuration,
-} from "./quiz.js?v=2";
+} from "./quiz.js?v=3";
 import { getEmailConfig, saveEmailConfig, notifySection } from "./notify.js";
 import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=2";
 import { loadWorkbook, readExamScores, pickBestSheet } from "./class-record.js";
@@ -3133,7 +3133,7 @@ function mountQuizBuilder(hostId, { items = [], secondsPerItem = 60, topic = "",
     const it = b.items[Number(li.dataset.qi)];
     const f = e.target.dataset.f;
     if (f === "prompt") it.prompt = e.target.value;
-    else if (f === "choice") it.choices[Number(e.target.dataset.c)] = e.target.value;
+    else if (f === "choice") { it.choices[Number(e.target.dataset.c)] = e.target.value; refreshLengthWarn(li, it); }
     else if (f === "accepted") it.answer = splitAccepted(e.target.value);
   });
   list.addEventListener("change", (e) => {
@@ -3147,7 +3147,7 @@ function mountQuizBuilder(hostId, { items = [], secondsPerItem = 60, topic = "",
       if (it.type === "tf") { it.answer = true; }
       if (it.type === "id") { it.answer = []; }
       render();
-    } else if (f === "mc-answer") it.answer = Number(e.target.value);
+    } else if (f === "mc-answer") { it.answer = Number(e.target.value); refreshLengthWarn(li, it); }
     else if (f === "tf-answer") it.answer = e.target.value === "true";
   });
   list.addEventListener("click", (e) => {
@@ -3193,6 +3193,16 @@ function mountQuizBuilder(hostId, { items = [], secondsPerItem = 60, topic = "",
   return b;
 }
 
+// "Longest choice = right answer" tell (choiceLengthWarning in js/quiz.js).
+function lengthWarnHtml(it) {
+  const w = choiceLengthWarning(it.choices, it.answer);
+  return `<p class="qb-len-warn status-pending${w ? "" : " hidden"}">${w ? "&#9888; " + w : ""}</p>`;
+}
+function refreshLengthWarn(li, it) {
+  const box = li.querySelector(".qb-len-warn");
+  if (box) box.outerHTML = lengthWarnHtml(it);
+}
+
 function quizItemEditorHtml(it, i) {
   const typeSel = `<select data-f="type" class="qb-type">${Object.entries(QUIZ_TYPES)
     .map(([k, v]) => `<option value="${k}" ${k === it.type ? "selected" : ""}>${v}</option>`).join("")}</select>`;
@@ -3203,7 +3213,7 @@ function quizItemEditorHtml(it, i) {
         <input type="radio" name="qb-ans-${it.id}" data-f="mc-answer" value="${ci}" ${Number(it.answer) === ci ? "checked" : ""} title="Correct answer" />
         <span class="qb-letter">${"ABCD"[ci]}</span>
         <input data-f="choice" data-c="${ci}" value="${escAttr(c)}" placeholder="Choice ${"ABCD"[ci]}" />
-      </div>`).join("");
+      </div>`).join("") + lengthWarnHtml(it);
   } else if (it.type === "tf") {
     answerHtml = `<div class="qb-tf muted">Answer:
       <label class="qb-check"><input type="radio" name="qb-ans-${it.id}" data-f="tf-answer" value="true" ${it.answer === true ? "checked" : ""} /> True</label>
@@ -3254,6 +3264,8 @@ function readQuizBuilder(hostId) {
     alert(`Each student can get at most ${QUIZ_MAX_ITEMS} items. With ${items.length} items, set "Each student gets" to how many random items each student should answer.`);
     return null;
   }
+  const longest = countChoiceLengthWarnings(items);
+  if (longest && !confirm(`${longest} item(s) have the correct answer as the longest choice - students may guess them. Save anyway?`)) return null;
   const { questions, answers } = splitQuiz(items);
   return {
     quiz: { questions, secondsPerItem: b.secondsPerItem || 60, oneWay: true, drawCount: b.drawCount || 0 },

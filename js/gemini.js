@@ -311,6 +311,7 @@ Rules:
 - Use clear, simple English a Grade ${gradeLevel} Filipino student can read quickly.
 - Prefer questions that check understanding and application (short scenarios, examples, "which of these") over pure word-for-word recall.
 - Multiple choice: exactly 4 plausible choices, only one correct, no "all of the above"/"none of the above". Vary the position of the correct answer.
+- Multiple choice: all 4 choices must be SIMILAR IN LENGTH AND DETAIL (within a few words of each other). The correct answer must NOT be the longest or most detailed choice - make the wrong choices just as specific and believable. Vary which position holds the longest choice.
 - True/False: avoid trick wording and double negatives.
 - Identification: the answer must be short and unambiguous.${avoid.length ? `
 - These questions already exist - write NEW ones that do not repeat or closely reword them:

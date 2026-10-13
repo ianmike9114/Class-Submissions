@@ -170,6 +170,27 @@ export function validateQuizItems(items) {
   return null;
 }
 
+// Students learn that the longest choice is usually the right one. Flag an
+// MC item when the correct choice is strictly the longest AND beats the
+// next-longest by >= 25% and >= 8 characters (so "RAM" vs "ROM"-sized
+// differences don't nag). Returns a warning string or null.
+export function choiceLengthWarning(choices, answer) {
+  if (!Array.isArray(choices) || choices.length !== 4) return null;
+  const lens = choices.map((c) => String(c ?? "").trim().length);
+  if (lens.some((n) => n === 0)) return null;
+  const a = Number(answer);
+  if (![0, 1, 2, 3].includes(a)) return null;
+  const others = Math.max(...lens.filter((_, i) => i !== a));
+  const mine = lens[a];
+  if (mine <= others) return null;
+  if (mine - others < 8 || mine < others * 1.25) return null;
+  return "The correct answer is noticeably the longest choice - students may guess it. Lengthen the other choices or shorten this one.";
+}
+
+export function countChoiceLengthWarnings(items) {
+  return (items || []).filter((it) => it.type === "mc" && choiceLengthWarning(it.choices, it.answer)).length;
+}
+
 export function newItemId() {
   return "q" + Math.random().toString(36).slice(2, 10);
 }

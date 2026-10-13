@@ -538,6 +538,11 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   uses it, or rebuilds from the seed for older submissions. AI drafting can
   append to the bank (passes existing prompts as `avoid`). `runQuiz` also shows
   a drifting `.quiz-mover` badge (name · email · live clock).
+  **Balanced choice lengths** (students guess the longest choice): `js/quiz.js`'s
+  `choiceLengthWarning()` flags an MC item whose correct choice is strictly
+  longest by ≥25% and ≥8 chars; the builder shows it live per item and asks to
+  confirm on save (warning, not a block). `generateQuiz()`'s prompt tells the AI
+  to keep all 4 choices similar in length with the answer never the longest.
   `gemini.js`/`quiz.js` imports carry their own `?v=` (bump when changed —
   `scripts/bump-version.mjs` doesn't cover sub-modules).
 
