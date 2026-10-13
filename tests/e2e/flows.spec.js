@@ -97,8 +97,15 @@ test("student submits, teacher grades, student sees the score", async ({ page })
   await tpage.locator("#assignments-list [data-open]").first().click();
   await tpage.locator("[data-review]").first().click();
   await tpage.locator('input[id^="score-"]').fill("9");
+  await expect(tpage.locator("#notif-count")).toHaveText("1");
   await tpage.locator("[data-publish]").click();
+  // Re-rendered from memory with the published score patched in, and the bell
+  // drops locally - no re-read of the class (see subsMemo / resolvedLocally).
   await expect(tpage.locator("#submissions-list")).toContainText(/published/i);
+  await expect(tpage.locator("#notif-count")).toBeHidden();
+  // Home still renders with the cached structure + missing-work rollup.
+  await tpage.locator("#go-home").click();
+  await expect(tpage.locator("#subjects-list")).toContainText("E2E Philosophy");
   await tpage.close();
 
   await page.reload();

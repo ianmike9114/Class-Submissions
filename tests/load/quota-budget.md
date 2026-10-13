@@ -34,8 +34,9 @@ of them with `--name value`.
 |---|---|---|
 | Student dashboard load | `js/student.js` `loadEverything()` + `js/assignment-cache.js` | ~73: class info + assignments only for classes a teacher changed + this term's own submissions |
 | Student submit | submit form → `loadEverything()` reload | ~38 reads + 1 write (reuses cached class info and assignments) |
-| Teacher Home | `loadSubjects()`, `getNotifications()`, `getMissingWorkCounts()` | ~377, cached for the session |
-| Grade one assignment | `loadSubmissions()` + publish | ~43 reads + 1 write per score |
+| Teacher Home visit | `loadSubjects()`, `getNotifications()` | ~46 with warm caches (term settings, subjects, inbox) |
+| Teacher structure refresh | `cachedOwnerDocs` structure keys + `computeMissingWorkCounts()` | ~147: first visit, then every 10-15 min or after own edits |
+| Grade one assignment | `loadSubmissions()` (memoized) + `openReview()` + publish | ~123 reads + 1 write per score (40 students) |
 
 **How the student side stays cheap.** Before the assignment cache, every
 dashboard load and every reload after an action read *every* assignment and
@@ -50,7 +51,16 @@ dashboard load and every reload after an action read *every* assignment and
 - After an action, the class/term lookup is reused for 10 minutes.
 
 With 10 teachers the free plan now fits about **200 active students/day**;
-teachers' own Home loads (~1,200 reads each per day) are now the next lever.
+**Teacher side.** Before, the teacher read cache lived only 3 seconds, so
+*every* Home visit re-read all assignments, every enrollment and one count()
+per past-due assignment (~377 reads), and *every* Publish/Return re-read the
+whole class's submissions plus all notifications (~200 reads per score - about
+8,000 to grade a class of 40). Now subjects/sections/assignments are cached 10
+minutes (`invalidateStructure()` on the teacher's own edits), the missing-work
+badge uses count() headcounts for the shown subjects only and is cached 15
+minutes, and Publish/Return re-render and update the bell from memory. A
+teacher's day (10 Home visits, 2 classes graded) is ~1,150 reads instead of
+roughly 20,000.
 
 ## Check against reality
 

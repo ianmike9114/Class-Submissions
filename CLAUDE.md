@@ -377,6 +377,21 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   section docs it read so sections are read once) is reused in memory for 10
   min while the enrolled-section set is unchanged. No rules change (section
   update is already owner-allowed), no new index. Estimate: `npm run budget`.
+- **Teacher read cache: structure vs inbox (Spark read budget).** In
+  `js/teacher.js`, `cachedOwnerDocs()` keys `subjects`/`sections`/`assignments`
+  live 10 min (`js/teacher-reads.js` `ttlForKey()`); everything else (pending
+  submissions, leave/join/seen/redo enrollments) stays 3 s and is re-pulled by
+  each `refreshNotifications()` (`invalidateInbox()`). **Every write that adds,
+  renames or deletes a subject/section/assignment or changes an enrollment's
+  headcount must call `invalidateStructure()`** (assignment writes get it via
+  `touchSection()`); `getNotifications()` self-heals once per 10 min if the
+  inbox mentions an id the cached structure lacks. `getMissingWorkCounts()`
+  counts only subjects the grid shows, gets headcounts via two `count()`s per
+  section (falls back to the old enrollment scan) and is cached 15 min.
+  `loadSubmissions()` memoizes its fetch (`subsMemo`): Publish/Return/filter
+  re-render from memory with the saved submission patched in, and the bell
+  updates locally (`resolvedLocally`) instead of re-reading the class + all
+  notifications (~200 reads per score before). The Refresh button clears all.
 - **Notification bell has third bucket, "new joins".** `js/student.js`'s
   `enroll()` stamps every new enrollment with `seen: false`;
   `js/teacher.js`'s `getNotifications()` queries `seen == false`

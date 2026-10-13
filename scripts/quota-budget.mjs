@@ -36,7 +36,9 @@ export function budget({ students, teachers, overrides = {}, costs = COSTS }) {
   }
   const studentReads = a.studentSessionsPerDay * per.studentDashboardLoad.reads + a.studentSubmitsPerDay * per.studentSubmit.reads;
   const studentWrites = a.studentSubmitsPerDay * per.studentSubmit.writes;
-  const teacherReads = a.teacherSessionsPerDay * per.teacherHomeLoad.reads + a.teacherAssignmentsGradedPerDay * per.teacherGradeAssignment.reads;
+  const teacherReads = a.teacherHomeVisitsPerDay * per.teacherHomeLoad.reads
+    + a.teacherStructureRefreshesPerDay * per.teacherStructureRefresh.reads
+    + a.teacherAssignmentsGradedPerDay * per.teacherGradeAssignment.reads;
   const teacherWrites = a.teacherAssignmentsGradedPerDay * per.teacherGradeAssignment.writes;
   const reads = Math.round(students * studentReads + teachers * teacherReads);
   const writes = Math.round(students * studentWrites + teachers * teacherWrites);

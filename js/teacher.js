@@ -13,6 +13,7 @@ import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEm
 import { loadWorkbook, readExamScores, pickBestSheet } from "./class-record.js";
 import { runJava } from "./runner.js";
 import { codeBlockHtml, highlightWithin } from "./highlight.js";
+import { ttlForKey, STRUCTURE_KEYS, MISSING_TTL_MS, subjectShown, patchedDoc, approvedHeadcount } from "./teacher-reads.js?v=1";
 
 // AI rubric-check is hidden (not deleted) - per-call Gemini cost isn't
 // worth it right now. Flip this back to true to restore the Run AI Check
@@ -88,9 +89,33 @@ function ownerScopedQuery(collectionName, ...wheres) {
 // don't change without a mutation in this session, matching the app's existing
 // no-live-listener behaviour). Callers pass a stable key; the same key across
 // functions is what lets them share a fetch.
-const READ_CACHE_TTL_MS = 3000;
+//
+// Spark read budget (tests/load/quota-budget.md): keys are split into
+// "structure" (subjects/sections/assignments - reused 10 min, they only change
+// through this teacher's own writes, which call invalidateStructure()) and
+// everything else (the "inbox": pending submissions, leave/join/seen/redo
+// enrollments - 3s, pulled fresh by every refresh via invalidateInbox()). TTLs
+// come from js/teacher-reads.js ttlForKey(). The Refresh button and teacher
+// switch still clear everything (invalidateReadCache()).
 let readCache = new Map(); // key -> { t, promise }
-function invalidateReadCache() { readCache = new Map(); searchCorpus = null; }
+let missingMemo = null; // getMissingWorkCounts() result, see there
+function invalidateReadCache() { readCache = new Map(); searchCorpus = null; missingMemo = null; }
+function invalidateInbox() {
+  for (const k of [...readCache.keys()]) if (!STRUCTURE_KEYS.has(k.slice(k.indexOf("|") + 1))) readCache.delete(k);
+}
+// Call after EVERY write that adds/renames/deletes a subject, section,
+// assignment or enrollment headcount (touchSection() covers assignments), or
+// cached names/badges lag up to 10 min. getNotifications() also self-heals once
+// if it meets an id the cached structure doesn't know.
+function invalidateStructure() {
+  for (const k of [...readCache.keys()]) if (STRUCTURE_KEYS.has(k.slice(k.indexOf("|") + 1))) readCache.delete(k);
+  missingMemo = null;
+  searchCorpus = null;
+}
+// Submissions the teacher just published/returned in this page: filtered out
+// of the bell's cached inbox so it updates without a re-query. Cleared by every
+// real inbox refresh.
+const resolvedLocally = new Set();
 
 // Reject a promise if it doesn't settle within `ms`. Firestore's SDK retries a
 // failed read indefinitely with no error, so a read on a dead connection can
@@ -109,7 +134,7 @@ function cachedOwnerDocs(key, collectionName, ...wheres) {
   const fullKey = state.viewAsEmail + "|" + key;
   const now = Date.now();
   const hit = readCache.get(fullKey);
-  if (hit && now - hit.t < READ_CACHE_TTL_MS) return hit.promise;
+  if (hit && now - hit.t < ttlForKey(key)) return hit.promise;
   // Always filter by the viewed owner - even for the super admin. These are
   // notification/count/overview rollups, which the UI already narrows to the
   // viewed owner via ownedByViewAs(); the admin-unfiltered ownerScopedQuery
@@ -344,6 +369,7 @@ async function deleteWhere(collectionName, field, value) {
 // list for up to the cache's 6h TTL. Best-effort: never blocks the save.
 // Allowed by the existing sections update rule (canActAsOwner).
 async function touchSection(sectionId) {
+  invalidateStructure();
   if (!sectionId) return;
   try {
     await updateDoc(doc(db, "sections", sectionId), { assignmentsVersion: Date.now() });
@@ -483,32 +509,66 @@ function joinWaitingBadge(count) {
 // granted teachers and the super admin; two equality filters need no
 // composite index. A student has at most one submission per assignment, so
 // the doc count equals distinct submitters.
-async function getMissingWorkCounts() {
-  const [sectionsSnap, assignSnap, enrollSnap] = await Promise.all([
+// Spark read budget: this used to download EVERY enrollment (just to count
+// heads) and run a count() for every past-due assignment in every subject, on
+// every Home visit. Now: only subjects the grid shows (shownSubjectIds),
+// headcounts via two count() reads per section (all - pending), and the result
+// is reused 15 min (invalidateStructure()/Refresh clear it). If the count
+// queries fail, falls back to the old enrollment scan.
+async function getMissingWorkCounts(shownSubjectIds) {
+  const memoKey = state.viewAsEmail + "|" + [...shownSubjectIds].sort().join(",");
+  if (missingMemo && missingMemo.key === memoKey && Date.now() - missingMemo.at < MISSING_TTL_MS) return missingMemo.promise;
+  const promise = computeMissingWorkCounts(shownSubjectIds);
+  missingMemo = { key: memoKey, at: Date.now(), promise };
+  promise.catch(() => { if (missingMemo?.promise === promise) missingMemo = null; });
+  return promise;
+}
+
+async function sectionHeadcounts(sectionIds) {
+  const enrolledBySection = new Map();
+  try {
+    const countOf = (...wheres) => getCountFromServer(query(collection(db, "enrollments"),
+      where("ownerEmail", "==", state.viewAsEmail), ...wheres)).then((snap) => snap.data().count);
+    await Promise.all(sectionIds.map(async (id) => {
+      const [total, pending] = await Promise.all([
+        countOf(where("sectionId", "==", id)),
+        countOf(where("sectionId", "==", id), where("status", "==", "pending")),
+      ]);
+      enrolledBySection.set(id, approvedHeadcount(total, pending));
+    }));
+  } catch (err) {
+    console.warn("headcount count() failed, scanning enrollments instead:", err);
+    enrolledBySection.clear();
+    const enrollSnap = await cachedOwnerDocs("enrollments", "enrollments");
+    enrollSnap.forEach((d) => {
+      const e = d.data();
+      if (!ownedByViewAs(e) || e.status === "pending") return;
+      enrolledBySection.set(e.sectionId, (enrolledBySection.get(e.sectionId) || 0) + 1);
+    });
+  }
+  return enrolledBySection;
+}
+
+async function computeMissingWorkCounts(shownSubjectIds) {
+  const [sectionsSnap, assignSnap] = await Promise.all([
     cachedOwnerDocs("sections", "sections"),
     cachedOwnerDocs("assignments", "assignments"),
-    cachedOwnerDocs("enrollments", "enrollments"),
   ]);
   const sectionToSubject = new Map(sectionsSnap.docs.map((d) => [d.id, d.data().subjectId]));
-
-  // Approved-enrolled headcount per section (a pending join isn't a live
-  // student yet, so it can't be "missing" work).
-  const enrolledBySection = new Map();
-  enrollSnap.forEach((d) => {
-    const e = d.data();
-    if (!ownedByViewAs(e) || e.status === "pending") return;
-    enrolledBySection.set(e.sectionId, (enrolledBySection.get(e.sectionId) || 0) + 1);
-  });
 
   const now = new Date();
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 
-  // Only past-due graded assignments in a section that has students need a count.
-  const targets = assignSnap.docs.filter((d) => {
+  // Past-due graded assignments in subjects the grid shows.
+  const pastDue = assignSnap.docs.filter((d) => {
     const a = d.data();
     return ownedByViewAs(a) && a.type !== "material" && a.dueDate && a.dueDate <= today
-      && (enrolledBySection.get(a.sectionId) || 0) > 0;
+      && shownSubjectIds.has(sectionToSubject.get(a.sectionId));
   });
+  // Approved-enrolled headcount per section (a pending join isn't a live
+  // student yet, so it can't be "missing" work).
+  const enrolledBySection = await sectionHeadcounts([...new Set(pastDue.map((d) => d.data().sectionId))]);
+  const targets = pastDue.filter((d) => (enrolledBySection.get(d.data().sectionId) || 0) > 0);
   const counts = await Promise.all(targets.map((d) =>
     getCountFromServer(query(collection(db, "submissions"),
       where("ownerEmail", "==", state.viewAsEmail), where("assignmentId", "==", d.id)))
@@ -908,20 +968,43 @@ let lastNotifications = { submissions: [], leaves: [], totalCount: 0, error: fal
 // because they're rendered inside a view that already has that context)
 // - this powers the header-wide notification dropdown, which has no
 // surrounding context of its own.
-async function getNotifications() {
-  // Landing entry point: start each refresh with a clean read cache so badges
-  // reflect current data, then let the loadSubjects() rollups that follow reuse
-  // these same fetches instead of re-scanning the account (see cachedOwnerDocs).
-  invalidateReadCache();
+let lastStructureHeal = 0;
+async function getNotifications({ local = false } = {}) {
+  // Landing entry point: start each refresh with a fresh INBOX (pending /
+  // leave / join / redo) so badges reflect current data; the structure
+  // (subjects/sections/assignments) stays cached - it only changes through this
+  // teacher's own writes (invalidateStructure()). local:true (after a Publish /
+  // Return) reuses the cached inbox minus resolvedLocally - zero reads.
+  if (!local) { invalidateInbox(); resolvedLocally.clear(); }
+  const peek = (key) => {
+    const hit = local && readCache.get(state.viewAsEmail + "|" + key);
+    return hit ? hit.promise : null;
+  };
+  const inbox = (key, coll, ...wheres) => peek(key) || cachedOwnerDocs(key, coll, ...wheres);
   const [subjectsSnap, sectionsSnap, assignSnap, pendingSnap, leaveSnap, joinSnap, redoSnap] = await Promise.all([
     cachedOwnerDocs("subjects", "subjects"),
     cachedOwnerDocs("sections", "sections"),
     cachedOwnerDocs("assignments", "assignments"),
-    cachedOwnerDocs("subs:pending", "submissions", where("status", "==", "pending")),
-    cachedOwnerDocs("enr:leave", "enrollments", where("leaveRequested", "==", true)),
-    cachedOwnerDocs("enr:seen", "enrollments", where("seen", "==", false)),
-    cachedOwnerDocs("subs:resubmit", "submissions", where("resubmitRequested", "==", true)),
+    inbox("subs:pending", "submissions", where("status", "==", "pending")),
+    inbox("enr:leave", "enrollments", where("leaveRequested", "==", true)),
+    inbox("enr:seen", "enrollments", where("seen", "==", false)),
+    inbox("subs:resubmit", "submissions", where("resubmitRequested", "==", true)),
   ]);
+
+  // Self-heal: an inbox item pointing at an assignment/section the cached
+  // structure doesn't know (created in another tab/device, or a missed
+  // invalidateStructure()) refetches the structure once instead of being
+  // dropped by the orphan filter below. Rate-limited, since genuinely orphaned
+  // legacy docs would otherwise trigger it on every refresh.
+  const knownAssignments = new Set(assignSnap.docs.map((d) => d.id));
+  const knownSections = new Set(sectionsSnap.docs.map((d) => d.id));
+  const unknown = [...pendingSnap.docs, ...redoSnap.docs].some((d) => !knownAssignments.has(d.data().assignmentId))
+    || [...leaveSnap.docs, ...joinSnap.docs].some((d) => !knownSections.has(d.data().sectionId));
+  if (unknown && Date.now() - lastStructureHeal > 10 * 60 * 1000) {
+    lastStructureHeal = Date.now();
+    invalidateStructure();
+    return getNotifications({ local: true });
+  }
 
   const subjectNames = new Map(subjectsSnap.docs.map((d) => [d.id, d.data().name]));
   const sections = new Map(sectionsSnap.docs.map((d) => [d.id, d.data()]));
@@ -945,6 +1028,7 @@ async function getNotifications() {
   const submissionCounts = new Map();
   pendingSnap.forEach((d) => {
     if (!ownedByViewAs(d.data())) return; // admin's unfiltered submissions query includes every teacher's - narrow to mine/legacy
+    if (resolvedLocally.has(d.id)) return; // just published/returned in this page
     const assignmentId = d.data().assignmentId;
     submissionCounts.set(assignmentId, (submissionCounts.get(assignmentId) || 0) + 1);
   });
@@ -1009,6 +1093,7 @@ async function getNotifications() {
   const redoCounts = new Map();
   redoSnap.forEach((d) => {
     if (!ownedByViewAs(d.data())) return; // admin's unfiltered submissions query includes every teacher's - narrow to mine/legacy
+    if (resolvedLocally.has(d.id)) return; // just handled in this page
     const assignmentId = d.data().assignmentId;
     redoCounts.set(assignmentId, (redoCounts.get(assignmentId) || 0) + 1);
   });
@@ -1035,9 +1120,9 @@ async function getNotifications() {
   return { submissions, leaves, joins, redos, totalCount };
 }
 
-async function refreshNotifications() {
+async function refreshNotifications(opts) {
   try {
-    const data = await getNotifications();
+    const data = await getNotifications(opts);
     lastNotifications = { ...data, error: false, errorDetail: null };
   } catch (err) {
     console.error("notifications load failed (bell badge only):", err);
@@ -1534,11 +1619,14 @@ async function loadSubjects() {
   // regular teacher's freshly-created subject silently not show: a failed bell
   // query rejected the shared Promise.all here before any subject rendered.)
   const snap = await getDocs(ownerScopedQuery("subjects"));
+  const shownSubjectIds = new Set(snap.docs
+    .filter((d) => ownedByViewAs(d.data()) && subjectShown(d.data(), { showArchived, filterByTerm, termSetting }, normYear, normTerm))
+    .map((d) => d.id));
   const [counts, leaveCounts, joinCounts, missingCounts] = await Promise.all([
     getPendingCounts().catch((err) => { console.error("pending-count rollup failed (badges only):", err); return { byAssignment: new Map(), bySection: new Map(), bySubject: new Map() }; }),
     getLeaveRequestCounts().catch((err) => { console.error("leave-count rollup failed (badges only):", err); return { bySection: new Map(), bySubject: new Map() }; }),
     getJoinWaitingCounts().catch((err) => { console.error("join-waiting rollup failed (badges only):", err); return { bySection: new Map(), bySubject: new Map() }; }),
-    getMissingWorkCounts().catch((err) => { console.error("missing-work rollup failed (badges only):", err); return { bySubject: new Map() }; }),
+    getMissingWorkCounts(shownSubjectIds).catch((err) => { console.error("missing-work rollup failed (badges only):", err); return { bySubject: new Map() }; }),
   ]);
   const list = el("subjects-list");
   list.innerHTML = "";
@@ -1603,6 +1691,7 @@ async function loadSubjects() {
     b.addEventListener("click", async () => {
       const archiving = b.dataset.value === "true";
       await updateDoc(doc(db, "subjects", b.dataset.archive), { archived: archiving });
+      invalidateStructure(); // cached names/headcounts changed
       alert(archiving ? "Archived." : "Unarchived.");
       loadSubjects();
     }));
@@ -1615,6 +1704,7 @@ async function loadSubjects() {
       if (!ok) return;
       b.disabled = true;
       await cascadeDeleteSubject(b.dataset.deleteSubject);
+      invalidateStructure(); // cached names/headcounts changed
       alert("Deleted.");
       loadSubjects();
     }));
@@ -1639,6 +1729,7 @@ async function editSubjectYearTerm(subjectId) {
       schoolYear: el(`edit-year-${subjectId}`).value.trim(),
       term: el(`edit-term-${subjectId}`).value,
     });
+    invalidateStructure(); // cached names/headcounts changed
     alert("Saved.");
     loadSubjects();
   });
@@ -1655,6 +1746,7 @@ el("add-subject-form").addEventListener("submit", async (e) => {
     ownerEmail: state.viewAsEmail,
     ownerName: currentUser.displayName || currentUser.email,
   });
+  invalidateStructure(); // cached names/headcounts changed
   alert("Subject added.");
   e.target.reset();
   loadSubjects();
@@ -1933,6 +2025,7 @@ async function loadSections() {
       if (!ok) return;
       b.disabled = true;
       await cascadeDeleteSection(b.dataset.deleteSection);
+      invalidateStructure(); // cached names/headcounts changed
       alert("Deleted.");
       loadSections();
     }));
@@ -1950,6 +2043,7 @@ async function editSectionName(sectionId) {
     const name = el(`edit-section-name-${sectionId}`).value.trim();
     if (!name) return;
     await updateDoc(doc(db, "sections", sectionId), { sectionName: name });
+    invalidateStructure(); // cached names/headcounts changed
     alert("Saved.");
     loadSections();
   });
@@ -1976,6 +2070,7 @@ el("add-section-form").addEventListener("submit", async (e) => {
     joinCode,
     ownerEmail: state.viewAsEmail,
   });
+  invalidateStructure(); // cached names/headcounts changed
   // Pointer doc so students resolve this code by get() instead of listing the
   // whole sections collection (see firestore.rules joinCodes + sections split).
   // Best-effort: if the joinCodes rules aren't deployed yet (or a transient
@@ -2164,6 +2259,7 @@ async function openEnrolled(onlySectionId) {
       b.disabled = true;
       try {
         await updateDoc(doc(db, "enrollments", b.dataset.approveEnrollment), { status: "approved", seen: true });
+        invalidateStructure(); // cached names/headcounts changed
       } catch (err) {
         alert("Couldn't approve: " + err.message);
         b.disabled = false;
@@ -2234,6 +2330,7 @@ async function openEnrolled(onlySectionId) {
       const ok = confirm(msg);
       if (!ok) return;
       await deleteDoc(doc(db, "enrollments", b.dataset.removeEnrollment));
+      invalidateStructure(); // cached names/headcounts changed
       alert("Removed.");
       openEnrolled(onlySectionId);
       refreshNotifications();
@@ -4173,12 +4270,25 @@ document.addEventListener("click", (e) => {
 // assignment doesn't keep highlighting it.
 let highlightStudentName = "";
 
-async function loadSubmissions() {
+// Spark read budget: the raw fetches of the open assignment are memoized so a
+// Publish / Return / filter change re-renders from memory (with the
+// just-written submission patched in) instead of re-reading every submission -
+// that used to cost a whole class's docs per graded student. Any other caller
+// (opening the assignment, delete, redo, retake, rename...) fetches fresh.
+let subsMemo = null; // { assignmentId, docs, aDoc, quizRaw }
+async function loadSubmissions(opts = {}) {
   const filter = el("submission-filter").value;
   const highlight = highlightStudentName;
   highlightStudentName = "";
-  const q = ownerScopedQuery("submissions", where("assignmentId", "==", state.assignmentId));
-  const [snap, aDoc] = await Promise.all([getDocs(q), getDoc(doc(db, "assignments", state.assignmentId))]);
+  let memo = subsMemo;
+  if (!(opts.reuse && memo && memo.assignmentId === state.assignmentId)) {
+    const q = ownerScopedQuery("submissions", where("assignmentId", "==", state.assignmentId));
+    const [freshSnap, freshA] = await Promise.all([getDocs(q), getDoc(doc(db, "assignments", state.assignmentId))]);
+    memo = subsMemo = { assignmentId: state.assignmentId, docs: freshSnap.docs, aDoc: freshA, quizRaw: null };
+  }
+  if (opts.patch) memo.docs = memo.docs.map((d) => (d.id === opts.patch.id ? patchedDoc(d, opts.patch.data) : d));
+  const snap = { docs: memo.docs };
+  const aDoc = memo.aDoc;
   const ownedDocs = snap.docs.filter((d) => ownedByViewAs(d.data()));
   renderScoresSummary(ownedDocs.map((d) => d.data()), aDoc.data()?.totalPoints);
   renderImagesGallery(ownedDocs.map((d) => d.data()), aDoc.data()?.title || "submissions", {
@@ -4190,7 +4300,7 @@ async function loadSubmissions() {
   list.innerHTML = "";
   const a = aDoc.data() || {};
   const isQuiz = a.allowedFileTypes === "quiz";
-  const quiz = isQuiz ? await loadQuizReviewData(state.assignmentId, a, ownedDocs) : null;
+  const quiz = isQuiz ? await loadQuizReviewData(state.assignmentId, a, ownedDocs, memo) : null;
   if (quiz) list.appendChild(quiz.unfinishedCard);
   // Pending (and AI-drafted, still unreviewed) submissions need the
   // teacher's attention most - surface those first instead of leaving them
@@ -4333,7 +4443,7 @@ async function loadSubmissions() {
       input.addEventListener("blur", save);
     }));
 }
-el("submission-filter").addEventListener("change", loadSubmissions);
+el("submission-filter").addEventListener("change", () => loadSubmissions({ reuse: true }));
 
 // ---------- Quiz review (auto-score + cheating signals) ----------
 // Latest auto-score per submission id (incl. teacher "Accept" overrides), so
@@ -4342,11 +4452,14 @@ const quizAutoScores = new Map();
 
 // One read each for the answer key and the start records, shared by every
 // row. Both best-effort: no key -> no auto-score (teacher grades by hand).
-async function loadQuizReviewData(assignmentId, a, ownedDocs) {
-  const [keySnap, attemptsSnap] = await Promise.all([
+async function loadQuizReviewData(assignmentId, a, ownedDocs, memo = null) {
+  // Reuses loadSubmissions()'s memo (Publish/Return re-render) when present.
+  const raw = memo?.quizRaw || await Promise.all([
     getDoc(doc(db, "quizKeys", assignmentId)).catch(() => null),
     getDocs(ownerScopedQuery("quizAttempts", where("assignmentId", "==", assignmentId))).catch(() => null),
   ]);
+  if (memo) memo.quizRaw = raw;
+  const [keySnap, attemptsSnap] = raw;
   const key = keySnap?.exists() ? keySnap.data().answers : null;
   const attempts = new Map();
   (attemptsSnap?.docs || []).forEach((d) => attempts.set(d.data().studentUID, { id: d.id, ...d.data() }));
@@ -4624,17 +4737,20 @@ async function openReview(submissionId) {
     const btn = container.querySelector(`[data-publish]`);
     btn.disabled = true;
     btn.textContent = "Saving...";
-    await updateDoc(ref, {
+    const published = {
       finalGrade: {
         score,
         feedback: el(`feedback-${submissionId}`).value,
       },
       status: "published",
       publishedAt: Date.now(),
-    });
+    };
+    await updateDoc(ref, published);
     alert("Published — the student can now see their grade and feedback.");
-    loadSubmissions();
-    refreshNotifications();
+    // Re-render + bell from memory (no re-read of the class) - see subsMemo.
+    resolvedLocally.add(submissionId);
+    loadSubmissions({ reuse: true, patch: { id: submissionId, data: published } });
+    refreshNotifications({ local: true });
   });
 
   // Sends the submission back to the student to redo instead of grading it -
@@ -4672,14 +4788,16 @@ async function openReview(submissionId) {
     } catch (err) {
       console.error("couldn't archive returned attempt (returning anyway):", err);
     }
-    await updateDoc(ref, {
+    const returned = {
       finalGrade: { score, feedback },
       status: "returned",
       returnedAt: Date.now(),
-    });
+    };
+    await updateDoc(ref, returned);
     alert("Returned for revision — the student can now redo and resubmit.");
-    loadSubmissions();
-    refreshNotifications();
+    resolvedLocally.add(submissionId);
+    loadSubmissions({ reuse: true, patch: { id: submissionId, data: returned } });
+    refreshNotifications({ local: true });
   });
 }
 
