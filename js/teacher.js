@@ -3,7 +3,7 @@ import { guardPage, signOutUser } from "./auth.js?v=2";
 import {
   collection, addDoc, doc, setDoc, updateDoc, deleteDoc, deleteField, writeBatch, getDoc, getDocs, getCountFromServer, query, where, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { getGeminiKey, setGeminiKey, getGroqKey, setGroqKey, runRubricCheck, generateCodeExample, generateQuiz } from "./gemini.js?v=4";
+import { getGeminiKey, setGeminiKey, getGroqKey, setGroqKey, runRubricCheck, generateCodeExample, generateQuiz } from "./gemini.js?v=5";
 import {
   QUIZ_MIN_ITEMS, QUIZ_MAX_ITEMS, QUIZ_TYPES, QUIZ_GRACE_SECONDS, splitQuiz, joinQuiz, validateQuizItems,
   parseGeneratedQuiz, newItemId, splitAccepted, scoreQuiz, quizTimeLimitSeconds, formatDuration,
