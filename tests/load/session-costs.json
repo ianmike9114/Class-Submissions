@@ -17,9 +17,11 @@
     "pastDueFraction": 0.7,
     "studentSessionsPerDay": 2,
     "studentSubmitsPerDay": 1,
-    "teacherSessionsPerDay": 3,
     "teacherAssignmentsGradedPerDay": 2,
-    "studentsGradedPerAssignment": 40
+    "studentsGradedPerAssignment": 40,
+    "teacherHomeVisitsPerDay": 10,
+    "teacherStructureRefreshesPerDay": 3,
+    "currentTermPastDue": 35
   },
   "actions": {
     "studentDashboardLoad": {
@@ -35,16 +37,22 @@
       "note": "post-action reload reuses the hidden-class lookup (10-min in-memory cache) and cached assignments; re-reads only enrollments and this term's submissions"
     },
     "teacherHomeLoad": {
-      "where": "js/teacher.js loadSubjects() + getNotifications() + getMissingWorkCounts() (cachedOwnerDocs, once per session)",
-      "reads": "subjectsPerTeacher + sectionsPerTeacher + sectionsPerTeacher*assignmentsPerClass + sectionsPerTeacher*studentsPerSection + pendingPerTeacher + 10 + sectionsPerTeacher*assignmentsPerClass*pastDueFraction",
+      "where": "js/teacher.js loadSubjects() + getNotifications() + getMissingWorkCounts() (structure cached 10 min, missing-work 15 min, inbox fresh)",
+      "reads": "3 + subjectsPerTeacher + pendingPerTeacher + 10",
       "writes": "0",
-      "note": "owned subjects, sections, assignments, enrollments, pending submissions, small notification queries, plus one count() per past-due assignment"
+      "note": "a Home visit with warm caches: 3 term settings + subjects list + inbox (pending submissions, leave/join/seen/redo enrollments)"
     },
     "teacherGradeAssignment": {
-      "where": "js/teacher.js loadSubmissions() + publishing each score (updateDoc)",
-      "reads": "studentsGradedPerAssignment + 3",
+      "where": "js/teacher.js loadSubmissions() (memoized) + openReview() + publish (updateDoc)",
+      "reads": "studentsGradedPerAssignment + 3 + 2*studentsGradedPerAssignment",
       "writes": "studentsGradedPerAssignment",
-      "note": "every submission of one assignment + the assignment + quiz key/attempts; one write per published score"
+      "note": "one fetch of the class's submissions (+assignment, quiz key/attempts), 2 reads per review opened; Publish re-renders and updates the bell from memory. Before: ~200 reads per publish (full re-read + notifications rescan)."
+    },
+    "teacherStructureRefresh": {
+      "where": "js/teacher.js cachedOwnerDocs structure keys + computeMissingWorkCounts()",
+      "reads": "sectionsPerTeacher + sectionsPerTeacher*assignmentsPerClass + 2*sectionsPerTeacher + currentTermPastDue",
+      "writes": "0",
+      "note": "first visit / after 10-15 min / after own structural edits: sections + assignments + two count() per section + one count() per current-term past-due assignment"
     }
   }
 }
