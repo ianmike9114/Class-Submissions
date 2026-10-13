@@ -4,6 +4,7 @@ import {
   hashSeed, seededShuffle, normalizeAnswer, splitAccepted, isCorrect, scoreQuiz,
   quizDeadlineMs, splitQuiz, joinQuiz, validateQuizItems, parseGeneratedQuiz, formatDuration,
   servedQuestions, QUIZ_MAX_BANK, choiceLengthWarning, countChoiceLengthWarnings, QUIZ_BREACH_LIMIT,
+  balanceAnswerPositions, answerPatternWarning,
 } from "../../js/quiz.js";
 
 describe("seededShuffle", () => {
@@ -171,5 +172,49 @@ describe("choiceLengthWarning", () => {
 describe("QUIZ_BREACH_LIMIT", () => {
   it("auto-submits on the 3rd breach", () => {
     expect(QUIZ_BREACH_LIMIT).toBe(3);
+  });
+});
+
+describe("balanceAnswerPositions", () => {
+  const seeded = (n) => { let x = n; return () => ((x = (x * 9301 + 49297) % 233280) / 233280); };
+  const allA = Array.from({ length: 10 }, (_, i) => ({
+    id: "q" + i, type: "mc", prompt: "P" + i, choices: [`right${i}`, `w1-${i}`, `w2-${i}`, `w3-${i}`], answer: 0,
+  }));
+  it("spreads correct answers evenly over A-D and keeps the right text", () => {
+    const out = balanceAnswerPositions(allA, seeded(7));
+    const counts = [0, 0, 0, 0];
+    out.forEach((it, i) => {
+      counts[it.answer]++;
+      expect(it.choices[it.answer]).toBe(`right${i}`);
+      expect([...it.choices].sort()).toEqual([...allA[i].choices].sort());
+      expect(it.id).toBe(allA[i].id);
+    });
+    expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(1);
+    expect(allA[0].answer).toBe(0); // input not mutated
+  });
+  it("is deterministic with a seeded rand and leaves other item types alone", () => {
+    const mixed = [...allA.slice(0, 3), { id: "t", type: "tf", prompt: "S", answer: true }, { id: "i", type: "id", prompt: "N", answer: ["x"] }];
+    expect(balanceAnswerPositions(mixed, seeded(3))).toEqual(balanceAnswerPositions(mixed, seeded(3)));
+    const out = balanceAnswerPositions(mixed, seeded(3));
+    expect(out[3]).toBe(mixed[3]);
+    expect(out[4]).toBe(mixed[4]);
+  });
+  it("skips malformed MC items", () => {
+    const bad = { id: "b", type: "mc", prompt: "x", choices: ["a", "b"], answer: 0 };
+    expect(balanceAnswerPositions([bad])[0]).toBe(bad);
+  });
+});
+
+describe("answerPatternWarning", () => {
+  const mc = (answer) => ({ type: "mc", choices: ["a", "b", "c", "d"], answer });
+  const tf = (answer) => ({ type: "tf", answer });
+  it("flags one letter holding most MC answers", () => {
+    expect(answerPatternWarning([mc(0), mc(0), mc(0), mc(1)])).toMatch(/3 of 4 .* A/);
+    expect(answerPatternWarning([mc(0), mc(0), mc(1), mc(2)])).toBeNull();
+    expect(answerPatternWarning([mc(0), mc(0), mc(0)])).toBeNull(); // too few to matter
+  });
+  it("flags True/False items that are almost all the same", () => {
+    expect(answerPatternWarning([tf(true), tf(true), tf(true), tf(true), tf(false)])).toMatch(/True/);
+    expect(answerPatternWarning([tf(true), tf(true), tf(false), tf(false)])).toBeNull();
   });
 });

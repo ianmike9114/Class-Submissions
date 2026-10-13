@@ -199,6 +199,36 @@ test("quiz with a question bank:student gets 5 of 6, teacher sees score out of 5
   expect(errors, errors.join(" | ")).toEqual([]);
 });
 
+test("quiz builder spreads multiple-choice answers over A-D", async ({ page }) => {
+  const errors = trackPageErrors(page);
+  await signIn(page, TEACHER, "Teacher One");
+  await page.waitForURL(/teacher\.html/);
+  await page.locator("#subjects-list [data-open]").first().click();
+  await page.locator("#sections-list [data-open]").first().click();
+  await page.locator("#view-section summary", { hasText: "Create" }).click();
+  await page.locator('[data-create-type="quiz"]').click();
+  const builder = page.locator("#assignment-quiz-builder");
+  for (let i = 0; i < 8; i++) {
+    await builder.locator(".qb-add").click();
+    const item = builder.locator(".qb-item").nth(i);
+    await item.locator('textarea[data-f="prompt"]').fill(`Question ${i + 1}?`);
+    for (const [c, text] of ["right", "wrong one", "wrong two", "wrong three"].entries()) {
+      await item.locator(`input[data-f="choice"][data-c="${c}"]`).fill(text);
+    }
+    await item.locator('input[data-f="mc-answer"][value="0"]').check();
+  }
+  await expect(builder.locator(".qb-pattern-warn")).toContainText("8 of 8");
+  await builder.locator(".qb-spread").click();
+  await expect(builder.locator(".qb-pattern-warn")).toBeHidden();
+  const picked = await builder.locator(".qb-item").evaluateAll((items) => items.map((li) => {
+    const ans = li.querySelector('input[data-f="mc-answer"]:checked').value;
+    return { ans, text: li.querySelector(`input[data-f="choice"][data-c="${ans}"]`).value };
+  }));
+  expect(new Set(picked.map((p) => p.ans)).size).toBeGreaterThan(1);
+  expect(picked.every((p) => p.text === "right")).toBe(true);
+  expect(errors, errors.join(" | ")).toEqual([]);
+});
+
 test("another teacher can't see the first teacher's subject", async ({ page }) => {
   await signIn(page, TEACHER2, "Teacher Two");
   await page.waitForURL(/teacher\.html/);
