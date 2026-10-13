@@ -1,5 +1,5 @@
 import { db, ADMIN_EMAIL, isSuperAdmin } from "./firebase-config.js";
-import { guardPage, signOutUser } from "./auth.js";
+import { guardPage, signOutUser } from "./auth.js?v=2";
 import {
   collection, addDoc, setDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where, arrayUnion, arrayRemove, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -1312,11 +1312,28 @@ const LINK_HINTS = {
 };
 
 // Multiple photos share one Firestore document's 1MiB cap, so each photo
-// gets a slice of it - MAX_PHOTOS * PER_PHOTO_MAX_LEN (10 * 100,000 =
-// 1,000,000 chars) stays under the 1,048,576-byte doc cap with ~48KB left
-// for the submission doc's other (tiny string) fields.
-const MAX_PHOTOS = 10;
-const PER_PHOTO_MAX_LEN = 100000;
+// gets a slice of it - MAX_PHOTOS * PER_PHOTO_MAX_LEN (15 * 64,000 =
+// 960,000 chars) stays under the 1,048,576-byte doc cap with ~88KB left
+// for the submission doc's other fields. Photos are WebP where the browser
+// can encode it (~30% smaller than JPEG at the same sharpness), so a 64k
+// WebP page looks about like the old 100k JPEG one.
+const MAX_PHOTOS = 15;
+const PER_PHOTO_MAX_LEN = 64000;
+
+// iOS Safari can't ENCODE WebP - toDataURL("image/webp") silently returns a
+// PNG there - so check the actual output once and fall back to JPEG.
+let photoMimeCache = null;
+function photoMime() {
+  if (photoMimeCache) return photoMimeCache;
+  try {
+    const c = document.createElement("canvas");
+    c.width = c.height = 1;
+    photoMimeCache = c.toDataURL("image/webp").startsWith("data:image/webp") ? "image/webp" : "image/jpeg";
+  } catch {
+    photoMimeCache = "image/jpeg";
+  }
+  return photoMimeCache;
+}
 
 function renderSubmitForm(assignmentId, type, prefill = null) {
   const photoBlock = (type === "image" || type === "document") ? `
@@ -1369,7 +1386,7 @@ function compressImage(file, maxLen = PER_PHOTO_MAX_LEN) {
       const img = new Image();
       img.onerror = () => reject(new Error("Couldn't read that photo."));
       img.onload = () => {
-        // Try progressively smaller max dimensions; at each, drop JPEG quality
+        // Try progressively smaller max dimensions; at each, drop quality
         // to a floor. Accept the first result that fits under MAX_DATA_URL_LEN.
         // Dense document/handwriting photos (e.g. a full ADM page) can exceed
         // the per-photo size cap even at 1280px + minimum quality, so stepping
@@ -1377,6 +1394,7 @@ function compressImage(file, maxLen = PER_PHOTO_MAX_LEN) {
         // instead of failing outright. Only ever shrinks, never upscales.
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
+        const mime = photoMime();
         for (const maxDim of [1280, 1024, 800, 640]) {
           let { width, height } = img;
           if (width > maxDim || height > maxDim) {
@@ -1390,10 +1408,10 @@ function compressImage(file, maxLen = PER_PHOTO_MAX_LEN) {
           ctx.drawImage(img, 0, 0, width, height);
 
           let quality = 0.8;
-          let dataUrl = canvas.toDataURL("image/jpeg", quality);
+          let dataUrl = canvas.toDataURL(mime, quality);
           while (dataUrl.length > MAX_DATA_URL_LEN && quality > 0.3) {
             quality -= 0.1;
-            dataUrl = canvas.toDataURL("image/jpeg", quality);
+            dataUrl = canvas.toDataURL(mime, quality);
           }
           if (dataUrl.length <= MAX_DATA_URL_LEN) {
             resolve(dataUrl);
@@ -1462,7 +1480,16 @@ function wirePhotoInput(input) {
     // and a bad photo partway through doesn't block the rest.
     for (const file of toAdd) {
       try {
-        const dataUrl = await compressImage(file);
+        // Total budget, not just per-photo: an older submission being edited
+        // can still hold 100k JPEG pages from before the 15-page change, and
+        // the whole doc must stay under Firestore's 1MiB cap.
+        const used = photos.reduce((sum, p) => sum + p.length, 0);
+        const budget = Math.min(PER_PHOTO_MAX_LEN, MAX_PHOTOS * PER_PHOTO_MAX_LEN - used);
+        if (budget < 20000) {
+          alert("No room for more photos in this submission - remove a page first.");
+          break;
+        }
+        const dataUrl = await compressImage(file, budget);
         photos.push(dataUrl);
         renderPhotoThumbs(assignmentId);
       } catch (err) {

@@ -37,6 +37,15 @@
       <p id="auth-checking" class="muted">Checking your sign-in…</p>
 
       <p id="signin-prompt" class="muted hidden">Sign in with your Gmail to submit or check work.</p>
+      <p id="welcome-back" class="hidden"></p>
+
+      <!-- Shown when sign-in keeps bouncing back here (this browser isn't
+           keeping the session) - see the bounce breaker in the script below. -->
+      <div id="bounce-warning" class="hidden" style="text-align:left; border:1px solid var(--amber); border-radius:6px; padding:0.75rem; margin-bottom:1rem;">
+        <p><strong>This browser isn't saving your sign-in</strong></p>
+        <p class="muted">Private/incognito mode, blocked site data, or the home-screen app on iPhone can stop the sign-in from sticking. Open this site in Safari or Chrome normally (not private mode), then sign in again.</p>
+        <button type="button" id="bounce-retry">Try again</button>
+      </div>
 
       <div id="in-app-browser-warning" class="hidden" style="text-align:left; border:1px solid var(--amber); border-radius:6px; padding:0.75rem; margin-bottom:1rem;">
         <p><strong>Can't sign in here</strong></p>
@@ -53,6 +62,11 @@
       </div>
 
       <div id="google-signin-button" style="display:flex; justify-content:center;"></div>
+
+      <label id="remember-row" class="hidden" style="display:flex; align-items:center; justify-content:center; gap:0.4rem; margin-top:0.75rem; font-weight:normal;">
+        <input type="checkbox" id="remember-device" style="width:auto; margin:0;" checked />
+        Remember this device (untick on shared computers)
+      </label>
 
       <button type="button" class="secondary hidden" id="install-app" style="margin-top:1rem;">&#8681; Install app</button>
 
@@ -76,7 +90,7 @@
        in document order right before DOMContentLoaded. -->
   <script src="https://accounts.google.com/gsi/client" defer></script>
   <script type="module">
-    import { initGoogleSignIn, isTeacherEmail, sendEmailSignInLink, isEmailSignInLink, completeEmailLinkSignIn } from "./js/auth.js";
+    import { initGoogleSignIn, isTeacherEmail, sendEmailSignInLink, isEmailSignInLink, completeEmailLinkSignIn, getRememberedEmail, rememberDevice, forgetDevice, isRememberOptedOut, setRememberOptOut, recordAuthHop, clearAuthHops } from "./js/auth.js?v=2";
     import { auth } from "./js/firebase-config.js";
     import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
@@ -160,12 +174,33 @@
       }
     }
 
+    // Remember this device + bounce breaker (js/auth.js). 3 index -> dashboard
+    // redirects within 15s means the dashboard keeps finding no session and
+    // sending us back - stop redirecting/auto-signing-in and explain instead.
+    let bouncing = false;
+    async function goToDashboard(user) {
+      if (isRememberOptedOut()) forgetDevice();
+      else rememberDevice(user.email);
+      if (recordAuthHop() >= 3) {
+        bouncing = true;
+        dbg("bounce breaker tripped");
+        document.getElementById("auth-checking").classList.add("hidden");
+        document.getElementById("bounce-warning").classList.remove("hidden");
+        return;
+      }
+      window.location.href = ((await isTeacherEmail(user.email)) ? "teacher.html" : "student.html") + location.search;
+    }
+    document.getElementById("bounce-retry").addEventListener("click", () => {
+      clearAuthHops();
+      location.reload();
+    });
+
     let authResolved = false;
     onAuthStateChanged(auth, async (user) => {
       authResolved = true;
       dbg("onAuthStateChanged user=" + (user ? user.email : "NULL"));
       if (user) {
-        window.location.href = ((await isTeacherEmail(user.email)) ? "teacher.html" : "student.html") + location.search;
+        await goToDashboard(user);
         return;
       }
       // Confirmed signed OUT - now it's safe to show the sign-in UI (unless
@@ -187,9 +222,7 @@
     // immediately so the login form never appears.
     window.addEventListener("pageshow", async (e) => {
       dbg("pageshow persisted=" + e.persisted + " currentUser=" + (auth.currentUser ? auth.currentUser.email : "NULL"));
-      if (e.persisted && auth.currentUser) {
-        window.location.href = ((await isTeacherEmail(auth.currentUser.email)) ? "teacher.html" : "student.html") + location.search;
-      }
+      if (e.persisted && auth.currentUser) await goToDashboard(auth.currentUser);
     });
 
     // Facebook/Messenger, Instagram, Line, TikTok etc. open shared links in
@@ -302,9 +335,24 @@
         }
       } else {
         try {
+          // Remembered account -> One Tap auto sign-in (never while the
+          // bounce breaker is up, or it would just loop again).
+          const rememberBox = document.getElementById("remember-device");
+          rememberBox.checked = !isRememberOptedOut();
+          rememberBox.addEventListener("change", () => {
+            setRememberOptOut(!rememberBox.checked);
+            if (!rememberBox.checked) forgetDevice();
+          });
+          document.getElementById("remember-row").classList.remove("hidden");
+          const autoEmail = (!bouncing && !isRememberOptedOut()) ? getRememberedEmail() : "";
+          if (autoEmail) {
+            const welcome = document.getElementById("welcome-back");
+            welcome.textContent = "Welcome back, " + autoEmail + ". If you are not signed in automatically, tap the button below.";
+            welcome.classList.remove("hidden");
+          }
           initGoogleSignIn("google-signin-button", (e) => {
             showError(FRIENDLY_ERRORS[e.code] || e.message || "Something went wrong signing in - please try again.");
-          });
+          }, { autoEmail });
         } catch (e) {
           if (!isInAppBrowser()) {
             showError("Sign-in couldn't load (" + (e.message || "unknown error") + "). Try refreshing the page.");

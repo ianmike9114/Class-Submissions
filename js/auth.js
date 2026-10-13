@@ -21,8 +21,8 @@ import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase
 //
 // Call once, on page load, on any page with a <div id="google-signin-button">.
 // onSignInError receives an Error if the Firebase credential exchange fails.
-export function initGoogleSignIn(buttonElementId, onSignInError) {
-  window.google.accounts.id.initialize({
+export function initGoogleSignIn(buttonElementId, onSignInError, { autoEmail = "" } = {}) {
+  const config = {
     client_id: GOOGLE_CLIENT_ID,
     callback: async (response) => {
       try {
@@ -36,17 +36,93 @@ export function initGoogleSignIn(buttonElementId, onSignInError) {
     // but Brave's engine doesn't implement the FedCM API at all -
     // navigator.credentials.get() throws NotSupportedError internally
     // inside Google's own client library, with no fallback, so the button
-    // silently does nothing on click. Safe to leave off: this app never
-    // calls accounts.id.prompt() (One Tap), so the flag only ever affected
-    // renderButton() below - no other code path depends on it.
-  });
+    // silently does nothing on click. Safe to leave off: it only ever
+    // affected renderButton() below.
+  };
+  // "Remember this device": a returning user whose Firebase session was wiped
+  // (iOS Safari's 7-day storage purge, a home-screen app's separate storage)
+  // gets One Tap with their remembered account pre-selected, signing straight
+  // back in. The rendered button below stays as the fallback for browsers
+  // where the prompt can't show (Brave has no FedCM, so prompt() just no-ops).
+  if (autoEmail) {
+    Object.assign(config, {
+      auto_select: true,
+      login_hint: autoEmail,
+      itp_support: true,
+      use_fedcm_for_prompt: true,
+      cancel_on_tap_outside: false,
+    });
+  }
+  window.google.accounts.id.initialize(config);
   window.google.accounts.id.renderButton(document.getElementById(buttonElementId), {
     theme: "outline",
     size: "large",
   });
+  if (autoEmail) {
+    try {
+      window.google.accounts.id.prompt();
+    } catch {
+      // Prompt unsupported here - the button above still works.
+    }
+  }
+}
+
+// ---------- Remember this device ----------
+// Stores only the email (no token, no password) so index.html can offer an
+// automatic One Tap re-sign-in when the saved Firebase session is gone.
+// Cleared on sign-out, so signing out never auto-signs you straight back in.
+const REMEMBER_KEY = "lms.rememberEmail";
+const REMEMBER_OPT_OUT_KEY = "lms.rememberOptOut";
+
+export function getRememberedEmail() {
+  try { return localStorage.getItem(REMEMBER_KEY) || ""; } catch { return ""; }
+}
+
+export function rememberDevice(email) {
+  try { localStorage.setItem(REMEMBER_KEY, email); } catch {}
+}
+
+export function forgetDevice() {
+  try { localStorage.removeItem(REMEMBER_KEY); } catch {}
+}
+
+// Opt-out is per device (shared school-lab computers should untick it).
+export function isRememberOptedOut() {
+  try { return localStorage.getItem(REMEMBER_OPT_OUT_KEY) === "1"; } catch { return false; }
+}
+
+export function setRememberOptOut(optOut) {
+  try {
+    if (optOut) localStorage.setItem(REMEMBER_OPT_OUT_KEY, "1");
+    else localStorage.removeItem(REMEMBER_OPT_OUT_KEY);
+  } catch {}
+}
+
+// ---------- Sign-in bounce breaker ----------
+// When this browser can't keep the session (private mode, blocked storage),
+// index.html signs in, the dashboard's guardPage() sees no user and sends it
+// back, and auto sign-in would repeat that forever. Each index -> dashboard
+// redirect is timestamped in sessionStorage; 3 within 15s means we're looping.
+const HOPS_KEY = "lms.authHops";
+
+export function recordAuthHop() {
+  try {
+    const now = Date.now();
+    const hops = JSON.parse(sessionStorage.getItem(HOPS_KEY) || "[]").filter((t) => now - t < 15000);
+    hops.push(now);
+    sessionStorage.setItem(HOPS_KEY, JSON.stringify(hops));
+    return hops.length;
+  } catch {
+    return 0;
+  }
+}
+
+export function clearAuthHops() {
+  try { sessionStorage.removeItem(HOPS_KEY); } catch {}
 }
 
 export function signOutUser() {
+  forgetDevice();
   return signOut(auth);
 }
 
@@ -120,7 +196,16 @@ export function guardPage(expectedRole) {
         resolve(null);
         return;
       }
-      const role = (await isTeacherEmail(user.email)) ? "teacher" : "student";
+      let role;
+      try {
+        role = (await isTeacherEmail(user.email)) ? "teacher" : "student";
+      } catch {
+        // Network/Firestore hiccup - don't hang on a blank page.
+        document.body.insertAdjacentHTML("afterbegin",
+          '<div class="card" style="margin:1rem;">Could not load your account (check your internet). <button type="button" onclick="location.reload()">Retry</button></div>');
+        resolve(null);
+        return;
+      }
       // Teacher/admin "View as student": a teacher opens student.html with an
       // ?asStudentUID= to preview a student's read-only page. Let them stay on
       // it instead of bouncing back to their own dashboard - student.js gates
@@ -133,6 +218,8 @@ export function guardPage(expectedRole) {
         window.location.href = (role === "teacher" ? "teacher.html" : "student.html") + location.search;
         return;
       }
+      // Reached a dashboard with a live session - not a bounce loop.
+      clearAuthHops();
       resolve(user);
     });
   });
