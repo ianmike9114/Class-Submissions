@@ -2,7 +2,7 @@
 import { describe, it, expect } from "vitest";
 import {
   readCache, writeCache, clearAllCaches, staleSectionIds, asDoc, chunk, ASG_CACHE_TTL_MS,
-  readStore, writeStore, fitToBudget, SUB_PREFIX, TERM_PREFIX, SUB_CACHE_TTL_MS,
+  readStore, writeStore, fitToBudget, SUB_PREFIX, TERM_PREFIX, SUB_CACHE_TTL_MS, assignmentDelta,
 } from "../../js/assignment-cache.js";
 
 function memStorage() {
@@ -112,5 +112,26 @@ describe("fitToBudget", () => {
     expect(Object.keys(out)).toEqual(["small"]);
     const many = Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`s${i}`, { v: 1, at: 1, docs: [{ id: "d", data: { p: "y".repeat(300_000) } }] }]));
     expect(JSON.stringify(fitToBudget(many)).length).toBeLessThanOrEqual(1_500_000);
+  });
+});
+
+describe("assignmentDelta", () => {
+  const NOW = 50_000_000;
+  const entry = (docs, av, extra = {}) => ({ v: 9, at: NOW - 1000, docs: docs.map((id) => ({ id, data: {} })), av, ...extra });
+  const sec = (map, extra = {}) => ({ assignmentsVersion: 9, assignmentVersions: map, assignmentVersionsComplete: true, ...extra });
+
+  it("full refetch with no entry, past the TTL, or an old-format entry on a changed legacy section", () => {
+    expect(assignmentDelta(sec({ a: 1 }), undefined, NOW).full).toBe(true);
+    expect(assignmentDelta(sec({ a: 1 }), entry(["a"], { a: 1 }, { at: NOW - ASG_CACHE_TTL_MS - 1 }), NOW).full).toBe(true);
+    expect(assignmentDelta({ assignmentsVersion: 10 }, entry(["a"], undefined), NOW).full).toBe(true);
+  });
+  it("legacy section (no complete map) with an unchanged version reuses everything", () => {
+    expect(assignmentDelta({ assignmentsVersion: 9 }, entry(["a"], undefined), NOW)).toEqual({ full: false, fetchIds: [], dropIds: [] });
+  });
+  it("complete map: fetch only edited/new ids, drop deleted ones", () => {
+    const e = entry(["a", "b", "c"], { a: 1, b: 1, c: 1 });
+    expect(assignmentDelta(sec({ a: 1, b: 2, c: 1, d: 5 }), e, NOW)).toEqual({ full: false, fetchIds: ["b", "d"], dropIds: [] });
+    expect(assignmentDelta(sec({ a: 1, c: 1 }), e, NOW)).toEqual({ full: false, fetchIds: [], dropIds: ["b"] });
+    expect(assignmentDelta(sec({ a: 1, b: 1, c: 1 }), e, NOW)).toEqual({ full: false, fetchIds: [], dropIds: [] });
   });
 });

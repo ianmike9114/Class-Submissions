@@ -102,6 +102,25 @@ export function staleSectionIds(sections, cache, now, ttl = ASG_CACHE_TTL_MS) {
     .map((s) => s.id);
 }
 
+// Per-section plan for the assignment cache. Sections whose teacher has a
+// complete assignmentVersions map (js/teacher.js backfillAssignmentVersions /
+// touchSection) get a DELTA: re-read only ids whose timestamp changed or are
+// new (fetchIds) and drop ids no longer listed (dropIds). Otherwise - legacy
+// section, no/old-format entry, or past the TTL - fall back to the
+// section-level assignmentsVersion check: full refetch only when it changed.
+export function assignmentDelta(section, entry, now, ttl = ASG_CACHE_TTL_MS) {
+  const none = { full: false, fetchIds: [], dropIds: [] };
+  const fullPlan = { full: true, fetchIds: [], dropIds: [] };
+  if (!section || !entry || !Array.isArray(entry.docs) || !(now - entry.at < ttl)) return fullPlan;
+  const map = section.assignmentVersions;
+  if (section.assignmentVersionsComplete === true && map && typeof map === "object" && entry.av && typeof entry.av === "object") {
+    const fetchIds = Object.keys(map).filter((id) => entry.av[id] !== map[id]);
+    const dropIds = entry.docs.map((d) => d.id).filter((id) => !(id in map));
+    return { full: false, fetchIds, dropIds };
+  }
+  return (entry.v ?? null) !== (section.assignmentsVersion ?? null) ? fullPlan : none;
+}
+
 // Snapshot-like wrapper so cached plain objects render through the same code
 // as live QueryDocumentSnapshots (aDoc.id / aDoc.data()).
 export function asDoc(id, data) {

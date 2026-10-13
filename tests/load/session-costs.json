@@ -23,14 +23,15 @@
     "teacherStructureRefreshesPerDay": 3,
     "currentTermPastDue": 35,
     "changedSectionsSubsPerDay": 1,
-    "termCacheMissRate": 0.5
+    "termCacheMissRate": 0.5,
+    "changedAssignmentsPerDay": 2
   },
   "actions": {
     "studentDashboardLoad": {
       "where": "js/student.js loadEverything() + getHiddenSectionIds() + js/assignment-cache.js (assignments, own submissions, term caches)",
-      "reads": "2*classesPerStudent + termCacheMissRate*(classesPerStudent + 2) + changedClassesPerDay*assignmentsPerClass + changedSectionsSubsPerDay*(assignmentsPerClass/30 + 1 + currentTermSubmissions/classesPerStudent)",
+      "reads": "2*classesPerStudent + termCacheMissRate*(classesPerStudent + 2) + changedAssignmentsPerDay + 1 + changedSectionsSubsPerDay*(assignmentsPerClass/30 + 1 + currentTermSubmissions/classesPerStudent)",
       "writes": "0",
-      "note": "enrollments + sections every load; subjects/settings only on a 30-min term-cache miss; assignments only for classes a teacher changed; own submissions only for sections whose enrollment.subsVersion changed (teacher graded/returned) or past the 1h TTL"
+      "note": "enrollments + sections every load; subjects/settings only on a 30-min term-cache miss; only the assignments a teacher added/edited since the cached copy (per-assignment assignmentVersions map on the section, documentId 'in' query); own submissions only for sections whose enrollment.subsVersion changed. A whole-class refetch happens only on first load, the 6h TTL, or legacy sections not yet backfilled."
     },
     "studentSubmit": {
       "where": "js/student.js submit form -> addDoc/updateDoc + afterOwnSubmissionWrite(), then loadEverything() reload",
