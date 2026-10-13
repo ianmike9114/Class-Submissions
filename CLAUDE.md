@@ -619,7 +619,14 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   (`QUIZ_BREACH_LIMIT`) auto-submits (`quizLog.breachSubmitted`, teacher sees
   🚨). iPhone Safari has no element full screen and no screenshot event — gate
   never shows there, only app-switching counts. Blocking screenshots needs a
-  native Android wrapper (`FLAG_SECURE`) — noted as a future project, not built.
+  native Android wrapper (`FLAG_SECURE`) — built, see app bridge below.
+  **Split screen / pop-up window pause**: on touch devices `runQuiz` covers
+  the quiz (`.quiz-split-gate`) while `js/quiz.js`'s `isSplitWindow()` says the
+  window is clearly smaller than the screen (width < 85%, or height < 60% when
+  no input is focused — the keyboard), counting `quizLog.splitScreen` (teacher
+  flag). Not a breach, so a false positive can't auto-submit. The Android app
+  also sets `resizeableActivity="false"` (`prepare-android.sh`), so phones
+  refuse split screen for it outright.
   **Android app bridge** (`js/app-bridge.js`, inert in browsers): the
   optional Capacitor wrapper in `android-app/` loads the live site;
   `isLmsApp()` detects it. Inside the app `runQuiz` calls

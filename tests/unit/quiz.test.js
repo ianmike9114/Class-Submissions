@@ -4,8 +4,33 @@ import {
   hashSeed, seededShuffle, normalizeAnswer, splitAccepted, isCorrect, scoreQuiz,
   quizDeadlineMs, splitQuiz, joinQuiz, validateQuizItems, parseGeneratedQuiz, formatDuration,
   servedQuestions, QUIZ_MAX_BANK, choiceLengthWarning, countChoiceLengthWarnings, QUIZ_BREACH_LIMIT,
-  balanceAnswerPositions, answerPatternWarning,
+  balanceAnswerPositions, answerPatternWarning, isSplitWindow,
 } from "../../js/quiz.js";
+
+describe("isSplitWindow", () => {
+  const phone = { touch: true, typing: false, screenWidth: 400, screenHeight: 860 };
+  it("full-screen phone is not split", () => {
+    expect(isSplitWindow({ ...phone, innerWidth: 400, innerHeight: 780 })).toBe(false);
+  });
+  it("side-by-side split (narrow) is split", () => {
+    expect(isSplitWindow({ ...phone, innerWidth: 190, innerHeight: 780 })).toBe(true);
+  });
+  it("top/bottom split (short) is split", () => {
+    expect(isSplitWindow({ ...phone, innerWidth: 400, innerHeight: 400 })).toBe(true);
+  });
+  it("keyboard while typing is not split", () => {
+    expect(isSplitWindow({ ...phone, typing: true, innerWidth: 400, innerHeight: 400 })).toBe(false);
+  });
+  it("narrow is split even while typing", () => {
+    expect(isSplitWindow({ ...phone, typing: true, innerWidth: 190, innerHeight: 400 })).toBe(true);
+  });
+  it("desktop (no touch) is never flagged", () => {
+    expect(isSplitWindow({ ...phone, touch: false, innerWidth: 190, innerHeight: 300 })).toBe(false);
+  });
+  it("missing screen size is never flagged", () => {
+    expect(isSplitWindow({ touch: true, typing: false, innerWidth: 100, innerHeight: 100, screenWidth: 0, screenHeight: 0 })).toBe(false);
+  });
+});
 
 describe("seededShuffle", () => {
   const arr = Array.from({ length: 20 }, (_, i) => i);

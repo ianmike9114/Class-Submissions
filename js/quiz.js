@@ -30,6 +30,16 @@ export const QUIZ_GRACE_SECONDS = 60;
 // this many auto-submits the quiz with the answers so far.
 export const QUIZ_BREACH_LIMIT = 3;
 
+// Split screen / pop-up window on a phone or tablet: the quiz window is
+// clearly smaller than the screen. Width alone is safe (the keyboard never
+// changes it); height only counts when no input is focused, because the
+// keyboard shrinks it while typing an identification answer. Desktop windows
+// (no touch) are never flagged.
+export function isSplitWindow({ touch, typing, innerWidth, innerHeight, screenWidth, screenHeight }) {
+  if (!touch || !screenWidth || !screenHeight) return false;
+  return innerWidth < screenWidth * 0.85 || (!typing && innerHeight < screenHeight * 0.6);
+}
+
 // FNV-1a 32-bit - turns "uid + assignmentId" into a stable shuffle seed, so a
 // refresh shows the same order (no rerolling for an easier order).
 export function hashSeed(str) {

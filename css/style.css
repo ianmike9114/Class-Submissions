@@ -1359,6 +1359,7 @@ body.quiz-open { overflow: hidden; }
   text-align: center;
 }
 .quiz-fs-gate.hidden { display: none; }
+.quiz-split-gate { z-index: 5; }
 .quiz-fs-gate .quiz-fs-btn { min-height: 44px; }
 .quiz-panel {
   position: relative;
