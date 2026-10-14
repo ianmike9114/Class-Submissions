@@ -63,6 +63,40 @@
 
       <div id="google-signin-button" style="display:flex; justify-content:center;"></div>
 
+      <!-- Android app only: phones without Google Play Services (e.g. Huawei)
+           can't use the native Google picker, so sign in with an emailed link
+           that is PASTED back here (tapping it would open the browser instead,
+           leaving the app signed out). See initAppSignIn() below. -->
+      <p id="app-email-link-toggle" class="hidden" style="margin-top:1rem;">
+        <button type="button" class="secondary" id="app-email-link-open" style="width:100%;">Google not working? Sign in with email instead</button>
+      </p>
+      <!-- One step at a time, plain words, big buttons: some students are not
+           confident with phones. Step 2 appears only after the link is sent. -->
+      <div id="app-email-link" class="hidden" style="text-align:left; border:1px solid var(--amber); border-radius:6px; padding:0.75rem; margin-top:1rem; font-size:1.05rem;">
+        <p id="app-email-status" class="hidden" style="margin-top:0; font-weight:600;"></p>
+        <div id="app-step1">
+          <p><strong>Step 1 of 2: Get your sign-in link</strong></p>
+          <p>Type your Gmail address, then tap <strong>Send link</strong>.</p>
+          <input type="email" id="app-email-input" placeholder="yourname@gmail.com" autocomplete="email" inputmode="email" />
+          <button type="button" id="app-email-send" style="margin-top:0.5rem; width:100%;">Send link</button>
+          <p style="margin-top:0.5rem;"><a href="#" id="app-have-link">I already have a link</a></p>
+        </div>
+        <div id="app-step2" class="hidden">
+          <p><strong>Step 2 of 2: Copy the link and come back</strong></p>
+          <ol style="padding-left:1.2rem; margin:0.5rem 0;">
+            <li>Open your email. Look for the newest email that says <strong>"Sign in to"</strong> (check Spam too).</li>
+            <li><strong>Press and hold</strong> the link in that email (do not just tap it).</li>
+            <li>Tap <strong>Copy link</strong>.</li>
+            <li>Come back to this app and tap the big <strong>Paste</strong> button.</li>
+          </ol>
+          <button type="button" id="app-link-paste-btn" style="width:100%; font-size:1.1rem; padding:0.8rem;">Paste</button>
+          <p class="muted" style="margin-top:0.5rem;">If Paste doesn't work: press and hold the box below, tap <strong>Paste</strong>.</p>
+          <input type="url" id="app-link-paste" placeholder="Paste the link here" autocomplete="off" />
+          <button type="button" id="app-link-signin" class="secondary" style="margin-top:0.5rem; width:100%;">Sign in</button>
+          <p class="muted" style="margin-top:0.5rem;">Tapped the link by mistake? <a href="#" id="app-resend">Send a new link</a>.</p>
+        </div>
+      </div>
+
       <label id="remember-row" class="hidden" style="display:flex; align-items:center; justify-content:center; gap:0.4rem; margin-top:0.75rem; font-weight:normal;">
         <input type="checkbox" id="remember-device" style="width:auto; margin:0;" checked />
         Remember this device (untick on shared computers)
@@ -90,7 +124,7 @@
        in document order right before DOMContentLoaded. -->
   <script src="https://accounts.google.com/gsi/client" defer></script>
   <script type="module">
-    import { initGoogleSignIn, isTeacherEmail, sendEmailSignInLink, isEmailSignInLink, completeEmailLinkSignIn, getRememberedEmail, rememberDevice, forgetDevice, isRememberOptedOut, setRememberOptOut, recordAuthHop, clearAuthHops, signInWithGoogleIdToken } from "./js/auth.js?v=6";
+    import { initGoogleSignIn, isTeacherEmail, sendEmailSignInLink, isEmailSignInLink, completeEmailLinkSignIn, getRememberedEmail, rememberDevice, forgetDevice, isRememberOptedOut, setRememberOptOut, recordAuthHop, clearAuthHops, signInWithGoogleIdToken } from "./js/auth.js?v=7";
     import { isLmsApp, nativeGoogleIdToken, setScreenshotBlock } from "./js/app-bridge.js?v=1";
     // The student page turns the app's screenshot block on and FLAG_SECURE
     // outlives page loads, so switch it off on the sign-in page.
@@ -115,6 +149,7 @@
       "auth/invalid-action-code": "That sign-in link is invalid or has already been used - request a new one.",
       "auth/expired-action-code": "That sign-in link has expired - request a new one.",
       "auth/operation-not-allowed": "Email-link sign-in isn't enabled yet for this app (Firebase Console).",
+      "auth/unauthorized-continue-uri": "Email-link sign-in isn't set up for this site yet - ask your teacher.",
     };
 
     // Carry any join ?code= through the whole sign-in hop so a student who
@@ -287,10 +322,100 @@
           await signInWithGoogleIdToken(await nativeGoogleIdToken());
           // onAuthStateChanged above redirects to the dashboard.
         } catch (err) {
-          showError(FRIENDLY_ERRORS[err.code] || err.message || "Sign-in failed - please try again.");
           btn.disabled = false;
+          console.warn("native Google sign-in failed:", err);
+          if (FRIENDLY_ERRORS[err.code] || /cancel/i.test(err.message || "")) {
+            showError(FRIENDLY_ERRORS[err.code] || "Sign-in was cancelled. Tap Sign in with Google to try again.");
+            return;
+          }
+          // e.g. "getCredentialAsync no provider dependencies found" - no
+          // Google Play Services on this phone. Plain words, not the raw error.
+          showError("Google sign-in doesn't work on this phone. Use the email steps below instead.");
+          openAppEmailLink();
         }
       });
+      document.getElementById("app-email-link-toggle").classList.remove("hidden");
+      document.getElementById("app-email-link-open").addEventListener("click", (e) => {
+        e.preventDefault();
+        openAppEmailLink();
+      });
+
+      const status = document.getElementById("app-email-status");
+      const say = (msg) => { status.textContent = msg; status.classList.remove("hidden"); };
+      const emailInput = document.getElementById("app-email-input");
+      const pasteInput = document.getElementById("app-link-paste");
+      emailInput.value = getRememberedEmail() || "";
+      const showStep = (n) => {
+        document.getElementById("app-step1").classList.toggle("hidden", n !== 1);
+        document.getElementById("app-step2").classList.toggle("hidden", n !== 2);
+      };
+      const back = (e) => { e.preventDefault(); status.classList.add("hidden"); showStep(1); };
+      document.getElementById("app-resend").addEventListener("click", back);
+      document.getElementById("app-have-link").addEventListener("click", (e) => {
+        e.preventDefault(); status.classList.add("hidden"); showStep(2);
+      });
+
+      const sendBtn = document.getElementById("app-email-send");
+      sendBtn.addEventListener("click", async () => {
+        const email = (emailInput.value || "").trim();
+        if (!email.includes("@")) { say("Please type your full email, like yourname@gmail.com"); return; }
+        sendBtn.disabled = true;
+        say("Sending...");
+        try {
+          await sendEmailSignInLink(email, joinCode);
+          showStep(2);
+          say("Link sent to " + email + ". Now open your email.");
+        } catch (err) {
+          say(FRIENDLY_ERRORS[err.code] || err.message || "Couldn't send the link - please try again.");
+        } finally {
+          sendBtn.disabled = false;
+        }
+      });
+
+      // Signs in as soon as a real sign-in link is in the box - no extra tap.
+      let signingIn = false;
+      async function trySignIn(showWrong) {
+        const link = (pasteInput.value || "").trim();
+        if (!link || !isEmailSignInLink(link)) {
+          if (showWrong) say("That is not the sign-in link. Go back to the email, press and hold the link, tap Copy link, then tap Paste again.");
+          return;
+        }
+        if (signingIn) return;
+        signingIn = true;
+        say("Signing in...");
+        try {
+          // Email saved by Send on this phone; else whatever is typed in step 1.
+          await completeEmailLinkSignIn((emailInput.value || "").trim() || undefined, link);
+          // onAuthStateChanged above redirects to the dashboard.
+        } catch (err) {
+          signingIn = false;
+          if (err.message === "NO_EMAIL") {
+            showStep(1);
+            say("Type the email you sent the link to, then go back and paste the link again.");
+          } else {
+            say(FRIENDLY_ERRORS[err.code] || "This link no longer works. Tap \"Send a new link\" and try again.");
+          }
+        }
+      }
+      pasteInput.addEventListener("input", () => trySignIn(false));
+      document.getElementById("app-link-signin").addEventListener("click", () => trySignIn(true));
+      document.getElementById("app-link-paste-btn").addEventListener("click", async () => {
+        try {
+          pasteInput.value = (await navigator.clipboard.readText()) || "";
+        } catch {
+          // Some phones don't let pages read the clipboard - manual paste.
+          pasteInput.focus();
+          say("Press and hold the box that says \"Paste the link here\", then tap Paste.");          return;
+        }
+        trySignIn(true);
+      });
+    }
+
+    function openAppEmailLink() {
+      const panel = document.getElementById("app-email-link");
+      document.getElementById("app-email-link-toggle").classList.add("hidden");
+      panel.classList.remove("hidden");
+      panel.before(errorEl); // the "use the email steps below" message sits above them
     }
 
     function initNormalSignIn() {
