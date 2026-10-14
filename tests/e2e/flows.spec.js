@@ -301,6 +301,64 @@ test("quiz builder spreads multiple-choice answers over A-D", async ({ page }) =
   expect(errors, errors.join(" | ")).toEqual([]);
 });
 
+test("return for revision lowers the max by 10 (late-resubmission penalty)", async ({ page }) => {
+  const errors = trackPageErrors(page);
+  const openEssay2 = async (tp) => {
+    await tp.locator("#subjects-list [data-open]").first().click();
+    await tp.locator("#sections-list [data-open]").first().click();
+    await tp.locator("#assignments-list .assign-row", { hasText: "E2E Essay 2" }).locator("[data-open]").click();
+    await tp.locator("[data-review]").first().click();
+  };
+  // Teacher returns the pending "E2E Essay 2" (10 pts) -> max becomes 0.
+  const tpage = await page.context().browser().newPage();
+  await blockProduction(tpage);
+  const alerts = [];
+  tpage.on("dialog", (d) => { alerts.push(d.message()); d.accept(); });
+  await signIn(tpage, TEACHER, "Teacher One");
+  await tpage.waitForURL(/teacher\.html/);
+  await openEssay2(tpage);
+  await tpage.locator('input[id^="score-"]').fill("5");
+  await tpage.locator("[data-return]").click();
+  await expect(tpage.locator("#submissions-list")).toContainText(/returned/i);
+  expect(alerts.join(" ")).toContain("now 0 of 10");
+
+  // Student sees the new max, has no Remove button, and resubmits.
+  await signIn(page, STUDENT, "Juan Dela Cruz");
+  await page.waitForURL(/student\.html/);
+  const essay2 = page.locator('.outline-item[data-title="E2E Essay 2"]').first();
+  await expect(essay2).toBeAttached();
+  // Outline dropdowns can start collapsed - open them all.
+  await page.evaluate(() => document.querySelectorAll("#course-outline details").forEach((d) => { d.open = true; }));
+  await essay2.click();
+  const card = page.locator('.card[data-title="E2E Essay 2"]').first();
+  await expect(card.locator("[data-cap-note]")).toContainText("max score is now 0 / 10");
+  await expect(card.locator("[data-remove-submission]")).toHaveCount(0);
+  await card.locator("[data-edit-submission]").click();
+  const edit = card.locator("[data-edit-container]");
+  await edit.locator(".submission-link").fill("https://docs.google.com/document/d/e2eFixedDoc/edit");
+  await edit.locator("button[type=submit]").click();
+  await expect(page.locator('.outline-item[data-title="E2E Essay 2"]').first()).toContainText("Submitted");
+
+  // Teacher (fresh tab): 9 is over the new max and is refused; 0 publishes.
+  await tpage.close();
+  const t2 = await page.context().browser().newPage();
+  await blockProduction(t2);
+  alerts.length = 0;
+  t2.on("dialog", (d) => { alerts.push(d.message()); d.accept(); });
+  await signIn(t2, TEACHER, "Teacher One");
+  await t2.waitForURL(/teacher\.html/);
+  await openEssay2(t2);
+  await expect(t2.locator("[data-cap-note]")).toContainText("Max 0 of 10");
+  await t2.locator('input[id^="score-"]').fill("9");
+  await t2.locator("[data-publish]").click();
+  await expect.poll(() => alerts.join(" ")).toContain("between 0 and 0");
+  await t2.locator('input[id^="score-"]').fill("0");
+  await t2.locator("[data-publish]").click();
+  await expect(t2.locator("#submissions-list")).toContainText(/published/i);
+  await t2.close();
+  expect(errors, errors.join(" | ")).toEqual([]);
+});
+
 test("Android app without Play Services signs in with a pasted email link", async ({ browser }) => {
   // The app's WebView user agent carries ClassSubmissionsApp/ (isLmsApp()).
   // No Capacitor here, so the native Google picker fails - like a phone

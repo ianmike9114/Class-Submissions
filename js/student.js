@@ -8,6 +8,7 @@ import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEm
 import { runJava } from "./runner.js";
 import { codeBlockHtml, highlightWithin } from "./highlight.js";
 import { seededShuffle, quizDeadlineMs, servedQuestions, QUIZ_BREACH_LIMIT, isSplitWindow, hasSecondScreen } from "./quiz.js?v=7";
+import { RETURN_PENALTY, maxAfterReturns, penaltyNote } from "./grading.js?v=1";
 import {
   readCache, writeCache, staleSectionIds, assignmentDelta, asDoc, chunk, readStore, writeStore, fitToBudget,
   SUB_PREFIX, SUB_CACHE_TTL_MS, TERM_PREFIX, TERM_CACHE_TTL_MS,
@@ -869,7 +870,8 @@ async function loadEverything() {
           ? `<div class="muted" style="margin-top:0.5rem;">Deadline passed — locked, no more changes.</div>`
           : `<div style="margin-top:0.5rem;">
                <button type="button" class="${s.status === "returned" ? "" : "secondary"}" data-edit-submission="${subDoc.id}">${s.status === "returned" ? "Resubmit" : "Edit submission"}</button>
-               <button type="button" class="danger" data-remove-submission="${subDoc.id}">Remove submission</button>
+               ${s.status === "returned" || s.returnCount > 0 ? "" // keeps the late-resubmission penalty (firestore.rules)
+                 : `<button type="button" class="danger" data-remove-submission="${subDoc.id}">Remove submission</button>`}
              </div>
              <div data-edit-container="${subDoc.id}"></div>`;
         // A returned submission may still carry the previous grade (a redo the
@@ -884,6 +886,8 @@ async function loadEverything() {
           <span class="status-${s.status}"> — ${statusLabel}</span>
           ${s.status === "returned" && s.finalGrade?.feedback ? `<p class="muted">Teacher note: ${s.finalGrade.feedback}</p>` : ""}
           ${oldGradeLine}
+          ${s.status !== "published" && penaltyNote(a.totalPoints, s.returnCount)
+            ? `<p class="status-returned" data-cap-note>Late resubmission: your max score is now ${maxAfterReturns(a.totalPoints, s.returnCount)} / ${a.totalPoints} (−${RETURN_PENALTY} each time it is returned for revision).</p>` : ""}
           ${materialBlock(a)}
           ${renderSubmittedWork(s)}
           ${actionsBlock}`;
@@ -1454,7 +1458,8 @@ function materialBlock(a) {
 function renderResult(s, a) {
   const hasScore = s.finalGrade?.score !== undefined && a?.totalPoints !== undefined;
   const scoreLine = hasScore ? `${s.finalGrade.score} / ${a.totalPoints}` : "Graded";
-  return `<div class="card"><p><strong>${scoreLine}</strong></p><p>${s.finalGrade?.feedback || ""}</p></div>`;
+  const note = penaltyNote(a?.totalPoints, s.returnCount);
+  return `<div class="card"><p><strong>${scoreLine}</strong></p>${note ? `<p class="muted" data-cap-note>${note}</p>` : ""}<p>${s.finalGrade?.feedback || ""}</p></div>`;
 }
 
 // Read-only recap of what the student turned in (link and/or photo pages),

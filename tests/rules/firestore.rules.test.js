@@ -234,6 +234,38 @@ describe("submissions: student edits are field-limited and status-gated", () => 
       updateDoc(doc(db, "submissions", "pub1"), { link: "https://youtu.be/sneaky", status: "pending" })
     );
   });
+  // Late-resubmission penalty (returnCount, js/grading.js): the student must
+  // not be able to reset it by editing, or by deleting + submitting fresh.
+  async function seedSub(id, extra) {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "submissions", id), {
+        ownerEmail: TEACHER_A, studentUID: "student1", link: "https://youtu.be/x", ...extra,
+      });
+    });
+  }
+  it("student CANNOT change returnCount on their submission", async () => {
+    await seedSub("rc1", { status: "returned", returnCount: 2 });
+    const db = ctxFor("student1", "s1@x.com");
+    await assertFails(updateDoc(doc(db, "submissions", "rc1"), { returnCount: 0, status: "pending" }));
+    await assertFails(updateDoc(doc(db, "submissions", "rc1"), { link: "https://youtu.be/y", status: "pending", returnCount: 0 }));
+    await assertSucceeds(updateDoc(doc(db, "submissions", "rc1"), { link: "https://youtu.be/y", status: "pending" }));
+  });
+  it("student CANNOT delete a returned submission", async () => {
+    await seedSub("rc2", { status: "returned", returnCount: 1 });
+    await assertFails(deleteDoc(doc(ctxFor("student1", "s1@x.com"), "submissions", "rc2")));
+  });
+  it("student CANNOT delete a resubmitted (pending) one that was returned before", async () => {
+    await seedSub("rc3", { status: "pending", returnCount: 1 });
+    await assertFails(deleteDoc(doc(ctxFor("student1", "s1@x.com"), "submissions", "rc3")));
+  });
+  it("student CAN still delete a fresh pending submission", async () => {
+    await seedSub("rc4", { status: "pending" });
+    await assertSucceeds(deleteDoc(doc(ctxFor("student1", "s1@x.com"), "submissions", "rc4")));
+  });
+  it("owning teacher can bump returnCount when returning", async () => {
+    await seedSub("rc5", { status: "pending" });
+    await assertSucceeds(updateDoc(doc(ctxFor("ua", TEACHER_A), "submissions", "rc5"), { status: "returned", returnCount: 1 }));
+  });
   it("the owning teacher can publish (grade) the submission", async () => {
     await assertSucceeds(
       updateDoc(doc(ctxFor("ua", TEACHER_A), "submissions", "subA_stud1"), {

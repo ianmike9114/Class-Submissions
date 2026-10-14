@@ -501,6 +501,19 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   create is teacher/owner-only, read/delete allow either owning teacher
   or invited student themselves (matching email on their auth token) —
   this lets student's own auto-join code consume (delete) its own invite.
+- **Late-resubmission penalty: −10 max points per "Return for revision"**
+  (by request, fairness for on-time students). The Return handler in
+  `js/teacher.js` `openReview()` writes `returnCount: increment(1)` on the
+  submission; `js/grading.js`'s `maxAfterReturns(totalPoints, returnCount)`
+  (floor 0, negative counts ignored) caps the score box + `readValidScore()`,
+  and `penaltyNote()` is shown to teacher (review card, scores summary, `*` +
+  tooltip in records/Activities grids) and student (returned card, graded
+  result). Score stays out of `totalPoints` - only the cap changes. "Allow
+  redo" (student-requested) and quizzes don't count. Old docs (no field) = 0,
+  not retroactive. **`firestore.rules` change:** student delete only while
+  `pending` and `returnCount` is 0 (else delete + resubmit would reset it;
+  "Remove submission" is also hidden) - **must `firebase deploy --only
+  firestore:rules`**.
 - **Teacher can delete any single submission directly**, via `Delete`
   button in `js/teacher.js`'s `loadSubmissions()` row, gated by existing
   `confirmByTyping()` (type student's name to confirm, same pattern as

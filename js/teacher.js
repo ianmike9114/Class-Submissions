@@ -1,8 +1,9 @@
 import { db, ADMIN_EMAIL, isSuperAdmin } from "./firebase-config.js";
 import { guardPage, signOutUser } from "./auth.js?v=7";
 import {
-  collection, addDoc, doc, setDoc, updateDoc, deleteDoc, deleteField, writeBatch, getDoc, getDocs, getCountFromServer, query, where, serverTimestamp,
+  collection, addDoc, doc, setDoc, updateDoc, deleteDoc, deleteField, writeBatch, getDoc, getDocs, getCountFromServer, query, where, serverTimestamp, increment,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { RETURN_PENALTY, maxAfterReturns, penaltyNote } from "./grading.js?v=1";
 import { getGeminiKey, setGeminiKey, getGroqKey, setGroqKey, runRubricCheck, generateCodeExample, generateQuiz } from "./gemini.js?v=7";
 import {
   QUIZ_MIN_ITEMS, QUIZ_MAX_ITEMS, QUIZ_MAX_BANK, servedQuestions, choiceLengthWarning, countChoiceLengthWarnings, QUIZ_TYPES, QUIZ_GRACE_SECONDS, splitQuiz, joinQuiz, validateQuizItems,
@@ -2745,7 +2746,10 @@ async function renderActivityScores(assignments, sectionId) {
         const score = Number(sub.finalGrade?.score) || 0;
         earned += score;
         possible += Number(a.totalPoints) || 0;
-        return `<td ${attrs}>${score}/${a.totalPoints}</td>`;
+        const note = penaltyNote(a.totalPoints, sub.returnCount);
+        return note
+          ? `<td class="score-cell" data-score-assignment="${a.id}" data-score-student="${s.studentName || ""}" title="${note}">${score}/${a.totalPoints}*</td>`
+          : `<td ${attrs}>${score}/${a.totalPoints}</td>`;
       }
       const label = STATUS_LABELS[sub.status] || sub.status;
       return `<td ${attrs}><span class="status-${sub.status === "returned" ? "returned" : "pending"}">${label}</span></td>`;
@@ -3791,7 +3795,7 @@ function renderScoresSummary(submissions, totalPoints) {
       <summary><strong>Scores summary (${graded.length} graded)</strong></summary>
       <table class="records-grid" style="margin-top:0.75rem;">
         <thead><tr><th>Name</th><th>Score</th></tr></thead>
-        <tbody>${graded.map((s) => `<tr><td>${displayStudentName(s.studentName)}</td><td>${s.finalGrade?.score ?? "—"}/${totalPoints ?? "—"}</td></tr>`).join("")}</tbody>
+        <tbody>${graded.map((s) => `<tr><td>${displayStudentName(s.studentName)}</td><td>${s.finalGrade?.score ?? "—"}/${totalPoints ?? "—"}${s.returnCount > 0 ? ` <span class="muted">(max ${maxAfterReturns(totalPoints, s.returnCount)})</span>` : ""}</td></tr>`).join("")}</tbody>
       </table>
     </details>`;
 }
@@ -4769,6 +4773,11 @@ async function openReview(submissionId) {
 
   const isQuiz = a.allowedFileTypes === "quiz";
   const draft = s.finalGrade || { score: isQuiz ? (quizAutoScores.get(submissionId) ?? "") : "", feedback: "" };
+  // Late-resubmission penalty: each Return for revision lowers this
+  // submission's max by 10 (js/grading.js). Old docs have no returnCount = 0.
+  const cap = maxAfterReturns(a.totalPoints, s.returnCount);
+  const capNote = penaltyNote(a.totalPoints, s.returnCount);
+  const draftScore = draft.score === "" || draft.score == null ? "" : Math.min(Number(draft.score), cap);
   const rubricEmbedUrl = a.rubricReferenceLink ? toEmbedUrl(a.rubricReferenceLink) : null;
   const rubricBlock = a.rubricReferenceLink
     ? `<label>Your rubric (reference)</label>
@@ -4781,7 +4790,8 @@ async function openReview(submissionId) {
     <div class="card">
       ${rubricBlock}
       <label>Score (out of ${a.totalPoints})</label>
-      <input type="number" id="score-${submissionId}" min="0" max="${a.totalPoints}" value="${draft.score ?? ""}" />
+      ${capNote ? `<div class="status-returned" data-cap-note style="margin-bottom:0.3rem;">${capNote}</div>` : ""}
+      <input type="number" id="score-${submissionId}" min="0" max="${cap}" value="${draftScore}" />
       <label>Feedback</label>
       <textarea id="feedback-${submissionId}" rows="3">${draft.feedback || ""}</textarea>
       <button data-publish="${submissionId}">Publish to student</button>
@@ -4812,8 +4822,10 @@ async function openReview(submissionId) {
   // silently. Shared check for both buttons below.
   function readValidScore() {
     const score = Number(el(`score-${submissionId}`).value) || 0;
-    if (score < 0 || score > a.totalPoints) {
-      alert(`Score must be between 0 and ${a.totalPoints}.`);
+    if (score < 0 || score > cap) {
+      alert(capNote
+        ? `Score must be between 0 and ${cap} for this submission - ${capNote}.`
+        : `Score must be between 0 and ${a.totalPoints}.`);
       return null;
     }
     return score;
@@ -4882,11 +4894,14 @@ async function openReview(submissionId) {
       status: "returned",
       returnedAt: Date.now(),
     };
-    await updateDoc(ref, returned);
+    // returnCount drives the -10 max penalty; increment() on the server, a
+    // plain number for the in-memory patch (never cache the sentinel).
+    const nextCount = (Number(s.returnCount) || 0) + 1;
+    await updateDoc(ref, { ...returned, returnCount: increment(1) });
     await touchStudentSubs(s.studentUID, a.sectionId);
-    alert("Returned for revision — the student can now redo and resubmit.");
+    alert(`Returned for revision — the student can now redo and resubmit.\nTheir max score for this work is now ${maxAfterReturns(a.totalPoints, nextCount)} of ${a.totalPoints} (−${RETURN_PENALTY} per return).`);
     resolvedLocally.add(submissionId);
-    loadSubmissions({ reuse: true, patch: { id: submissionId, data: returned } });
+    loadSubmissions({ reuse: true, patch: { id: submissionId, data: { ...returned, returnCount: nextCount } } });
     refreshNotifications({ local: true });
   });
 }
@@ -5511,7 +5526,10 @@ async function loadRecords() {
       const sub = submissionsByAssignment[a.id].get(enrollment.studentUID);
       if (!sub) { missing++; return `<td class="muted">No submission</td>`; }
       if (sub.status === "published") {
-        return `<td>${sub.finalGrade?.score ?? 0}/${a.totalPoints}</td>`;
+        const note = penaltyNote(a.totalPoints, sub.returnCount);
+        return note
+          ? `<td title="${note}">${sub.finalGrade?.score ?? 0}/${a.totalPoints}*</td>`
+          : `<td>${sub.finalGrade?.score ?? 0}/${a.totalPoints}</td>`;
       }
       return `<td class="status-${sub.status}">${sub.status}</td>`;
     }).join("") + MANUAL_EXAMS.map((ex) => {
