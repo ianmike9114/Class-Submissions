@@ -2406,11 +2406,16 @@ initGetAppBanner();
 // student who's just been approved, or whose grade was just published, would
 // otherwise have to reload the whole page. This re-runs the same data load
 // instead - cheaper than a full reload, and it works while signed in.
-el("refresh-data").addEventListener("click", async () => {
+// Refresh = fresh: drop the 10-min page cache so the section docs (and their
+// assignmentsVersion markers) are re-read - otherwise a quiz the teacher just
+// posted stays hidden until that cache expires, Refresh or not.
+async function refreshFresh() {
   const btn = el("refresh-data");
   const original = btn.innerHTML;
   btn.disabled = true;
   btn.innerHTML = "&#8635; Refreshing...";
+  el("new-work-notice")?.remove();
+  pageCache = null;
   try {
     await loadEverything();
   } catch (err) {
@@ -2418,6 +2423,40 @@ el("refresh-data").addEventListener("click", async () => {
   } finally {
     btn.disabled = false;
     btn.innerHTML = original;
+  }
+}
+el("refresh-data").addEventListener("click", refreshFresh);
+
+// Coming back to the page (phones/the app rarely reload): a light check - one
+// read per class, at most once a minute - for new/changed work. It only shows
+// a notice; it never re-renders by itself, so a half-typed submission or an
+// open quiz is never wiped.
+const NEW_WORK_CHECK_MS = 60 * 1000;
+let lastNewWorkCheck = 0;
+document.addEventListener("visibilitychange", async () => {
+  if (document.visibilityState !== "visible" || viewCtx || !pageCache) return;
+  if (document.body.classList.contains("quiz-open") || el("new-work-notice")) return;
+  const now = Date.now();
+  if (now - pageCache.at < NEW_WORK_CHECK_MS || now - lastNewWorkCheck < NEW_WORK_CHECK_MS) return;
+  lastNewWorkCheck = now;
+  const hidden = pageCache.info.hidden || new Set(); // past-term/archived classes don't count
+  const known = new Map(pageCache.info.sectionDocs.filter((d) => !hidden.has(d.id))
+    .map((d) => [d.id, d.data().assignmentsVersion ?? null]));
+  if (!known.size) return;
+  try {
+    const fresh = await getDocsByIds("sections", [...known.keys()]);
+    const changed = fresh.some((d) => (d.data().assignmentsVersion ?? null) !== known.get(d.id));
+    if (!changed || el("new-work-notice")) return;
+    const notice = document.createElement("div");
+    notice.id = "new-work-notice";
+    notice.className = "get-app-banner";
+    notice.setAttribute("role", "status");
+    notice.innerHTML = `<span>&#128276; <strong>New work from your teacher.</strong></span>
+      <button type="button" id="new-work-show">Show it</button>`;
+    document.querySelector("main")?.prepend(notice);
+    el("new-work-show").addEventListener("click", refreshFresh);
+  } catch (err) {
+    console.warn("new-work check failed:", err?.code || err);
   }
 });
 
