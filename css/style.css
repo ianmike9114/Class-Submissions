@@ -1480,3 +1480,6 @@ body.quiz-open { overflow: hidden; }
   text-align: left;
 }
 .get-app-banner + .apk-steps { margin: 0.5rem max(1rem, calc((100% - 1180px) / 2)) 0; }
+/* "New work from your teacher" notice (js/student.js, shown on coming back to
+   the page) - same look as the banner, but inside <main>. */
+#new-work-notice { margin: 0 0 0.75rem; }

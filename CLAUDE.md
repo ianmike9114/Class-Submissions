@@ -380,7 +380,11 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   (`assignmentId` 'in' chunks, falls back to the full query on any error), and
   the hidden-class lookup (`getHiddenSectionIds()`, now also returning the
   section docs it read so sections are read once) is reused in memory for 10
-  min while the enrolled-section set is unchanged. No rules change (section
+  min while the enrolled-section set is unchanged (the **Refresh button
+  bypasses it** - `refreshFresh()` - else a new quiz stayed hidden up to 10
+  min even after Refresh; coming back to the page runs a 1-read-per-class
+  `assignmentsVersion` check, max once a minute, and shows a "New work"
+  notice instead of re-rendering). No rules change (section
   update is already owner-allowed), no new index. Estimate: `npm run budget`.
 - **Teacher read cache: structure vs inbox (Spark read budget).** In
   `js/teacher.js`, `cachedOwnerDocs()` keys `subjects`/`sections`/`assignments`
