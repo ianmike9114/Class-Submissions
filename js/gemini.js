@@ -290,8 +290,12 @@ Rules:
 // parsed JSON - js/quiz.js's parseGeneratedQuiz() sanitizes it into builder
 // items, and the teacher reviews/edits every item before saving.
 // types: subset of ["mc","tf","id"].
-export async function generateQuiz({ topic, count = 10, types = ["mc"], gradeLevel = "11", avoid = [] }) {
-  if (!topic || !topic.trim()) throw new Error("Type the quiz topic first.");
+// sourceText: optional lesson text read from the teacher's PDF/PowerPoint
+// (js/lesson-text.js) - when given, every item must come from it and the
+// topic becomes optional.
+export async function generateQuiz({ topic, count = 10, types = ["mc"], gradeLevel = "11", avoid = [], sourceText = "" }) {
+  const hasSource = !!(sourceText && sourceText.trim());
+  if (!hasSource && (!topic || !topic.trim())) throw new Error("Type the quiz topic first, or attach your lesson file.");
 
   const typeLines = {
     mc: '- "mc" (multiple choice): {"type":"mc","prompt":"...","choices":["...","...","...","..."],"answer":<index 0-3 of the correct choice>}',
@@ -302,8 +306,13 @@ export async function generateQuiz({ topic, count = 10, types = ["mc"], gradeLev
   if (wanted.length === 0) throw new Error("Pick at least one item type.");
 
   const promptText = `You are helping a Philippine DepEd Senior High School teacher write a quiz for Grade ${gradeLevel} students.
-Topic / coverage: ${topic}
-
+${topic && topic.trim() ? `Topic / coverage: ${topic}
+` : ""}${hasSource ? `
+Base EVERY item only on the lesson material below (the teacher's own slides/handout). Don't ask about anything it doesn't cover, and don't refer to slide or page numbers in the questions.
+--- LESSON MATERIAL START ---
+${sourceText.trim()}
+--- LESSON MATERIAL END ---
+` : ""}
 Write exactly ${count} items, mixing these item types as evenly as possible:
 ${wanted.map((t) => typeLines[t]).join("\n")}
 

@@ -35,6 +35,27 @@ export function toEmbedUrl(link) {
   return null;
 }
 
+// Direct-download URL for a teacher's lesson file, so a student can save it
+// while they have signal and read it offline. Only single Drive files and
+// Google Docs/Slides/Sheets (exported as PDF) - folders, YouTube and other
+// links return null (no Download button). The file must already be shared
+// "anyone with link", same as for the inline preview.
+export function toDownloadUrl(link) {
+  if (!link) return null;
+
+  const driveId = extractDriveFileId(link);
+  if (driveId) return `https://drive.google.com/uc?export=download&id=${driveId}`;
+
+  const doc = link.match(/docs\.google\.com\/(document|presentation|spreadsheets)\/d\/([^/?#]+)/);
+  if (doc) {
+    const [, kind, id] = doc;
+    if (kind === "presentation") return `https://docs.google.com/presentation/d/${id}/export/pdf`;
+    return `https://docs.google.com/${kind}/d/${id}/export?format=pdf`;
+  }
+
+  return null;
+}
+
 // Scan a free-text string for the first URL that toEmbedUrl() can embed.
 // Teachers routinely paste a Drive/Docs/Slides/YouTube link straight into
 // an assignment's instructions text (not the dedicated "Instructions file"

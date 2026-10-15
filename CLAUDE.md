@@ -666,6 +666,24 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   `gemini.js`/`quiz.js` imports carry their own `?v=` (bump when changed —
   `scripts/bump-version.mjs` doesn't cover sub-modules).
 
+- **Download button on module/worksheet files (offline reading).**
+  `js/student.js`'s `materialBlock()` adds "⬇ Download" to the file viewer of
+  materials and graded assignments, using `js/embed.js`'s `toDownloadUrl()`
+  (Drive file → `uc?export=download`, Docs/Slides/Sheets → PDF export;
+  folders/YouTube get no button). Teacher toggle "Allow students to download"
+  in the add/edit forms writes `assignment.allowDownload`; **missing = allowed**
+  (so older modules show it too). Straight from Google, no Storage; in the
+  Android app the link opens in the phone's browser, which downloads it. No
+  rules change.
+- **Quiz from a lesson file (PDF / .pptx).** The quiz builder's AI section takes
+  a lesson file; `js/lesson-text.js`'s `extractLessonText()` reads its text in
+  the teacher's browser (pdf.js lazy-loaded from jsdelivr; .pptx via the shared
+  JSZip loader, slide + speaker-notes XML), trims it evenly to
+  `LESSON_TEXT_MAX_CHARS` (15k, Groq free-tier size), and `generateQuiz({
+  sourceText })` drafts every item from it (topic optional then). The file is
+  never uploaded or saved; old `.ppt` and scanned (image-only) PDFs get a
+  friendly error. Teacher still reviews every item. No rules change.
+
 ## Conventions
 
 - No bundler/build step by design — keep deployable as-is to GitHub

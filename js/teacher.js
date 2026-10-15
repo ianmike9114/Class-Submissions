@@ -4,14 +4,15 @@ import {
   collection, addDoc, doc, setDoc, updateDoc, deleteDoc, deleteField, writeBatch, getDoc, getDocs, getCountFromServer, query, where, serverTimestamp, increment,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { RETURN_PENALTY, maxAfterReturns, penaltyNote } from "./grading.js?v=1";
-import { getGeminiKey, setGeminiKey, getGroqKey, setGroqKey, runRubricCheck, generateCodeExample, generateQuiz } from "./gemini.js?v=7";
+import { getGeminiKey, setGeminiKey, getGroqKey, setGroqKey, runRubricCheck, generateCodeExample, generateQuiz } from "./gemini.js?v=8";
+import { extractLessonText } from "./lesson-text.js?v=1";
 import {
   QUIZ_MIN_ITEMS, QUIZ_MAX_ITEMS, QUIZ_MAX_BANK, servedQuestions, choiceLengthWarning, countChoiceLengthWarnings, QUIZ_TYPES, QUIZ_GRACE_SECONDS, splitQuiz, joinQuiz, validateQuizItems,
   parseGeneratedQuiz, newItemId, splitAccepted, scoreQuiz, quizTimeLimitSeconds, formatDuration,
   balanceAnswerPositions, answerPatternWarning,
 } from "./quiz.js?v=7";
 import { getEmailConfig, saveEmailConfig, notifySection } from "./notify.js";
-import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=2";
+import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=3";
 import { loadWorkbook, readExamScores, pickBestSheet } from "./class-record.js";
 import { runJava } from "./runner.js";
 import { setScreenshotBlock } from "./app-bridge.js?v=1";
@@ -3247,7 +3248,13 @@ function mountQuizBuilder(hostId, { items = [], secondsPerItem = 60, topic = "",
       <p class="muted qb-draw-hint">Question bank: write more items than each student gets - everyone receives a different random set, so a shared screenshot only covers part of the quiz.</p>
       <details class="qb-ai" ${b.items.length ? "" : "open"}>
         <summary><strong>&#10024; Draft questions with AI</strong></summary>
-        <label>Topic (what the quiz should cover - paste the lesson's key points for better items)</label>
+        <label>&#128196; Make the quiz from my lesson file (PDF or PowerPoint .pptx) - optional</label>
+        <div class="qb-file-row">
+          <input type="file" class="qb-file" accept=".pdf,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation" />
+          <button type="button" class="secondary qb-file-clear hidden" title="Remove the lesson file">&#10005; Remove</button>
+        </div>
+        <p class="muted qb-file-status" style="margin:0.25rem 0 0;">Read in your browser only - the file isn't uploaded or saved.</p>
+        <label class="qb-topic-label">Topic (what the quiz should cover - paste the lesson's key points for better items)</label>
         <textarea class="qb-topic" rows="3" placeholder="e.g. Cybersecurity: phishing, malware, strong passwords, two-factor authentication">${escAttr(topic)}</textarea>
         <div class="qb-grid">
           <div><label>How many</label><select class="qb-count">${countOpts}</select></div>
@@ -3344,6 +3351,37 @@ function mountQuizBuilder(hostId, { items = [], secondsPerItem = 60, topic = "",
     render();
   });
 
+  // Lesson file -> text (js/lesson-text.js), kept in memory on the builder
+  // only; generateQuiz() then drafts every item from it.
+  const fileInput = host.querySelector(".qb-file");
+  const fileStatus = host.querySelector(".qb-file-status");
+  const fileClear = host.querySelector(".qb-file-clear");
+  const topicLabel = host.querySelector(".qb-topic-label");
+  const topicLabelText = topicLabel.textContent;
+  const clearLessonFile = (msg) => {
+    b.sourceText = "";
+    fileInput.value = "";
+    fileClear.classList.add("hidden");
+    topicLabel.textContent = topicLabelText;
+    fileStatus.textContent = msg || "Read in your browser only - the file isn't uploaded or saved.";
+  };
+  fileInput.addEventListener("change", async () => {
+    const file = fileInput.files[0];
+    if (!file) { clearLessonFile(); return; }
+    b.sourceText = "";
+    fileStatus.textContent = `Reading ${file.name}...`;
+    try {
+      const r = await extractLessonText(file, { loadJSZip: () => loadScriptOnce(JSZIP_CDN_URL).then(() => window.JSZip) });
+      b.sourceText = r.text;
+      fileClear.classList.remove("hidden");
+      topicLabel.textContent = "Topic (optional - the AI uses your lesson file; add a focus here if you want)";
+      fileStatus.textContent = `Read ${r.units} ${r.kind === "pdf" ? "page" : "slide"}${r.units === 1 ? "" : "s"}, about ${r.words.toLocaleString()} words ✓ - questions will come from this file.${r.trimmed ? " (Long file - the AI reads a shortened version of each " + (r.kind === "pdf" ? "page" : "slide") + ".)" : ""}`;
+    } catch (err) {
+      clearLessonFile(err.message);
+    }
+  });
+  fileClear.addEventListener("click", () => clearLessonFile());
+
   host.querySelector(".qb-generate").addEventListener("click", async (e) => {
     const btn = e.currentTarget;
     const status = host.querySelector(".qb-status");
@@ -3360,6 +3398,7 @@ function mountQuizBuilder(hostId, { items = [], secondsPerItem = 60, topic = "",
     try {
       const raw = await generateQuiz({
         topic: host.querySelector(".qb-topic").value,
+        sourceText: b.sourceText || "",
         count,
         types,
         gradeLevel: host.querySelector(".qb-grade").value,
@@ -3523,6 +3562,7 @@ el("add-assignment-form").addEventListener("submit", async (e) => {
     lesson: el("assignment-lesson").value.trim(),
     instructions: el("assignment-instructions").value.trim(),
     instructionsLink: el("assignment-instructions-link").value.trim(),
+    allowDownload: el("assignment-allow-download").checked,
     createdAt: Date.now(),
     ownerEmail: state.viewAsEmail,
   };
@@ -3691,6 +3731,7 @@ async function openAssignment(assignmentId) {
   el("edit-assignment-lesson").innerHTML = topicOptionsHtml(data.lesson || "");
   el("edit-assignment-instructions").value = data.instructions || "";
   el("edit-assignment-instructions-link").value = data.instructionsLink || "";
+  el("edit-assignment-allow-download").checked = data.allowDownload !== false; // missing = allowed
   el("edit-assignment-upload-link").value = data.uploadFolderLink || "";
   el("edit-assignment-component").value = data.component || "written";
   el("edit-assignment-due").value = data.dueDate || "";
@@ -3753,6 +3794,7 @@ el("edit-assignment-form").addEventListener("submit", async (e) => {
     lesson: el("edit-assignment-lesson").value.trim(),
     instructions: el("edit-assignment-instructions").value.trim(),
     instructionsLink: el("edit-assignment-instructions-link").value.trim(),
+    allowDownload: el("edit-assignment-allow-download").checked,
   };
   const payload = isMaterial ? base : {
     ...base,
