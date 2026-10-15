@@ -70,7 +70,27 @@ export async function setScreenshotBlock(on) {
 export async function nativeGoogleIdToken() {
   const fa = plugin("FirebaseAuthentication");
   if (!fa) throw new Error("Sign-in isn't available in this version of the app - update the app.");
-  const result = await fa.signInWithGoogle({ skipNativeAuth: true });
+  let result;
+  try {
+    // Android's newer Credential Manager picker.
+    result = await fa.signInWithGoogle({ skipNativeAuth: true });
+  } catch (err) {
+    if (/cancel/i.test(err?.message || "")) throw err;
+    // It fails on some phones that do have Google Play Services (e.g. no
+    // account added yet -> "No credentials available", or an older Play
+    // services). Retry once with the classic Google account picker, which
+    // also offers "Add another account". Supported by the installed APK
+    // (@capacitor-firebase/authentication useCredentialManager), so no
+    // app update is needed.
+    console.warn("Credential Manager sign-in failed, trying the classic picker:", err);
+    try {
+      result = await fa.signInWithGoogle({ skipNativeAuth: true, useCredentialManager: false });
+    } catch (err2) {
+      if (/cancel/i.test(err2?.message || "")) throw err2;
+      err2.firstError = err?.message || String(err);
+      throw err2;
+    }
+  }
   const idToken = result?.credential?.idToken;
   if (!idToken) throw new Error("Google sign-in was cancelled.");
   return idToken;
