@@ -5198,6 +5198,7 @@ async function openQuizzes() {
             </div>
             <div class="assign-actions">
               <button type="button" data-quiz-open="${d.id}" data-subject="${sec.subjectId}" data-section="${sec.id}">Open results</button>
+              <button type="button" class="secondary" data-quiz-remove="${d.id}" data-section="${sec.id}" data-title="${escAttr(a.title || "")}">Remove</button>
             </div>
           </div>`;
         }).join("")}
@@ -5207,6 +5208,27 @@ async function openQuizzes() {
         await openSubject(b.dataset.subject);
         await openSection(b.dataset.section);
         await openAssignment(b.dataset.quizOpen);
+      }));
+    // Same typed-name guard + cascade as the section list's Delete (answers,
+    // quizAttempts and quizKeys go with it); touchSection tells students.
+    host.querySelectorAll("[data-quiz-remove]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        const ok = confirmByTyping(
+          "Delete this quiz? This also deletes every student's answers and score for it.",
+          b.dataset.title
+        );
+        if (!ok) return;
+        b.disabled = true;
+        try {
+          await cascadeDeleteAssignment(b.dataset.quizRemove);
+          await touchSection(b.dataset.section, { deleted: [b.dataset.quizRemove] });
+        } catch (err) {
+          console.error(err);
+          alert("Couldn't delete the quiz: " + err.message);
+          b.disabled = false;
+          return;
+        }
+        openQuizzes();
       }));
   } catch (err) {
     console.error("quizzes tab failed:", err);
