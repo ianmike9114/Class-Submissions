@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=54" />
+  <link rel="stylesheet" href="css/style.css?v=55" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="theme-color" content="#002045" />
   <link rel="apple-touch-icon" href="/icons/icon-192.png" />
@@ -37,6 +37,14 @@
       <button class="secondary" id="sign-out">Sign out</button>
     </div>
   </header>
+
+  <!-- Android browsers only (js/student.js initGetAppBanner): nudge toward the
+       real app, which blocks screenshots on modules/quizzes. Dismissible. -->
+  <div id="get-app-banner" class="get-app-banner hidden" role="region" aria-label="Get the app">
+    <span>&#128241; <strong>Get the Class Submissions app</strong> - quizzes and modules work best there.</span>
+    <a class="button" id="get-app-download" href="#">&#11015; Download</a>
+    <button type="button" class="secondary" id="get-app-dismiss" aria-label="Hide this message">&#10005;</button>
+  </div>
 
   <main>
     <!-- "Join a class" card hidden by default; revealed only when a QR/deep-link
@@ -106,7 +114,7 @@
     </div>
   </main>
 
-  <script type="module" src="js/student.js?v=71"></script>
+  <script type="module" src="js/student.js?v=72"></script>
 
   <!-- PWA: register the service worker (see sw.js). Failure swallowed. -->
   <script>
@@ -117,8 +125,10 @@
     }
   </script>
   <script type="module">
-    import { initInstallButton } from "/js/pwa-install.js?v=1";
-    initInstallButton("install-app");
+    import { initInstallButton } from "/js/pwa-install.js?v=2";
+    import { APP_APK_URL, APK_INSTALL_STEPS_HTML } from "/js/app-bridge.js?v=2";
+    // Android browsers get the real app (APK); iPhone/desktop the PWA install.
+    initInstallButton("install-app", { apkUrl: APP_APK_URL, stepsHtml: APK_INSTALL_STEPS_HTML });
   </script>
 </body>
 </html>

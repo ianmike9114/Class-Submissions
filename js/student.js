@@ -1,6 +1,7 @@
 import { db, ADMIN_EMAIL, isSuperAdmin } from "./firebase-config.js";
 import { guardPage, signOutUser } from "./auth.js?v=7";
-import { isLmsApp, isAndroid, setScreenshotBlock, APP_APK_URL } from "./app-bridge.js?v=1";
+import { isLmsApp, isAndroid, wantsApk, setScreenshotBlock, APP_APK_URL, APK_INSTALL_STEPS_HTML } from "./app-bridge.js?v=2";
+import { startApkDownload } from "./pwa-install.js?v=2";
 import {
   collection, addDoc, setDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where, arrayUnion, arrayRemove, serverTimestamp, documentId,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -1892,11 +1893,8 @@ function renderGetAppGate() {
       <p><strong>&#128241; This quiz must be taken in the Class Submissions app.</strong></p>
       <p class="muted">The app blocks screenshots during quizzes. Install it once, sign in with the same Gmail, then open this quiz there.</p>
       <a class="button" href="${APP_APK_URL}">&#11015; Download the app</a>
-      <ol class="muted quiz-rules">
-        <li>Open the downloaded file (class-submissions.apk).</li>
-        <li>If asked, allow your browser to "install unknown apps", then tap Install.</li>
-        <li>Open <strong>Class Submissions</strong>, sign in, and start the quiz.</li>
-      </ol>
+      ${APK_INSTALL_STEPS_HTML}
+      <p class="muted">Then open this quiz in the app.</p>
     </div>`;
 }
 
@@ -2381,6 +2379,28 @@ function attachSubmitHandlers() {
 }
 
 el("sign-out").addEventListener("click", signOutUser);
+
+// "Get the app" banner: Android browsers only (wantsApk), until dismissed on
+// this phone. localStorage is best-effort - without it the banner just shows.
+const GET_APP_DISMISSED_KEY = "lms.getAppDismissed";
+function initGetAppBanner() {
+  const banner = el("get-app-banner");
+  if (!banner || !wantsApk()) return;
+  try { if (localStorage.getItem(GET_APP_DISMISSED_KEY)) return; } catch { /* storage blocked */ }
+  const dl = el("get-app-download");
+  dl.href = APP_APK_URL;
+  dl.addEventListener("click", (e) => {
+    e.preventDefault();
+    startApkDownload(APP_APK_URL, APK_INSTALL_STEPS_HTML, banner);
+  });
+  el("get-app-dismiss").addEventListener("click", () => {
+    banner.classList.add("hidden");
+    banner.nextElementSibling?.classList.contains("apk-steps") && banner.nextElementSibling.remove();
+    try { localStorage.setItem(GET_APP_DISMISSED_KEY, "1"); } catch { /* storage blocked */ }
+  });
+  banner.classList.remove("hidden");
+}
+initGetAppBanner();
 
 // In-app refresh: this page has no real-time listeners (see CLAUDE.md), so a
 // student who's just been approved, or whose grade was just published, would

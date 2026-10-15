@@ -15,7 +15,7 @@ import { getEmailConfig, saveEmailConfig, notifySection } from "./notify.js";
 import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=3";
 import { loadWorkbook, readExamScores, pickBestSheet } from "./class-record.js";
 import { runJava } from "./runner.js";
-import { setScreenshotBlock } from "./app-bridge.js?v=1";
+import { setScreenshotBlock } from "./app-bridge.js?v=2";
 import { codeBlockHtml, highlightWithin } from "./highlight.js";
 import { ttlForKey, STRUCTURE_KEYS, MISSING_TTL_MS, subjectShown, patchedDoc, approvedHeadcount } from "./teacher-reads.js?v=1";
 

@@ -28,6 +28,22 @@ export function isAndroid() {
   return /Android/i.test(navigator.userAgent || "");
 }
 
+// An Android phone in a normal browser - the one case where offering the APK
+// download makes sense (not iPhone, not desktop, not already in the app).
+export function wantsApk() {
+  return isAndroid() && !isLmsApp();
+}
+
+// Install steps shown next to every APK download link (quiz gate, the
+// "Get the Android app" button, the student banner). No browser can install
+// an APK by itself - Android always asks the student to open the file.
+export const APK_INSTALL_STEPS_HTML = `
+  <ol class="muted quiz-rules">
+    <li>Open the downloaded file (class-submissions.apk). If Chrome warns about the file, tap "Download anyway".</li>
+    <li>If asked, allow your browser to "install unknown apps", then tap Install.</li>
+    <li>Open <strong>Class Submissions</strong> and sign in with the same Gmail.</li>
+  </ol>`;
+
 function plugin(name) {
   const cap = window.Capacitor;
   if (!cap) return null;
