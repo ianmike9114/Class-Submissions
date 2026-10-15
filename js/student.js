@@ -3,7 +3,7 @@ import { guardPage, signOutUser } from "./auth.js?v=7";
 import { isLmsApp, isAndroid, wantsApk, setScreenshotBlock, APP_APK_URL, APK_INSTALL_STEPS_HTML } from "./app-bridge.js?v=2";
 import { startApkDownload } from "./pwa-install.js?v=2";
 import {
-  collection, addDoc, setDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where, arrayUnion, arrayRemove, serverTimestamp, documentId,
+  collection, addDoc, setDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where, arrayUnion, arrayRemove, serverTimestamp, documentId, onSnapshot,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { toEmbedUrl, toDownloadUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=3";
 import { runJava } from "./runner.js";
@@ -531,6 +531,9 @@ async function loadEverything() {
       if (hiddenSectionIds.has(pendingEnrollments[i].sectionId)) pendingEnrollments.splice(i, 1);
     }
   }
+  // What this render is based on, for the live listener below (watchSections).
+  renderedVersions = new Map(hiddenInfo.sectionDocs.map((d) => [d.id, d.data().assignmentsVersion ?? null]));
+  watchSections(enrollments.map((en) => en.sectionId));
 
   // Waiting-for-approval block: shown only when the student has pending joins.
   const waitingBlock = el("waiting-approval");
@@ -2408,7 +2411,8 @@ initGetAppBanner();
 // instead - cheaper than a full reload, and it works while signed in.
 // Refresh = fresh: drop the 10-min page cache so the section docs (and their
 // assignmentsVersion markers) are re-read - otherwise a quiz the teacher just
-// posted stays hidden until that cache expires, Refresh or not.
+// posted stays hidden until that cache expires, Refresh or not. Also what the
+// live listener (watchSections) calls when new work arrives.
 async function refreshFresh() {
   const btn = el("refresh-data");
   const original = btn.innerHTML;
@@ -2416,49 +2420,83 @@ async function refreshFresh() {
   btn.innerHTML = "&#8635; Refreshing...";
   el("new-work-notice")?.remove();
   pageCache = null;
+  refreshing = true;
   try {
     await loadEverything();
   } catch (err) {
     showConnectionError(err);
   } finally {
+    refreshing = false;
     btn.disabled = false;
     btn.innerHTML = original;
   }
 }
 el("refresh-data").addEventListener("click", refreshFresh);
 
-// Coming back to the page (phones/the app rarely reload): a light check - one
-// read per class, at most once a minute - for new/changed work. It only shows
-// a notice; it never re-renders by itself, so a half-typed submission or an
-// open quiz is never wiped.
-const NEW_WORK_CHECK_MS = 60 * 1000;
-let lastNewWorkCheck = 0;
-document.addEventListener("visibilitychange", async () => {
-  if (document.visibilityState !== "visible" || viewCtx || !pageCache) return;
-  if (document.body.classList.contains("quiz-open") || el("new-work-notice")) return;
-  const now = Date.now();
-  if (now - pageCache.at < NEW_WORK_CHECK_MS || now - lastNewWorkCheck < NEW_WORK_CHECK_MS) return;
-  lastNewWorkCheck = now;
-  const hidden = pageCache.info.hidden || new Set(); // past-term/archived classes don't count
-  const known = new Map(pageCache.info.sectionDocs.filter((d) => !hidden.has(d.id))
-    .map((d) => [d.id, d.data().assignmentsVersion ?? null]));
-  if (!known.size) return;
-  try {
-    const fresh = await getDocsByIds("sections", [...known.keys()]);
-    const changed = fresh.some((d) => (d.data().assignmentsVersion ?? null) !== known.get(d.id));
-    if (!changed || el("new-work-notice")) return;
-    const notice = document.createElement("div");
-    notice.id = "new-work-notice";
-    notice.className = "get-app-banner";
-    notice.setAttribute("role", "status");
-    notice.innerHTML = `<span>&#128276; <strong>New work from your teacher.</strong></span>
-      <button type="button" id="new-work-show">Show it</button>`;
-    document.querySelector("main")?.prepend(notice);
-    el("new-work-show").addEventListener("click", refreshFresh);
-  } catch (err) {
-    console.warn("new-work check failed:", err?.code || err);
+// Live updates: listen to the student's own (visible) class docs. The
+// teacher's touchSection() bumps assignmentsVersion on every assignment/quiz
+// add, edit or delete, so a change there means new work. Costs 1 read per
+// class when the listener starts + 1 per change per open page (Spark-safe).
+// Phones pause it in the background and catch up when the page is shown.
+// If it's safe the list refreshes itself; if the student is mid-typing or in
+// a quiz, a "New work" notice shows instead so nothing they typed is wiped.
+let renderedVersions = new Map();
+let liveKey = "";
+let liveUnsubs = [];
+let refreshing = false;
+
+function watchSections(sectionIds) {
+  const ids = [...new Set(sectionIds.filter(Boolean))].sort();
+  const key = viewCtx ? "" : ids.join(",");
+  if (key === liveKey) return;
+  liveUnsubs.forEach((u) => u());
+  liveUnsubs = [];
+  liveKey = key;
+  if (!key) return;
+  // One doc listener per class: firestore.rules lets a student get a section
+  // by id but not list sections, so an 'in' query would be refused.
+  for (const id of ids) {
+    liveUnsubs.push(onSnapshot(
+      doc(db, "sections", id),
+      (snap) => {
+        if (snap.exists() && renderedVersions.has(id)
+          && (snap.data().assignmentsVersion ?? null) !== renderedVersions.get(id)) onNewWork();
+      },
+      (err) => console.warn("live class updates stopped:", err?.code || err)
+    ));
   }
-});
+}
+
+// True when re-rendering the list could throw away something the student is
+// doing: a quiz, a focused field, typed text/code, a picked file or photos.
+function studentIsBusy() {
+  if (document.body.classList.contains("quiz-open")) return true;
+  const active = document.activeElement;
+  if (active && active.matches?.("input, textarea, select") && active.closest("main")) return true;
+  if ([...pendingPhotos.values()].some((p) => p && p.length)) return true;
+  return [...(el("assignments-list")?.querySelectorAll("input, textarea") || [])].some((f) =>
+    f.type === "file" ? f.files?.length : (f.type !== "checkbox" && f.type !== "radio" && f.type !== "hidden" && f.value.trim()));
+}
+
+function showNewWorkNotice() {
+  if (el("new-work-notice")) return;
+  const notice = document.createElement("div");
+  notice.id = "new-work-notice";
+  notice.className = "get-app-banner";
+  notice.setAttribute("role", "status");
+  notice.innerHTML = `<span>&#128276; <strong>New work from your teacher.</strong></span>
+    <button type="button" id="new-work-show">Show it</button>`;
+  document.querySelector("main")?.prepend(notice);
+  el("new-work-show").addEventListener("click", refreshFresh);
+}
+
+function onNewWork() {
+  if (refreshing) return;
+  if (studentIsBusy()) { showNewWorkNotice(); return; }
+  // Keep the open assignment open across the re-render.
+  const openId = el("assignments-list")?.querySelector(".card.is-open")?.dataset.assignmentId;
+  refreshFresh().then(() => { if (openId) openAssignment(openId); });
+}
 
 wireOpenInChromeButtons(el("assignments-list"));
 

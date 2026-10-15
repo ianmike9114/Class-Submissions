@@ -199,8 +199,9 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   last real student aren't blank, hold formula that evaluates to number
   `0`, out to row 119+. Plain non-null/non-empty check would sweep those
   up as fake students. Don't loosen this check.
-- No real-time listeners (`onSnapshot`) — lists refresh on load/action,
-  not live. Fine at single-class scale; add if it ever matters.
+- Real-time listeners (`onSnapshot`) only for the student's own class docs
+  (new-work detection, see "Student assignment cache" below); everything else
+  refreshes on load/action.
 - **QR join is same-origin deep link, generated entirely client-side.**
   `js/teacher.js`'s `renderSectionQR()` uses `qrcodejs` CDN library to
   draw QR in-browser — join link (`student.html?code=...`) never goes to
@@ -382,9 +383,13 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   section docs it read so sections are read once) is reused in memory for 10
   min while the enrolled-section set is unchanged (the **Refresh button
   bypasses it** - `refreshFresh()` - else a new quiz stayed hidden up to 10
-  min even after Refresh; coming back to the page runs a 1-read-per-class
-  `assignmentsVersion` check, max once a minute, and shows a "New work"
-  notice instead of re-rendering). No rules change (section
+  min even after Refresh; **live updates**: `watchSections()` keeps an
+  `onSnapshot` on the student's visible section docs - 1 read per class at
+  start + 1 per change per open page - and when `assignmentsVersion` differs
+  from what was rendered, `onNewWork()` refreshes the list by itself, or shows
+  a "New work" notice if `studentIsBusy()` (quiz open, focused/typed field,
+  picked file/photos) so nothing typed is wiped. Skipped in View-as. This is
+  the one deliberate `onSnapshot` in the app). No rules change (section
   update is already owner-allowed), no new index. Estimate: `npm run budget`.
 - **Teacher read cache: structure vs inbox (Spark read budget).** In
   `js/teacher.js`, `cachedOwnerDocs()` keys `subjects`/`sections`/`assignments`
