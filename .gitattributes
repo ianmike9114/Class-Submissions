@@ -1,0 +1,6 @@
+# Scripts with a shebang must keep LF line endings even on a Windows
+# checkout (core.autocrlf=true): a CR after "#!/usr/bin/env node" makes Vitest fail
+# to load scripts/quota-budget.mjs ("SyntaxError: Invalid or unexpected
+# token"), and bash rejects CRLF .sh files.
+*.mjs text eol=lf
+*.sh text eol=lf
