@@ -175,6 +175,46 @@ test("student's cached assignment list picks up a teacher edit on reload", async
   expect(errors, errors.join(" | ")).toEqual([]);
 });
 
+test("an open student page shows new work live, without a reload", async ({ page }) => {
+  const errors = trackPageErrors(page);
+  await signIn(page, STUDENT, "Juan Dela Cruz");
+  await page.waitForURL(/student\.html/);
+  await expect(page.locator('.outline-item[data-title="E2E Essay v2"]').first()).toBeAttached();
+
+  // Teacher posts while the student's page stays open (no reload, no Refresh).
+  const t = await page.context().browser().newPage();
+  await blockProduction(t);
+  t.on("dialog", (d) => (d.type() === "prompt" ? d.accept("E2E Live") : d.accept()));
+  await signIn(t, TEACHER, "Teacher One");
+  await t.waitForURL(/teacher\.html/);
+  await t.locator("#subjects-list [data-open]").first().click();
+  await t.locator("#sections-list [data-open]").first().click();
+  await t.locator("#view-section summary", { hasText: "Create" }).click();
+  await t.locator('[data-create-type="assignment"]').click();
+  await t.fill("#assignment-title", "E2E Live");
+  await t.fill("#assignment-total-points", "5");
+  await t.locator("#create-submit-btn").click();
+  await expect(t.locator("#assignments-list")).toContainText("E2E Live");
+
+  // watchSections() sees the bumped assignmentsVersion and refreshes by itself.
+  await expect(page.locator('.outline-item[data-title="E2E Live"]').first()).toBeAttached({ timeout: 15000 });
+
+  // Student mid-typing: a new post shows the notice instead of re-rendering.
+  await page.locator('.outline-item[data-title="E2E Live"]').first().click();
+  const form = page.locator('.card[data-title="E2E Live"] .submit-form').first();
+  await form.locator(".submission-link").fill("https://docs.google.com/document/d/typing/edit");
+  const row = t.locator(".assign-row", { hasText: "E2E Live" }).first();
+  await row.locator("details.menu > summary").click();
+  await row.locator("[data-delete-assignment]").click();
+  await expect(t.locator("#assignments-list")).not.toContainText("E2E Live");
+  await t.close();
+  await expect(page.locator("#new-work-notice")).toBeVisible({ timeout: 15000 });
+  await expect(form.locator(".submission-link")).toHaveValue("https://docs.google.com/document/d/typing/edit");
+  await page.locator("#new-work-show").click();
+  await expect(page.locator('.outline-item[data-title="E2E Live"]')).toHaveCount(0);
+  expect(errors, errors.join(" | ")).toEqual([]);
+});
+
 test("quiz with a question bank:student gets 5 of 6, teacher sees score out of 5", async ({ page }) => {
   const errors = trackPageErrors(page);
   const tpage = await page.context().browser().newPage();
