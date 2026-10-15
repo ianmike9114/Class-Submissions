@@ -447,7 +447,19 @@ textarea.submission-code {
   background: var(--gray-bg);
   border-bottom: 1px solid var(--gray-border);
 }
-.material-viewer-head strong { font-family: var(--font-headline); }
+.material-viewer-head { flex-wrap: wrap; }
+.material-viewer-head strong { font-family: var(--font-headline); flex: 1; }
+/* Offline-reading download: a pill so it reads as an action, not a link. */
+.material-viewer-head a.material-download {
+  border: 1px solid var(--blue);
+  border-radius: 999px;
+  padding: 0.35rem 0.8rem;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  background: #fff;
+}
+.material-viewer-head a.material-download:hover { background: var(--blue); color: #fff; }
 .material-viewer-head a {
   color: var(--blue);
   font-weight: 600;
@@ -1249,6 +1261,9 @@ body.student-page > header button.secondary:hover { background: rgba(255, 255, 2
 .quiz-builder .qb-ai { margin: 0.75rem 0; padding: 0.5rem 0.75rem; border: 1px dashed var(--gray-border); border-radius: var(--radius-sm); }
 .quiz-builder .qb-ai summary { cursor: pointer; }
 .qb-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.qb-file-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.qb-file-row input[type="file"] { flex: 1; min-width: 0; }
+.qb-file-row button { width: auto; white-space: nowrap; }
 .qb-types { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; margin-bottom: 0.5rem; }
 .qb-check { display: inline-flex; align-items: center; gap: 0.35rem; font-weight: normal; font-size: 0.9rem; margin: 0; }
 .qb-check input { width: auto; margin: 0; }

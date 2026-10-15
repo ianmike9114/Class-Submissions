@@ -10,6 +10,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   extractDriveFileId,
   toEmbedUrl,
+  toDownloadUrl,
   extractFirstEmbeddableUrl,
   embedBlockFor,
   openInChromeButton,
@@ -151,5 +152,29 @@ describe("openInChromeButton (UA-dependent)", () => {
     expect(html).toContain("data-open-chrome-bare=");
     // the scheme is stripped before it's stored (re-added as intent:// on click)
     expect(html).toContain(encodeURIComponent("example.com/x"));
+  });
+});
+
+describe("toDownloadUrl", () => {
+  it("turns a Drive file link into a direct download", () => {
+    expect(toDownloadUrl("https://drive.google.com/file/d/ABC123/view?usp=sharing"))
+      .toBe("https://drive.google.com/uc?export=download&id=ABC123");
+  });
+  it("exports Google Docs and Sheets as PDF", () => {
+    expect(toDownloadUrl("https://docs.google.com/document/d/DOC1/edit"))
+      .toBe("https://docs.google.com/document/d/DOC1/export?format=pdf");
+    expect(toDownloadUrl("https://docs.google.com/spreadsheets/d/SH1/edit#gid=0"))
+      .toBe("https://docs.google.com/spreadsheets/d/SH1/export?format=pdf");
+  });
+  it("exports Google Slides as PDF", () => {
+    expect(toDownloadUrl("https://docs.google.com/presentation/d/PR1/edit?usp=sharing"))
+      .toBe("https://docs.google.com/presentation/d/PR1/export/pdf");
+  });
+  it("returns null for folders, YouTube, other links and empty input", () => {
+    expect(toDownloadUrl("https://drive.google.com/drive/folders/F1")).toBeNull();
+    expect(toDownloadUrl("https://www.youtube.com/watch?v=xyz")).toBeNull();
+    expect(toDownloadUrl("https://gist.github.com/a/b")).toBeNull();
+    expect(toDownloadUrl("")).toBeNull();
+    expect(toDownloadUrl(null)).toBeNull();
   });
 });

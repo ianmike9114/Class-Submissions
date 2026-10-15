@@ -4,7 +4,7 @@ import { isLmsApp, isAndroid, setScreenshotBlock, APP_APK_URL } from "./app-brid
 import {
   collection, addDoc, setDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where, arrayUnion, arrayRemove, serverTimestamp, documentId,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=2";
+import { toEmbedUrl, toDownloadUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=3";
 import { runJava } from "./runner.js";
 import { codeBlockHtml, highlightWithin } from "./highlight.js";
 import { seededShuffle, quizDeadlineMs, servedQuestions, QUIZ_BREACH_LIMIT, isSplitWindow, hasSecondScreen } from "./quiz.js?v=7";
@@ -1437,9 +1437,13 @@ function materialBlock(a) {
     // non-embeddable link, embedBlockFor's own <a> fallback is the body, so
     // the header stays just the label.
     const body = embedBlockFor(url, { variant: "material", label });
+    // Offline reading: a direct Drive/Docs download link, unless the teacher
+    // unticked "Allow students to download" (missing field = allowed).
+    const dl = a.allowDownload !== false ? toDownloadUrl(url) : null;
+    const dlBtn = dl ? `<a class="material-download" href="${dl}" target="_blank" rel="noopener" title="Save it while you have signal, then read it offline">&#11015; Download</a>` : "";
     const head = embedded
-      ? `<div class="material-viewer-head"><strong>${label}</strong><a href="${url}" target="_blank" rel="noopener">Open &#8599;</a>${openInChromeButton(url)}</div>`
-      : `<div class="material-viewer-head"><strong>${label}</strong></div>`;
+      ? `<div class="material-viewer-head"><strong>${label}</strong>${dlBtn}<a href="${url}" target="_blank" rel="noopener">Open &#8599;</a>${openInChromeButton(url)}</div>`
+      : `<div class="material-viewer-head"><strong>${label}</strong>${dlBtn}</div>`;
     // Explicit escape hatch under the embed - a Drive preview can render blank
     // or dark (system dark mode) inside its cross-origin frame, which we can't
     // restyle, so give the student a one-tap way to open the real file.

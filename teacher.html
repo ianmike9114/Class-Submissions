@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=53" />
+  <link rel="stylesheet" href="css/style.css?v=54" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="theme-color" content="#002045" />
   <link rel="apple-touch-icon" href="/icons/icon-192.png" />
@@ -396,6 +396,7 @@
           <textarea id="assignment-instructions" rows="4" placeholder="e.g. Explore a CSS-related career or business opportunity and present your findings. Output: 5-7 minute presentation (PowerPoint, Canva, Poster, or Infographic)."></textarea>
           <label>Material / instructions file link (optional - a Drive-hosted PDF/doc, shared as "anyone with the link". Shows embedded to students, not just as a link.)</label>
           <input id="assignment-instructions-link" type="url" placeholder="https://drive.google.com/file/d/..." />
+          <label class="qb-check" style="margin-top:0.4rem;"><input type="checkbox" id="assignment-allow-download" checked /> Allow students to download this file (for offline reading)</label>
 
           <div class="assignment-only">
             <div class="not-quiz">
@@ -472,6 +473,7 @@
           <textarea id="edit-assignment-instructions" rows="4"></textarea>
           <label>Material / instructions file link (optional)</label>
           <input id="edit-assignment-instructions-link" type="url" placeholder="https://drive.google.com/file/d/..." />
+          <label class="qb-check" style="margin-top:0.4rem;"><input type="checkbox" id="edit-assignment-allow-download" checked /> Allow students to download this file (for offline reading)</label>
           <div class="assignment-only">
             <div class="not-quiz">
               <label>Upload folder link (optional - Drive folder shared "Anyone with the link: Editor", shown to students as an "Upload here" button)</label>
@@ -539,7 +541,7 @@
     <button type="button" id="photo-lightbox-close" aria-label="Close preview">&times;</button>
   </div>
 
-  <script type="module" src="js/teacher.js?v=113"></script>
+  <script type="module" src="js/teacher.js?v=114"></script>
 
   <!-- PWA: register the service worker (see sw.js). Failure swallowed. -->
   <script>
