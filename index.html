@@ -125,7 +125,7 @@
   <script src="https://accounts.google.com/gsi/client" defer></script>
   <script type="module">
     import { initGoogleSignIn, isTeacherEmail, sendEmailSignInLink, isEmailSignInLink, completeEmailLinkSignIn, getRememberedEmail, rememberDevice, forgetDevice, isRememberOptedOut, setRememberOptOut, recordAuthHop, clearAuthHops, signInWithGoogleIdToken } from "./js/auth.js?v=7";
-    import { isLmsApp, nativeGoogleIdToken, setScreenshotBlock } from "./js/app-bridge.js?v=2";
+    import { isLmsApp, nativeGoogleIdToken, setScreenshotBlock } from "./js/app-bridge.js?v=3";
     // The student page turns the app's screenshot block on and FLAG_SECURE
     // outlives page loads, so switch it off on the sign-in page.
     setScreenshotBlock(false);
@@ -330,7 +330,9 @@
           }
           // e.g. "getCredentialAsync no provider dependencies found" - no
           // Google Play Services on this phone. Plain words, not the raw error.
-          showError("Google sign-in doesn't work on this phone. Use the email steps below instead.");
+          // Technical reason appended, so a screenshot tells us why.
+          const why = [err.firstError, err.code || err.message].filter(Boolean).join(" / ").slice(0, 160);
+          showError("Google sign-in doesn't work on this phone. Check that your Gmail is added in Settings → Accounts, then try again - or use the email steps below." + (why ? ` (Details: ${why})` : ""));
           openAppEmailLink();
         }
       });
@@ -532,7 +534,7 @@
   </script>
   <script type="module">
     import { initInstallButton } from "/js/pwa-install.js?v=2";
-    import { APP_APK_URL, APK_INSTALL_STEPS_HTML } from "/js/app-bridge.js?v=2";
+    import { APP_APK_URL, APK_INSTALL_STEPS_HTML } from "/js/app-bridge.js?v=3";
     // Android browsers get the real app (APK); iPhone/desktop the PWA install.
     initInstallButton("install-app", { apkUrl: APP_APK_URL, stepsHtml: APK_INSTALL_STEPS_HTML });
   </script>

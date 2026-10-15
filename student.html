@@ -114,7 +114,7 @@
     </div>
   </main>
 
-  <script type="module" src="js/student.js?v=74"></script>
+  <script type="module" src="js/student.js?v=75"></script>
 
   <!-- PWA: register the service worker (see sw.js). Failure swallowed. -->
   <script>
@@ -126,7 +126,7 @@
   </script>
   <script type="module">
     import { initInstallButton } from "/js/pwa-install.js?v=2";
-    import { APP_APK_URL, APK_INSTALL_STEPS_HTML } from "/js/app-bridge.js?v=2";
+    import { APP_APK_URL, APK_INSTALL_STEPS_HTML } from "/js/app-bridge.js?v=3";
     // Android browsers get the real app (APK); iPhone/desktop the PWA install.
     initInstallButton("install-app", { apkUrl: APP_APK_URL, stepsHtml: APK_INSTALL_STEPS_HTML });
   </script>

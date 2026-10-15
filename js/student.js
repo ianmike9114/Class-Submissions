@@ -1,6 +1,6 @@
 import { db, ADMIN_EMAIL, isSuperAdmin } from "./firebase-config.js";
 import { guardPage, signOutUser } from "./auth.js?v=7";
-import { isLmsApp, isAndroid, wantsApk, setScreenshotBlock, APP_APK_URL, APK_INSTALL_STEPS_HTML } from "./app-bridge.js?v=2";
+import { isLmsApp, isAndroid, wantsApk, setScreenshotBlock, APP_APK_URL, APK_INSTALL_STEPS_HTML } from "./app-bridge.js?v=3";
 import { startApkDownload } from "./pwa-install.js?v=2";
 import {
   collection, addDoc, setDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where, arrayUnion, arrayRemove, serverTimestamp, documentId, onSnapshot,
