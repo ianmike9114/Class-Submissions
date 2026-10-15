@@ -13,7 +13,34 @@
  *    manually (Share -> Add to Home Screen).
  *  - Already installed (running standalone): keep the button hidden - no point
  *    offering install from inside the installed app.
+ *  - APK mode (`{ apkUrl, stepsHtml }`, login + student pages): on an Android
+ *    browser the button downloads the real Android app (js/app-bridge.js
+ *    APP_APK_URL - it blocks screenshots on modules/quizzes, the PWA can't)
+ *    and shows the install steps. Hidden inside that app; iPhone/desktop
+ *    keep the PWA path above.
  */
+
+// Same marker js/app-bridge.js isLmsApp() checks (kept inline so this file
+// stays dependency-free).
+function inLmsApp() {
+  return (navigator.userAgent || "").includes("ClassSubmissionsApp/") || !!window.Capacitor?.isNativePlatform?.();
+}
+
+function isAndroid() {
+  return /Android/i.test(navigator.userAgent || "");
+}
+
+// Starts the APK download and shows the install steps right after `anchor`
+// (once). Also used by the student banner.
+export function startApkDownload(apkUrl, stepsHtml, anchor) {
+  if (stepsHtml && anchor && !anchor.nextElementSibling?.classList.contains("apk-steps")) {
+    const card = document.createElement("div");
+    card.className = "apk-steps";
+    card.innerHTML = `<strong>Downloading the app...</strong>${stepsHtml}`;
+    anchor.insertAdjacentElement("afterend", card);
+  }
+  window.location.assign(apkUrl);
+}
 
 function isStandalone() {
   return (
@@ -31,9 +58,20 @@ function isIos() {
   return iOSDevice || iPadOS;
 }
 
-export function initInstallButton(buttonId) {
+export function initInstallButton(buttonId, { apkUrl, stepsHtml } = {}) {
   const btn = document.getElementById(buttonId);
   if (!btn) return;
+
+  if (apkUrl && isAndroid()) {
+    if (inLmsApp()) {
+      btn.classList.add("hidden");
+      return;
+    }
+    btn.innerHTML = "&#11015; Get the Android app";
+    btn.classList.remove("hidden");
+    btn.addEventListener("click", () => startApkDownload(apkUrl, stepsHtml, btn));
+    return;
+  }
 
   // Never offer install from inside the already-installed app.
   if (isStandalone()) {

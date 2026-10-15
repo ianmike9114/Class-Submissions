@@ -663,6 +663,14 @@ For any UI/CSS change, read `DESIGN_SYSTEM.md` first, not
   `quiz.requireApp` ("Android students must use the app") makes Android
   browsers show a Download-the-app gate (`APP_APK_URL`, GitHub Releases)
   instead of Start — client-side deterrence, spoofable like the rest.
+  **APK from the browser:** on Android browsers the header/login "Install
+  app" button becomes "⬇ Get the Android app" (`js/pwa-install.js`
+  `initInstallButton(id, { apkUrl, stepsHtml })` → `startApkDownload()`, used by
+  `index.html` + `student.html`; teacher.html keeps the PWA install), and
+  student.html shows a dismissible `#get-app-banner` (`initGetAppBanner()`,
+  `lms.getAppDismissed`). Install steps are one shared
+  `APK_INSTALL_STEPS_HTML` in `js/app-bridge.js`. Hidden inside the app;
+  iPhone/desktop keep the PWA path.
   `gemini.js`/`quiz.js` imports carry their own `?v=` (bump when changed —
   `scripts/bump-version.mjs` doesn't cover sub-modules).
 
