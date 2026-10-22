@@ -1569,53 +1569,97 @@ function renderSubmitForm(assignmentId, type, prefill = null) {
 // (1MiB doc cap) - there's no Storage in this app, the photo is saved
 // straight into the submission doc as a base64 data URL. Shrinks dimensions
 // first, then quality, until the encoded string is comfortably under maxLen.
-function compressImage(file, maxLen = PER_PHOTO_MAX_LEN) {
-  const MAX_DATA_URL_LEN = maxLen;
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("Couldn't read that photo."));
-    reader.onload = () => {
-      const img = new Image();
-      img.onerror = () => reject(new Error("Couldn't read that photo."));
-      img.onload = () => {
-        // Try progressively smaller max dimensions; at each, drop quality
-        // to a floor. Accept the first result that fits under MAX_DATA_URL_LEN.
-        // Dense document/handwriting photos (e.g. a full ADM page) can exceed
-        // the per-photo size cap even at 1280px + minimum quality, so stepping
-        // the DIMENSIONS down - not just quality - is what makes them fit
-        // instead of failing outright. Only ever shrinks, never upscales.
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d");
-        const mime = photoMime();
-        for (const maxDim of [1280, 1024, 800, 640]) {
-          let { width, height } = img;
-          if (width > maxDim || height > maxDim) {
-            const scale = maxDim / Math.max(width, height);
-            width = Math.round(width * scale);
-            height = Math.round(height * scale);
-          }
-          canvas.width = width;
-          canvas.height = height;
-          ctx.clearRect(0, 0, width, height);
-          ctx.drawImage(img, 0, 0, width, height);
+// Samsung/iPhone cameras with "High efficiency pictures" save HEIC, which
+// Chrome/Android can't decode in an <img> at all - that was the "Couldn't
+// read that photo." students hit. heic2any (libheif in the browser, ~1.3MB)
+// is lazy-loaded only when a photo fails to decode and looks like HEIC.
+const HEIC2ANY_CDN_URL = "https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js";
+let heic2anyPromise = null;
+function loadHeic2any() {
+  if (!heic2anyPromise) {
+    heic2anyPromise = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = HEIC2ANY_CDN_URL;
+      script.onload = () => resolve(window.heic2any);
+      script.onerror = () => { heic2anyPromise = null; reject(new Error("load failed")); };
+      document.head.appendChild(script);
+    });
+  }
+  return heic2anyPromise;
+}
 
-          let quality = 0.8;
-          let dataUrl = canvas.toDataURL(mime, quality);
-          while (dataUrl.length > MAX_DATA_URL_LEN && quality > 0.3) {
-            quality -= 0.1;
-            dataUrl = canvas.toDataURL(mime, quality);
-          }
-          if (dataUrl.length <= MAX_DATA_URL_LEN) {
-            resolve(dataUrl);
-            return;
-          }
-        }
-        reject(new Error("Photo is too large even after compression - try a simpler/lighter shot."));
-      };
-      img.src = reader.result;
-    };
-    reader.readAsDataURL(file);
+function looksLikeHeic(file) {
+  return /hei[cf]/i.test(file.type || "") || /\.hei[cf]$/i.test(file.name || "");
+}
+
+// Decodes a picked photo to something drawImage() accepts. Uses an object
+// URL (not a base64 FileReader data URL - a 108MP photo as base64 ran phones
+// out of memory), then createImageBitmap, then HEIC conversion.
+function decodeViaImg(blob) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("decode failed")); };
+    img.src = url;
   });
+}
+
+async function decodePhoto(file) {
+  try { return await decodeViaImg(file); } catch { /* try the next decoder */ }
+  if (typeof createImageBitmap === "function") {
+    try { return await createImageBitmap(file); } catch { /* try the next decoder */ }
+  }
+  // HEIC files sometimes arrive with an empty type, so try conversion for
+  // any undecodable photo, but word the error by what it looked like.
+  try {
+    const heic2any = await loadHeic2any();
+    const out = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.9 });
+    return await decodeViaImg(Array.isArray(out) ? out[0] : out);
+  } catch { /* fall through to a friendly error */ }
+  if (looksLikeHeic(file)) {
+    throw new Error("This photo is in HEIC format, which the browser can't open. In your Camera settings turn off \"High efficiency pictures\", or take a screenshot of the photo and add the screenshot instead.");
+  }
+  throw new Error("Couldn't open that photo. If it's from Google Photos or another cloud app, download it to the phone first, or take the picture with the Camera button instead.");
+}
+
+async function compressImage(file, maxLen = PER_PHOTO_MAX_LEN) {
+  const MAX_DATA_URL_LEN = maxLen;
+  const img = await decodePhoto(file);
+  try {
+    // Try progressively smaller max dimensions; at each, drop quality
+    // to a floor. Accept the first result that fits under MAX_DATA_URL_LEN.
+    // Dense document/handwriting photos (e.g. a full ADM page) can exceed
+    // the per-photo size cap even at 1280px + minimum quality, so stepping
+    // the DIMENSIONS down - not just quality - is what makes them fit
+    // instead of failing outright. Only ever shrinks, never upscales.
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    const mime = photoMime();
+    for (const maxDim of [1280, 1024, 800, 640]) {
+      let { width, height } = img;
+      if (width > maxDim || height > maxDim) {
+        const scale = maxDim / Math.max(width, height);
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+      }
+      canvas.width = width;
+      canvas.height = height;
+      ctx.clearRect(0, 0, width, height);
+      ctx.drawImage(img, 0, 0, width, height);
+
+      let quality = 0.8;
+      let dataUrl = canvas.toDataURL(mime, quality);
+      while (dataUrl.length > MAX_DATA_URL_LEN && quality > 0.3) {
+        quality -= 0.1;
+        dataUrl = canvas.toDataURL(mime, quality);
+      }
+      if (dataUrl.length <= MAX_DATA_URL_LEN) return dataUrl;
+    }
+    throw new Error("Photo is too large even after compression - try a simpler/lighter shot.");
+  } finally {
+    if (typeof img.close === "function") img.close(); // ImageBitmap memory
+  }
 }
 
 // assignmentId -> string[] of already-compressed photo data URLs, in the
