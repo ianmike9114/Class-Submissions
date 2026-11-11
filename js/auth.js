@@ -132,6 +132,7 @@ export function clearAuthHops() {
 
 export function signOutUser() {
   forgetDevice();
+  clearCachedRole();
   clearAllCaches(); // per-student assignment cache (shared lab PCs)
   return signOut(auth);
 }
@@ -192,6 +193,37 @@ export async function isTeacherEmail(email) {
   return snap.exists();
 }
 
+// Role remembered per email (UI routing only - firestore.rules stay the real
+// gate). Lets the sign-in redirect and the dashboard guard skip waiting on the
+// teachers/{email} read; the role is re-verified in the background and a wrong
+// cached value redirects to the right page. Cleared on sign-out.
+const ROLE_KEY = "lms.roleCache";
+export function getCachedRole(email) {
+  try {
+    const o = JSON.parse(localStorage.getItem(ROLE_KEY) || "null");
+    if (o && o.email === String(email).toLowerCase() && (o.role === "teacher" || o.role === "student")) return o.role;
+  } catch {}
+  return null;
+}
+function setCachedRole(email, role) {
+  try { localStorage.setItem(ROLE_KEY, JSON.stringify({ email: String(email).toLowerCase(), role })); } catch {}
+}
+export function clearCachedRole() {
+  try { localStorage.removeItem(ROLE_KEY); } catch {}
+}
+// Cache-aware role lookup: returns the cached role at once when there is one
+// (refreshing it in the background), else does the read and caches it.
+export async function resolveRole(email) {
+  const cached = getCachedRole(email);
+  if (cached) {
+    isTeacherEmail(email).then((t) => setCachedRole(email, t ? "teacher" : "student"), () => {});
+    return cached;
+  }
+  const role = (await isTeacherEmail(email)) ? "teacher" : "student";
+  setCachedRole(email, role);
+  return role;
+}
+
 // Call on any page that requires a signed-in user. Redirects to the correct
 // dashboard if the user is on the wrong page, or back to index if signed out.
 export function guardPage(expectedRole) {
@@ -209,8 +241,10 @@ export function guardPage(expectedRole) {
         return;
       }
       let role;
+      const cachedRole = getCachedRole(user.email);
       try {
-        role = (await isTeacherEmail(user.email)) ? "teacher" : "student";
+        role = cachedRole || ((await isTeacherEmail(user.email)) ? "teacher" : "student");
+        if (!cachedRole) setCachedRole(user.email, role);
       } catch {
         // Network/Firestore hiccup - don't hang on a blank page.
         document.body.insertAdjacentHTML("afterbegin",
@@ -233,6 +267,20 @@ export function guardPage(expectedRole) {
       // Reached a dashboard with a live session - not a bounce loop.
       clearAuthHops();
       resolve(user);
+      // Cached role was used: verify it in the background. A wrong cached role
+      // (access granted/revoked since) corrects itself with a redirect.
+      if (cachedRole) {
+        isTeacherEmail(user.email).then((isT) => {
+          const real = isT ? "teacher" : "student";
+          setCachedRole(user.email, real);
+          if (real === cachedRole) return;
+          const asStudent = expectedRole === "student" && real === "teacher" &&
+            new URLSearchParams(location.search).has("asStudentUID");
+          if (expectedRole && real !== expectedRole && !asStudent) {
+            window.location.href = (real === "teacher" ? "teacher.html" : "student.html") + location.search;
+          }
+        }, () => {});
+      }
     });
   });
 }

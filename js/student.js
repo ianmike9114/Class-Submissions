@@ -1,5 +1,5 @@
 import { db, ADMIN_EMAIL, isSuperAdmin } from "./firebase-config.js";
-import { guardPage, signOutUser } from "./auth.js?v=7";
+import { guardPage, signOutUser } from "./auth.js?v=8";
 import { isLmsApp, isAndroid, wantsApk, setScreenshotBlock, APP_APK_URL, APK_INSTALL_STEPS_HTML } from "./app-bridge.js?v=3";
 import { startApkDownload } from "./pwa-install.js?v=2";
 import {
@@ -153,7 +153,10 @@ async function enroll(sectionId, section, subject, studentName, status = "pendin
 // on the very first render. Each invite doc is consumed (deleted) whether
 // or not it resulted in a new enrollment, so a stale/duplicate invite
 // can't linger and re-fire.
+// Resolves true only when at least one invite created a new enrollment, so the
+// boot code can run loadEverything() in parallel and reload only if needed.
 async function applyPendingInvites() {
+  let enrolled = false;
   const snap = await getDocs(query(collection(db, "invites"), where("studentEmail", "==", currentUser.email.toLowerCase())));
   for (const inviteDoc of snap.docs) {
     const invite = inviteDoc.data();
@@ -172,9 +175,11 @@ async function applyPendingInvites() {
         invite.studentName,
         "approved"
       );
+      enrolled = true;
     }
     await deleteDoc(doc(db, "invites", inviteDoc.id));
   }
+  return enrolled;
 }
 
 async function renderNamePicker() {
@@ -372,6 +377,16 @@ function normYear(v) {
 // ok:false on a top-level failure so the caller doesn't cache that result.
 async function getHiddenSectionIds(sectionIds) {
   try {
+    // Speed: when the 30-min term cache is probably stale/absent, start the two
+    // school-wide settings reads (all-teachers + the admin's) together with the
+    // sections read instead of after subjects. Skipped when a fresh cache entry
+    // exists (likely hit) so the Spark read budget is not spent for nothing.
+    const preTc = viewCtx ? {} : readStore(TERM_PREFIX, dataUID());
+    const likelyCacheHit = !viewCtx && preTc && Date.now() - preTc.at < TERM_CACHE_TTL_MS && Array.isArray(preTc.subjects);
+    const pre = likelyCacheHit ? null : {
+      global: getDoc(doc(db, "settings", "all-teachers")).then((g) => ({ ok: true, data: g.exists() ? g.data() : null }), (err) => ({ ok: false, err })),
+      admin: getDoc(doc(db, "settings", ADMIN_EMAIL)).then((g) => ({ ok: true, doc: g }), () => ({ ok: false })),
+    };
     const sectionDocs = await getDocsByIds("sections", sectionIds);
     const sectionToSubject = new Map(sectionDocs.map((d) => [d.id, d.data().subjectId]));
     // Spark read budget: subjects + term settings change rarely (a teacher
@@ -382,6 +397,7 @@ async function getHiddenSectionIds(sectionIds) {
     const termCacheUid = viewCtx ? null : dataUID();
     const tc = termCacheUid ? readStore(TERM_PREFIX, termCacheUid) : {};
     if (tc.key === termKey && Date.now() - tc.at < TERM_CACHE_TTL_MS && Array.isArray(tc.subjects)) {
+      if (pre) { pre.global.catch(() => {}); pre.admin.catch(() => {}); } // already settled; ignore
       return computeHiddenSections(sectionDocs, sectionToSubject, new Map(tc.subjects), new Map(tc.settings || []), tc.global || null);
     }
     const subjectDocs = await getDocsByIds("subjects", [...sectionToSubject.values()]);
@@ -392,9 +408,12 @@ async function getHiddenSectionIds(sectionIds) {
     // hiding (which must keep working with or without the settings rules).
     // ADMIN_EMAIL is always included: the super admin's current term is the
     // school-wide term for every owner's classes (see schoolTerm below).
-    const ownerEmails = [...new Set([ADMIN_EMAIL, ...[...subjectData.values()].map((s) => s.ownerEmail).filter(Boolean)])];
+    const preAdmin = pre ? await pre.admin : { ok: false };
+    const ownerEmails = [...new Set([...(preAdmin.ok ? [] : [ADMIN_EMAIL]), ...[...subjectData.values()].map((s) => s.ownerEmail).filter(Boolean)])]
+      .filter((e) => !(preAdmin.ok && e === ADMIN_EMAIL));
     const settingByOwner = new Map();
     try {
+      if (preAdmin.ok && preAdmin.doc.exists()) settingByOwner.set(preAdmin.doc.id, preAdmin.doc.data());
       const settingDocs = await getDocsByIds("settings", ownerEmails);
       settingDocs.forEach((d) => settingByOwner.set(d.id, d.data()));
     } catch (err) {
@@ -408,8 +427,14 @@ async function getHiddenSectionIds(sectionIds) {
     // global override (per-owner hiding still applies).
     let globalTerm = null;
     try {
-      const g = await getDoc(doc(db, "settings", "all-teachers"));
-      if (g.exists()) globalTerm = g.data();
+      if (pre) {
+        const g = await pre.global;
+        if (!g.ok) throw g.err;
+        globalTerm = g.data;
+      } else {
+        const g = await getDoc(doc(db, "settings", "all-teachers"));
+        if (g.exists()) globalTerm = g.data();
+      }
     } catch (err) {
       console.error("global current-term read failed (per-owner still applies):", err);
     }
@@ -2555,6 +2580,8 @@ function showConnectionError(err) {
     ? "The system is very busy right now. Please try again in a few minutes — your work is safe."
     : code === "unavailable"
     ? "Can't reach the server. Check your internet connection, then refresh this page."
+    : (err && /Taking too long/.test(err.message || ""))
+    ? "Loading is taking too long. Check your connection, then tap Try again."
     : "Something went wrong loading your classes. Please refresh this page and try again.";
   let banner = document.getElementById("conn-error");
   if (!banner) {
@@ -2566,7 +2593,20 @@ function showConnectionError(err) {
     host.insertBefore(banner, host.firstChild);
   }
   banner.textContent = friendly;
+  const retry = document.createElement("button");
+  retry.type = "button";
+  retry.textContent = "Try again";
+  retry.style.cssText = "display:block; margin-top:0.5rem;";
+  retry.addEventListener("click", () => { retry.disabled = true; firstLoad().catch(showConnectionError); });
+  banner.appendChild(retry);
   console.error("Initial load failed:", err);
+}
+
+// First dashboard load: a stalled read (weak signal) shows the retry card after
+// 20s instead of a blank page. A late success removes the card again.
+async function firstLoad() {
+  await withTimeout(loadEverything(), 20000);
+  document.getElementById("conn-error")?.remove();
 }
 
 guardPage("student").then(async (user) => {
@@ -2610,10 +2650,14 @@ guardPage("student").then(async (user) => {
   try {
     if (viewCtx) {
       // Read-only preview: never consume the real student's invites/join code.
-      await loadEverything();
+      await firstLoad();
     } else {
-      await applyPendingInvites();
-      await loadEverything();
+      // Invite check and first load start together; reload only when an invite
+      // actually created an enrollment. An invite failure must not blank the
+      // dashboard, so it is logged and treated as "nothing enrolled".
+      const invitesP = applyPendingInvites().catch((err) => { console.error("invite check failed:", err); return false; });
+      await firstLoad();
+      if (await invitesP) await firstLoad();
       applyPendingJoinCode();
     }
   } catch (err) {
