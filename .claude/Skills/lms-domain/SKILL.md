@@ -31,7 +31,7 @@ these two paths, never a raw upload to a server.
 
 ## Grading is one raw score, not a rubric
 
-Deliberate simplification (see `CLAUDE.md`'s Known v1 limitations):
+Deliberate simplification (see `docs/design-notes/` (index in `CLAUDE.md`)):
 teacher grades a submission with a single number out of the
 assignment's `totalPoints`. An optional Drive/Docs rubric-reference
 link may sit alongside the score box for the teacher's own reference —

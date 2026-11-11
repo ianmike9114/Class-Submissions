@@ -5,8 +5,8 @@ description: Modify the Class Submissions app — student link submission, join-
 
 # Student LMS routing
 
-Read `CLAUDE.md` in repo root first — architecture, conventions, known
-v1 limitations. This file is full task-map (change → exact
+Read `CLAUDE.md` in repo root first — architecture, conventions, and the
+design-notes index (`docs/design-notes/`). This file is full task-map (change → exact
 file/function) and Firestore data model — jump straight to named
 file(s) below, no need to re-derive either from code each session.
 

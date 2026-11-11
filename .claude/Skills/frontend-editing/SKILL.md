@@ -18,7 +18,8 @@ edits small, correct, and low-token.
 | CSS / markup pattern (cards, buttons, tables, details, status, embeds, tokens) | `DESIGN_SYSTEM.md` — **read this, not `css/style.css`** |
 | Firestore fields / rules / multi-tenant isolation | `firestore-database` skill |
 | Token/session workflow (Plan Mode, agents) | `session-efficiency` skill |
-| Architecture, constraints, v1 limitations | `CLAUDE.md` |
+| Architecture, constraints | `CLAUDE.md` |
+| Deliberate limitations, feature decisions | `docs/design-notes/` (index in `CLAUDE.md`) |
 
 If a routed doc answers it, you're done — don't open the source file to
 re-confirm what the doc already states.

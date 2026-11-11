@@ -173,7 +173,7 @@ Shipped in PR: <PR link once merged-ready>
 
 - **Bug** → `[[tagalog-error-triage]]` (shares the error-code table +
   output pattern) and `[[student-lms]]` (where-to-edit map). Check
-  `CLAUDE.md` "Known v1 limitations" first — many "problems" are deliberate
+  `CLAUDE.md` "Design notes" table and the matching `docs/design-notes/` file first — many "problems" are deliberate
   documented behavior.
 - **Design / UX ask about material creation or teacher flow** →
   `[[classroom-material-flow]]` (the Classroom-style playbook this critique

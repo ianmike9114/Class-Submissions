@@ -75,7 +75,7 @@ do **not** duplicate it here:
 - **`.claude/Skills/student-lms/SKILL.md`** — full task map (change →
   exact file/function) and Firestore data model. This is the source of
   truth for *where* to edit.
-- **`CLAUDE.md`** — "Known v1 limitations." Check this **before** calling
+- **`CLAUDE.md`** — "Design notes" table, then the matching `docs/design-notes/` file. Check this **before** calling
   something a bug: many reported "problems" are deliberate documented
   behavior (lists aren't real-time so they don't auto-refresh; deleting a
   subject/section/assignment cascades; removed enrollment doesn't restore

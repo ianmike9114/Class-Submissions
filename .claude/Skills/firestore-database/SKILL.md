@@ -63,7 +63,7 @@ rather than filtering ad hoc per screen.
 on read). This is accepted, not accidental: a fully locked-down version
 would need splitting join-code lookup into a separate world-readable
 `joinCodes` collection. Don't tighten this without flagging it first —
-see `CLAUDE.md`'s Known v1 limitations.
+see `docs/design-notes/` (index in `CLAUDE.md`).
 
 ## Document size budget
 
