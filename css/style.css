@@ -331,7 +331,7 @@ button.badge-link:hover { text-decoration: underline; filter: brightness(0.96); 
 .notif-dropdown .notif-group-label {
   padding: 0.4rem 0.75rem 0.2rem;
   font-weight: 700;
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   color: #6b7280;
   text-transform: uppercase;
 }
@@ -888,7 +888,7 @@ details.card summary::marker { color: var(--blue); }
   gap: 0.2rem;
   padding: 0.1rem 0.5rem;
   border-radius: 9999px;
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   font-weight: 600;
   line-height: 1.5;
   white-space: nowrap;
@@ -1009,7 +1009,7 @@ details.outline-lesson > summary.outline-lesson-head {
   gap: 0.5rem;
   margin: 0;
   padding: 0.3rem 0.25rem;
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -1043,7 +1043,7 @@ details.outline-lesson > summary.outline-lesson-head {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.outline-item-meta { font-size: 0.72rem; color: #6b7280; }
+.outline-item-meta { font-size: 0.8rem; color: #6b7280; }
 
 /* Up next: fills the empty detail panel. */
 .up-next-list { display: flex; flex-direction: column; gap: 0.4rem; }
@@ -1187,8 +1187,24 @@ body.student-page > header button.secondary:hover { background: rgba(255, 255, 2
 }
 .scores-matrix button.link-button:hover { text-decoration: underline; }
 /* Keep the student name visible while scrolling across many activities. */
-.scores-matrix tbody td:nth-child(2) { position: sticky; left: 0; background: white; }
+.scores-matrix tbody td:nth-child(2) { position: sticky; left: var(--sm-col1, 0px); background: white; z-index: 1; }
+.scores-matrix tbody td:nth-child(1) { position: sticky; left: 0; background: white; z-index: 1; }
 .scores-matrix tbody tr.gender-group td { position: static; }
+/* The table is its own scroll box (.records-grid is display:block), so cap its
+   height: header rows + the # / Student columns stay pinned while scrolling.
+   --sm-h1 (first header row height) and --sm-col1 (# column width) are
+   measured by renderActivityScores; the fallbacks keep it usable without JS. */
+.scores-matrix .records-grid { max-height: 70vh; overflow: auto; }
+.scores-matrix thead tr:first-child th { position: sticky; top: 0; z-index: 3; }
+.scores-matrix thead tr:nth-child(2) th { position: sticky; top: var(--sm-h1, 2.4rem); z-index: 3; }
+.scores-matrix thead tr:first-child th:nth-child(1) { left: 0; z-index: 5; }
+.scores-matrix thead tr:first-child th:nth-child(2) { left: var(--sm-col1, 0px); z-index: 5; }
+@media (max-width: 640px) {
+  /* Phone: pin only the name (the # column would eat a third of the width). */
+  .scores-matrix tbody td:nth-child(1), .scores-matrix thead tr:first-child th:nth-child(1) { position: static; }
+  .scores-matrix tbody td:nth-child(2), .scores-matrix thead tr:first-child th:nth-child(2) { left: 0; }
+  .scores-matrix .records-grid { max-height: 65vh; }
+}
 /* Manual exam score boxes (Summative 1/2, Term Exam) in the scores matrix. */
 .scores-matrix input.manual-score {
   width: 4.5rem;
@@ -1483,3 +1499,38 @@ body.quiz-open { overflow: hidden; }
 /* "New work from your teacher" notice (js/student.js, shown on coming back to
    the page) - same look as the banner, but inside <main>. */
 #new-work-notice { margin: 0 0 0.75rem; }
+
+/* Toasts (js/ui-feedback.js): non-blocking success confirmations. */
+.toast-region {
+  position: fixed;
+  left: 50%;
+  bottom: 1rem;
+  transform: translateX(-50%);
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: center;
+  width: max-content;
+  max-width: calc(100vw - 2rem);
+  pointer-events: none;
+}
+.toast {
+  background: var(--blue);
+  color: #fff;
+  padding: 0.6rem 1rem;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-hover);
+  font-size: 0.95rem;
+  text-align: center;
+  opacity: 1;
+  transition: opacity 0.25s;
+}
+.toast.toast-out { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+
+/* Touch devices: 44px minimum tap targets (WCAG 2.5.5). */
+@media (pointer: coarse) {
+  .scores-matrix input.manual-score,
+  .material-viewer-head a.material-download { min-height: 44px; }
+}
