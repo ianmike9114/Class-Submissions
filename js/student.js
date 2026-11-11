@@ -1,4 +1,5 @@
 import { db, ADMIN_EMAIL, isSuperAdmin } from "./firebase-config.js";
+import { normTerm, normYear, displayStudentName, esc, isPastDue } from "./shared.js?v=1";
 import { guardPage, signOutUser } from "./auth.js?v=8";
 import { isLmsApp, isAndroid, wantsApk, setScreenshotBlock, APP_APK_URL, APK_INSTALL_STEPS_HTML } from "./app-bridge.js?v=3";
 import { startApkDownload } from "./pwa-install.js?v=2";
@@ -61,7 +62,6 @@ function showViewAsBanner() {
 // upload already uppercases on save, but the Google-account-name
 // fallback doesn't) - normalize how they *display*, without touching
 // the stored value.
-function displayStudentName(name) { return (name || "").toUpperCase(); }
 
 // Stash immediately at module load: guardPage() below may redirect a signed-
 // out student to index.html for Google Sign-In before this page gets a
@@ -317,9 +317,6 @@ function saveAssignmentsSeen(map) {
 // closes (stays open forever, unchanged from before). Enforcement is only
 // here + the submit-handler guard - a workflow rule, not a security boundary,
 // so no firestore.rules change (see plan).
-function isPastDue(a) {
-  return !!a.dueDate && Date.now() > new Date(a.dueDate + "T23:59:59+08:00").getTime();
-}
 
 // When a regular teacher is previewing a student (viewCtx.owner set), every
 // read must be owner-scoped or firestore.rules denies it - they can only see
@@ -350,13 +347,6 @@ async function getDocsByIds(collectionName, ids) {
 // Term labels are free text on subjects ("2", "Term 2", "2nd") and SY may use
 // a hyphen, en dash, or stray spaces - compare normalized forms so a cosmetic
 // difference never makes a current class look like a past one (or vice versa).
-function normTerm(v) {
-  const m = String(v ?? "").match(/\d+/);
-  return m ? m[0] : String(v ?? "").trim().toLowerCase();
-}
-function normYear(v) {
-  return String(v ?? "").replace(/\s+/g, "").replace(/[‐-―]/g, "-");
-}
 
 // Returns the set of *section* ids that should be hidden from the student,
 // resolved via the section doc (sectionId -> subject). A section is hidden when
@@ -1320,10 +1310,6 @@ function renderNeedsResubmission(assignmentsBySubject, subDocsByAssignment) {
 
 // Minimal HTML-escape for text interpolated into the outline markup
 // (subject/lesson/title come from teacher input).
-function esc(s) {
-  return String(s ?? "").replace(/[&<>"]/g, (c) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-}
 
 // One delegated click handler: open the clicked assignment in the detail
 // panel (the outline is the page's primary navigation now - cards stay
