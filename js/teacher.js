@@ -2244,7 +2244,7 @@ async function openEnrolled(onlySectionId) {
   // their own classes (asOwner below), which firestore.rules allows.
   const canViewAsStudent = !!currentUser;
   const renderEnrolledRow = (r, n) => { const pending = r.status === "pending"; return `<tr><td>${n}</td><td id="enroll-name-${r.id}">${displayStudentName(r.studentName)}${pending ? ' <span class="status-pending">(pending approval)</span>' : ""}${r.leaveRequested ? ' <span class="status-pending">(leave requested)</span>' : ""}</td><td>${r.studentEmail || ""}</td><td>${sectionMap.get(r.sectionId) || ""}</td><td>
-          <button class="secondary" data-edit-enrollment="${r.id}" data-uid="${r.studentUID}" data-raw="${r.studentName}">Edit name</button>
+          <button class="secondary" data-edit-enrollment="${r.id}" data-uid="${r.studentUID}" data-raw="${escAttr(r.studentName || "")}">Edit name</button>
           ${pending ? `<button data-approve-enrollment="${r.id}" title="Approve this student's join request">Approve</button>` : ""}
           ${canViewAsStudent ? `<button class="secondary" data-view-as="${r.studentUID}" data-vemail="${r.studentEmail || ""}" data-vname="${r.studentName || ""}" title="Open this student's page (read-only)">View as</button>` : ""}
           ${r.leaveRequested && !pending ? `<button class="secondary" data-decline-leave="${r.id}" title="Keep this student in the class and clear their leave request">Keep in class</button>` : ""}
@@ -2353,7 +2353,7 @@ async function openEnrolled(onlySectionId) {
       const enrollmentId = b.dataset.editEnrollment;
       const cell = el(`enroll-name-${enrollmentId}`);
       const current = b.dataset.raw;
-      cell.innerHTML = `<input id="edit-enroll-${enrollmentId}" value="${current}" style="margin-bottom:0;" />`;
+      cell.innerHTML = `<input id="edit-enroll-${enrollmentId}" value="${escAttr(current)}" style="margin-bottom:0;" />`;
       const input = el(`edit-enroll-${enrollmentId}`);
       input.focus();
       input.select();
@@ -2506,6 +2506,9 @@ async function openSection(sectionId) {
 // collection and no firestore.rules change - a section update is already
 // owner-scoped.
 function escAttr(s) { return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+// Student-controlled values: only http(s) links become <a href>, only data:image/ becomes <img src>.
+function isHttpUrl(u) { return /^https?:\/\//i.test(String(u || "").trim()); }
+function isImageDataUrl(u) { return /^data:image\//i.test(String(u || "")); }
 
 // Options for a topic <select>: a "no topic" default, every managed topic,
 // and (so an edit never loses a legacy value) the current value if unlisted.
@@ -2741,7 +2744,7 @@ async function renderActivityScores(assignments, sectionId) {
     let earned = 0, possible = 0, missing = 0;
     const cells = ordered.map((a) => {
       const sub = subsByAssignment.get(a.id).get(s.studentUID);
-      const attrs = `class="score-cell" data-score-assignment="${a.id}" data-score-student="${s.studentName || ""}" title="Open ${a.title}"`;
+      const attrs = `class="score-cell" data-score-assignment="${a.id}" data-score-student="${escAttr(s.studentName || "")}" title="Open ${escAttr(a.title)}"`;
       if (!sub) { missing++; return `<td ${attrs}><span class="muted">—</span></td>`; }
       if (sub.status === "published") {
         const score = Number(sub.finalGrade?.score) || 0;
@@ -2765,7 +2768,7 @@ async function renderActivityScores(assignments, sectionId) {
     }).join("");
     const total = possible ? `${earned}/${possible}` : "—";
     const missingCell = `<span class="status-${missing > 0 ? "returned" : "published"}">${missing}</span>`;
-    return `<tr><td>${n}</td><td>${displayStudentName(s.studentName)}${s.status === "pending" ? ' <span class="muted">(pending)</span>' : ""}</td>${cells}${examCells}<td><strong>${total}</strong></td><td>${missingCell}</td></tr>`;
+    return `<tr><td>${n}</td><td>${escAttr(displayStudentName(s.studentName))}${s.status === "pending" ? ' <span class="muted">(pending)</span>' : ""}</td>${cells}${examCells}<td><strong>${total}</strong></td><td>${missingCell}</td></tr>`;
   };
   const bodyRows = blocks.map(([label, list]) =>
     (label ? `<tr class="gender-group"><td colspan="${colCount}">${label}</td></tr>` : "")
@@ -2794,7 +2797,7 @@ async function renderActivityScores(assignments, sectionId) {
             ${groups.map((g) => `<th colspan="${g.items.length}">${g.label}</th>`).join("")}
             <th colspan="${MANUAL_EXAMS.length}">Exams (manual)</th>
             <th rowspan="2">Total</th><th rowspan="2">Missing</th></tr>
-          <tr>${ordered.map((a) => `<th><button type="button" class="link-button" data-score-assignment="${a.id}" title="Open ${a.title}">${a.title}</button><br><span class="muted">${a.totalPoints} pts</span></th>`).join("")}
+          <tr>${ordered.map((a) => `<th><button type="button" class="link-button" data-score-assignment="${a.id}" title="Open ${escAttr(a.title)}">${escAttr(a.title)}</button><br><span class="muted">${a.totalPoints} pts</span></th>`).join("")}
             ${MANUAL_EXAMS.map((ex) => `<th>${ex.label}<br><label class="muted manual-max-label">max
               <input type="number" min="0" step="any" inputmode="decimal" class="manual-score manual-max" data-exam-max="${ex.key}"
                 value="${examMax[ex.key] ?? ""}" placeholder="pts" aria-label="${ex.label} max points" /></label></th>`).join("")}</tr>
@@ -3623,7 +3626,7 @@ function renderBulkDueList(docs) {
     const comp = a.component === "performance" ? "Performance Task" : "Written";
     return `<label style="display:flex; align-items:center; gap:0.4rem; font-weight:normal;">
       <input type="checkbox" class="bulk-due-cb" value="${d.id}" style="width:auto;" />
-      ${a.title} <span class="muted">(${comp}${a.dueDate ? ` — due ${a.dueDate}` : ""})</span>
+      ${escAttr(a.title)} <span class="muted">(${comp}${a.dueDate ? ` — due ${a.dueDate}` : ""})</span>
     </label>`;
   }).join("");
 }
@@ -4240,7 +4243,7 @@ async function generateOfficialAccomplishmentReport(context, canvas, buttonEl) {
 function renderImagesGallery(submissions, assignmentTitle, context) {
   const container = el("images-gallery");
   const withPhotos = submissions
-    .map((s) => ({ name: displayStudentName(s.studentName), photos: s.photoPages?.length ? s.photoPages : s.photoData ? [s.photoData] : [] }))
+    .map((s) => ({ name: displayStudentName(s.studentName), photos: (s.photoPages?.length ? s.photoPages : s.photoData ? [s.photoData] : []).filter(isImageDataUrl) }))
     .filter((s) => s.photos.length > 0);
   if (withPhotos.length === 0) {
     container.innerHTML = "";
@@ -4257,7 +4260,7 @@ function renderImagesGallery(submissions, assignmentTitle, context) {
         <button type="button" id="download-all-photos">Download all as ZIP</button>
         <div class="photo-thumbs" style="margin-top:0.75rem;">
           ${withPhotos.map((s) => s.photos.map((p, i) =>
-            `<button type="button" class="photo-thumb-btn" data-photo-src="${p}" title="${s.name} - page ${i + 1}"><img src="${p}" /></button>`
+            `<button type="button" class="photo-thumb-btn" data-photo-src="${escAttr(p)}" title="${escAttr(s.name)} - page ${i + 1}"><img src="${escAttr(p)}" /></button>`
           ).join("")).join("")}
         </div>
       </div>
@@ -4444,15 +4447,19 @@ async function loadSubmissions(opts = {}) {
     const row = document.createElement("div");
     row.className = "card";
     if (highlight && matchesNameSearch(s.studentName, highlight)) row.dataset.searchHighlight = "true";
-    const embedUrl = toEmbedUrl(s.link);
-    const linkBlock = (s.photoPages && s.photoPages.length > 0)
-      ? `<div class="photo-thumbs">${s.photoPages.map((p, i) => `<button type="button" class="photo-thumb-btn" data-photo-src="${p}" title="page ${i + 1}"><img src="${p}" /></button>`).join("")}</div>`
-      : s.photoData // legacy single-photo submissions made before multi-page support
-        ? `<button type="button" class="photo-thumb-btn" data-photo-src="${s.photoData}" title="submitted photo"><img src="${s.photoData}" class="photo-preview" /></button>`
+    const safeLink = isHttpUrl(s.link) ? String(s.link).trim() : "";
+    const embedUrl = safeLink ? toEmbedUrl(safeLink) : null;
+    const safePages = (s.photoPages || []).filter(isImageDataUrl);
+    const linkBlock = safePages.length > 0
+      ? `<div class="photo-thumbs">${safePages.map((p, i) => `<button type="button" class="photo-thumb-btn" data-photo-src="${escAttr(p)}" title="page ${i + 1}"><img src="${escAttr(p)}" /></button>`).join("")}</div>`
+      : isImageDataUrl(s.photoData) // legacy single-photo submissions made before multi-page support
+        ? `<button type="button" class="photo-thumb-btn" data-photo-src="${escAttr(s.photoData)}" title="submitted photo"><img src="${escAttr(s.photoData)}" class="photo-preview" /></button>`
         : embedUrl
-        ? `<iframe src="${embedUrl}" class="submission-preview"></iframe>
-         <div class="muted"><a href="${s.link}" target="_blank" rel="noopener">open in new tab</a></div>`
-        : `<div class="muted"><a href="${s.link}" target="_blank" rel="noopener">${s.link}</a></div>`;
+        ? `<iframe src="${escAttr(embedUrl)}" class="submission-preview"></iframe>
+         <div class="muted"><a href="${escAttr(safeLink)}" target="_blank" rel="noopener">open in new tab</a></div>`
+        : safeLink
+        ? `<div class="muted"><a href="${escAttr(safeLink)}" target="_blank" rel="noopener">${escAttr(safeLink)}</a></div>`
+        : (s.link ? `<div class="muted">${escAttr(s.link)}</div>` : "");
     // Pasted-code submissions (Code assignments): show the source highlighted,
     // the student's saved run output, and a Run button so the teacher can
     // re-run it here without leaving the review screen.
@@ -4464,8 +4471,8 @@ async function loadSubmissions(opts = {}) {
       : "";
     const quizBlock = quiz ? quizResultHtml(d.id, s, a, quiz) : "";
     row.innerHTML = `
-      <strong id="sub-name-${d.id}">${displayStudentName(s.studentName)}</strong>
-      <button type="button" class="secondary" data-edit-sub-name="${d.id}" data-uid="${s.studentUID}" data-raw="${s.studentName}" style="margin-left:0.4rem;">Edit name</button>
+      <strong id="sub-name-${d.id}">${escAttr(displayStudentName(s.studentName))}</strong>
+      <button type="button" class="secondary" data-edit-sub-name="${d.id}" data-uid="${escAttr(s.studentUID || "")}" data-raw="${escAttr(s.studentName || "")}" style="margin-left:0.4rem;">Edit name</button>
       <span class="status-${s.status}"> — ${s.status}</span>
       ${s.resubmitRequested ? ' <span class="status-pending">redo requested</span>' : ""}
       ${quizBlock}
@@ -4783,15 +4790,19 @@ async function renderPreviousAttempts(submissionId, assignmentId) {
     }
     host.innerHTML = attempts.map((att, i) => {
       const when = att.returnedAt ? new Date(att.returnedAt).toLocaleString() : "";
-      const embedUrl = att.link ? toEmbedUrl(att.link) : null;
-      const work = (att.photoPages && att.photoPages.length > 0)
-        ? `<div class="photo-thumbs">${att.photoPages.map((p, n) => `<a href="${p}" target="_blank" rel="noopener"><img src="${p}" /></a>`).join("")}</div>`
+      const attLink = isHttpUrl(att.link) ? String(att.link).trim() : "";
+      const embedUrl = attLink ? toEmbedUrl(attLink) : null;
+      const attPages = (att.photoPages || []).filter(isImageDataUrl);
+      const work = attPages.length > 0
+        ? `<div class="photo-thumbs">${attPages.map((p, n) => `<a href="${escAttr(p)}" target="_blank" rel="noopener"><img src="${escAttr(p)}" /></a>`).join("")}</div>`
         : att.code
           ? codeBlockHtml(att.code, "java") + (att.codeOutput ? `<div class="muted">Saved output</div><pre class="code-output">${escAttr(att.codeOutput)}</pre>` : "")
           : att.link
             ? (embedUrl
-              ? `<iframe src="${embedUrl}" class="submission-preview"></iframe>`
-              : `<div class="muted"><a href="${att.link}" target="_blank" rel="noopener">${att.link}</a></div>`)
+              ? `<iframe src="${escAttr(embedUrl)}" class="submission-preview"></iframe>`
+              : attLink
+                ? `<div class="muted"><a href="${escAttr(attLink)}" target="_blank" rel="noopener">${escAttr(attLink)}</a></div>`
+                : `<div class="muted">${escAttr(att.link)}</div>`)
             : `<div class="muted">(no work saved)</div>`;
       return `<div class="card" style="margin-bottom:0.5rem;">
         <strong>Attempt ${attempts.length - i}</strong> <span class="muted">returned ${when}</span>
@@ -4835,7 +4846,7 @@ async function openReview(submissionId) {
       ${capNote ? `<div class="status-returned" data-cap-note style="margin-bottom:0.3rem;">${capNote}</div>` : ""}
       <input type="number" id="score-${submissionId}" min="0" max="${cap}" value="${draftScore}" />
       <label>Feedback</label>
-      <textarea id="feedback-${submissionId}" rows="3">${draft.feedback || ""}</textarea>
+      <textarea id="feedback-${submissionId}" rows="3">${escAttr(draft.feedback || "")}</textarea>
       <button data-publish="${submissionId}">Publish to student</button>
       ${isQuiz ? `<div class="muted" style="margin-top:0.4rem; font-size:0.85em;">Score is pre-filled from the auto-check (including any answers you ticked "Accept"). Publish shows the score to the student - correct answers stay hidden.</div>`
         : `<button type="button" class="secondary" data-return="${submissionId}">Return for revision</button>

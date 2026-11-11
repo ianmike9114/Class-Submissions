@@ -135,9 +135,13 @@ service cloud.firestore {
 
     // ---------- submissions (grades/links - fully owner-scoped on read) ----------
     match /submissions/{submissionId} {
+      // A new submission must start as pending and carry no grading fields,
+      // so a student cannot self-publish a score.
       allow create: if isSignedIn()
                     && request.resource.data.studentUID == request.auth.uid
-                    && request.resource.data.ownerEmail is string;
+                    && request.resource.data.ownerEmail is string
+                    && request.resource.data.status == "pending"
+                    && !request.resource.data.keys().hasAny(['finalGrade', 'returnCount', 'publishedAt', 'aiDraft']);
       // The owner branch is spelled out as a DIRECT
       // `resource.data.ownerEmail == request.auth.token.email` comparison
       // rather than via canActAsOwner(). Firestore's LIST/query analyzer only
@@ -295,9 +299,11 @@ service cloud.firestore {
                   && (resource.data.studentUID == request.auth.uid
                       || isSuperAdmin()
                       || (isGrantedTeacher() && resource.data.ownerEmail == request.auth.token.email));
+      // manualScores (teacher-typed exam scores) can never be set at create.
       allow create: if isSignedIn()
                     && request.resource.data.studentUID == request.auth.uid
-                    && request.resource.data.ownerEmail is string;
+                    && request.resource.data.ownerEmail is string
+                    && !request.resource.data.keys().hasAny(['manualScores']);
       // Students may self-correct a garbled Google display name, and may
       // flag a request to leave the class (leaveRequested) - but may only
       // ever touch those two fields on their own enrollment. Everything
