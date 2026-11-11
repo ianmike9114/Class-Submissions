@@ -1,4 +1,5 @@
 import { db, ADMIN_EMAIL, isSuperAdmin } from "./firebase-config.js";
+import { normTerm, normYear, displayStudentName, escAttr, matchesNameSearch, parseManualNumber } from "./shared.js?v=1";
 import { guardPage, signOutUser } from "./auth.js?v=7";
 import {
   collection, addDoc, doc, setDoc, updateDoc, deleteDoc, deleteField, writeBatch, getDoc, getDocs, getCountFromServer, query, where, serverTimestamp, increment,
@@ -167,18 +168,10 @@ function el(id) { return document.getElementById(id); }
 // upload already uppercases on save, but the Google-account-name
 // fallback and submissions.studentName don't) - normalize how they
 // *display* everywhere, without touching the stored value.
-function displayStudentName(name) { return (name || "").toUpperCase(); }
 
 // Word-by-word match, order-independent and punctuation-insensitive, so
 // "narvasa lhian" matches a roster name stored as "Narvasa, Lhian M." -
 // every typed word just has to appear somewhere in the name.
-function matchesNameSearch(name, query) {
-  const words = (s) => (s || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
-  const queryWords = words(query);
-  if (queryWords.length === 0) return true;
-  const nameWords = words(name);
-  return queryWords.every((qw) => nameWords.some((nw) => nw.includes(qw)));
-}
 
 // Submitted photos are inline data: URLs (no Storage) - opening one with
 // <a href target="_blank"> navigates the browser straight to a raw
@@ -1561,13 +1554,6 @@ async function getAdminTermSetting() {
 
 // Term labels are free text on older subjects ("2", "Term 2") and SY may use an
 // en dash or spaces - compare normalized forms (same helpers as js/student.js).
-function normTerm(v) {
-  const m = String(v ?? "").match(/\d+/);
-  return m ? m[0] : String(v ?? "").trim().toLowerCase();
-}
-function normYear(v) {
-  return String(v ?? "").replace(/\s+/g, "").replace(/[‐-―]/g, "-");
-}
 function termIsSet(t) { return !!(t && t.currentSchoolYear && t.currentTerm); }
 
 // Reflect the current setting in the header label + prefill the setter inputs.
@@ -2505,7 +2491,6 @@ async function openSection(sectionId) {
 // the section's ordered topics array is what sequences the outline. No new
 // collection and no firestore.rules change - a section update is already
 // owner-scoped.
-function escAttr(s) { return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
 
 // Options for a topic <select>: a "no topic" default, every managed topic,
 // and (so an edit never loses a legacy value) the current value if unlisted.
@@ -2672,12 +2657,6 @@ window.addEventListener("beforeunload", (e) => {
   }
 });
 
-function parseManualNumber(raw) {
-  const t = String(raw).trim();
-  if (t === "") return null;
-  const n = Number(t);
-  return Number.isFinite(n) && n >= 0 ? n : NaN;
-}
 
 function flashSaveState(input, ok) {
   input.classList.remove("saved", "save-error");
