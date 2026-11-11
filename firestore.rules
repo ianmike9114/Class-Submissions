@@ -140,6 +140,11 @@ service cloud.firestore {
       allow create: if isSignedIn()
                     && request.resource.data.studentUID == request.auth.uid
                     && request.resource.data.ownerEmail is string
+                    // One doc per student per assignment: a second create hits the
+                    // same id (= update, which is field-limited), so a returned
+                    // student can't dodge the returnCount penalty with a fresh doc.
+                    && request.resource.data.assignmentId is string
+                    && submissionId == request.resource.data.assignmentId + '_' + request.auth.uid
                     && request.resource.data.status == "pending"
                     && !request.resource.data.keys().hasAny(['finalGrade', 'returnCount', 'publishedAt', 'aiDraft']);
       // The owner branch is spelled out as a DIRECT

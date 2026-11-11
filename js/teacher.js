@@ -4559,6 +4559,14 @@ async function loadSubmissions(opts = {}) {
   const sortedDocs = ownedDocs.slice().sort(
     (a, b) => (STATUS_PRIORITY[a.data().status] ?? 4) - (STATUS_PRIORITY[b.data().status] ?? 4)
   );
+  // Older submissions have random ids, so one student could end up with two
+  // docs for this assignment (a fresh one carries no returnCount). New ones
+  // use assignmentId_uid ids (firestore.rules), so only legacy data can match.
+  const perStudent = new Map();
+  ownedDocs.forEach((d) => {
+    const uid = d.data().studentUID;
+    if (uid) perStudent.set(uid, (perStudent.get(uid) || 0) + 1);
+  });
   sortedDocs.forEach((d) => {
     const s = d.data();
     if (filter !== "all" && s.status !== filter) return;
@@ -4593,6 +4601,7 @@ async function loadSubmissions(opts = {}) {
       <button type="button" class="secondary" data-edit-sub-name="${d.id}" data-uid="${escAttr(s.studentUID || "")}" data-raw="${escAttr(s.studentName || "")}" style="margin-left:0.4rem;">Edit name</button>
       <span class="status-${escAttr(s.status)}"> — ${escAttr(s.status)}</span>
       ${s.resubmitRequested ? ' <span class="status-pending">redo requested</span>' : ""}
+      ${perStudent.get(s.studentUID) > 1 ? ' <span class="status-returned" title="This student has more than one submission for this assignment. Check the older one for a late-resubmission penalty (returned count) before grading.">⚠ duplicate submission</span>' : ""}
       ${quizBlock}
       ${quiz ? "" : codeBlock}
       ${quiz ? "" : linkBlock}
