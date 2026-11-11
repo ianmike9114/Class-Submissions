@@ -1747,6 +1747,14 @@ function wirePhotoInput(input) {
   });
 }
 
+// One submission doc per student per assignment: the id is derived from both,
+// and firestore.rules requires exactly this id on create. A second "create"
+// then lands on the existing doc (an update, which the rules limit), so a
+// returned student can't dodge the late-resubmission penalty with a fresh doc.
+function submissionDocId(assignmentId) {
+  return `${assignmentId}_${currentUser.uid}`;
+}
+
 function wireSubmitForm(form) {
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -1796,7 +1804,7 @@ function wireSubmitForm(form) {
         // ownerEmail - those belong to the super admin (the one teacher
         // that existed then).
         const assignmentOwnerEmail = assignmentsById.get(assignmentId)?.ownerEmail || ADMIN_EMAIL;
-        await addDoc(collection(db, "submissions"), {
+        await setDoc(doc(db, "submissions", submissionDocId(assignmentId)), {
           assignmentId,
           studentUID: currentUser.uid,
           studentName: currentUser.displayName || currentUser.email,
@@ -2376,7 +2384,7 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
     const ids = new Set(questions.map((x) => x.id));
     const quizAnswers = Object.fromEntries(Object.entries(st.answers).filter(([k, v]) => ids.has(k) && v !== "" && v !== undefined));
     try {
-      await addDoc(collection(db, "submissions"), {
+      await setDoc(doc(db, "submissions", submissionDocId(assignmentId)), {
         assignmentId,
         studentUID: currentUser.uid,
         studentName: currentUser.displayName || currentUser.email,

@@ -188,14 +188,16 @@ describe("submissions: multi-teacher isolation + student self-scope", () => {
   it("a student can create a submission only for their own uid", async () => {
     const db = ctxFor("student9", "s9@x.com");
     await assertSucceeds(
-      setDoc(doc(db, "submissions", "new9"), {
+      setDoc(doc(db, "submissions", "a1_student9"), {
+        assignmentId: "a1",
         studentUID: "student9",
         ownerEmail: TEACHER_A,
         status: "pending",
       })
     );
     await assertFails(
-      setDoc(doc(db, "submissions", "spoof9"), {
+      setDoc(doc(db, "submissions", "a1_someone-else"), {
+        assignmentId: "a1",
         studentUID: "someone-else",
         ownerEmail: TEACHER_A,
         status: "pending",
@@ -205,30 +207,58 @@ describe("submissions: multi-teacher isolation + student self-scope", () => {
 });
 
 describe("submissions: create cannot carry grading state", () => {
-  const base = { studentUID: "student9", ownerEmail: TEACHER_A };
+  const base = { studentUID: "student9", ownerEmail: TEACHER_A, assignmentId: "a1" };
   it("denies create with status published", async () => {
     const db = ctxFor("student9", "s9@x.com");
-    await assertFails(setDoc(doc(db, "submissions", "g1"), { ...base, status: "published" }));
+    await assertFails(setDoc(doc(db, "submissions", "a1_student9"), { ...base, status: "published" }));
   });
   it("denies create with finalGrade", async () => {
     const db = ctxFor("student9", "s9@x.com");
-    await assertFails(setDoc(doc(db, "submissions", "g2"), { ...base, status: "pending", finalGrade: { score: 100 } }));
+    await assertFails(setDoc(doc(db, "submissions", "a1_student9"), { ...base, status: "pending", finalGrade: { score: 100 } }));
   });
   it("denies create with returnCount/publishedAt/aiDraft or missing status", async () => {
     const db = ctxFor("student9", "s9@x.com");
-    await assertFails(setDoc(doc(db, "submissions", "g3"), { ...base, status: "pending", returnCount: 0 }));
-    await assertFails(setDoc(doc(db, "submissions", "g4"), { ...base, status: "pending", publishedAt: 1 }));
-    await assertFails(setDoc(doc(db, "submissions", "g5"), { ...base, status: "pending", aiDraft: {} }));
-    await assertFails(setDoc(doc(db, "submissions", "g6"), { ...base }));
+    await assertFails(setDoc(doc(db, "submissions", "a1_student9"), { ...base, status: "pending", returnCount: 0 }));
+    await assertFails(setDoc(doc(db, "submissions", "a1_student9"), { ...base, status: "pending", publishedAt: 1 }));
+    await assertFails(setDoc(doc(db, "submissions", "a1_student9"), { ...base, status: "pending", aiDraft: {} }));
+    await assertFails(setDoc(doc(db, "submissions", "a1_student9"), { ...base }));
   });
   it("allows a normal pending create (link, photos, quiz fields)", async () => {
     const db = ctxFor("student9", "s9@x.com");
     await assertSucceeds(
-      setDoc(doc(db, "submissions", "g7"), {
+      setDoc(doc(db, "submissions", "a1_student9"), {
         ...base, status: "pending", assignmentId: "a1", link: "https://x.y", code: "", codeOutput: "",
         photoPages: [], quizAnswers: {}, quizServed: [], quizLog: {}, submittedAt: 1,
       })
     );
+  });
+});
+
+describe("submissions: one doc per student per assignment (penalty-dodge guard)", () => {
+  const base = { studentUID: "student9", ownerEmail: TEACHER_A, assignmentId: "a1", status: "pending" };
+  it("denies a random-id create", async () => {
+    const db = ctxFor("student9", "s9@x.com");
+    await assertFails(setDoc(doc(db, "submissions", "randomId123"), base));
+  });
+  it("denies an id built for another student or assignment", async () => {
+    const db = ctxFor("student9", "s9@x.com");
+    await assertFails(setDoc(doc(db, "submissions", "a1_student1"), base));
+    await assertFails(setDoc(doc(db, "submissions", "a2_student9"), base));
+  });
+  it("denies a create with no assignmentId", async () => {
+    const db = ctxFor("student9", "s9@x.com");
+    const { assignmentId, ...noAsg } = base;
+    await assertFails(setDoc(doc(db, "submissions", "a1_student9"), noAsg));
+  });
+  it("a returned student cannot reset returnCount by re-creating the same id", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "submissions", "a1_student9"), { ...base, status: "returned", returnCount: 1 });
+    });
+    const db = ctxFor("student9", "s9@x.com");
+    // setDoc on an existing id is an update: it must be denied (it would drop returnCount).
+    await assertFails(setDoc(doc(db, "submissions", "a1_student9"), base));
+    // Editing in place still works and the count is untouched.
+    await assertSucceeds(updateDoc(doc(db, "submissions", "a1_student9"), { link: "https://x.y", status: "pending", submittedAt: 2 }));
   });
 });
 
