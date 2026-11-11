@@ -13,7 +13,7 @@ import {
 } from "./quiz.js?v=7";
 import { getEmailConfig, saveEmailConfig, notifySection } from "./notify.js";
 import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=3";
-import { loadWorkbook, readExamScores, pickBestSheet } from "./class-record.js";
+import { loadWorkbook, readExamScores, pickBestSheet } from "./class-record.js?v=1";
 import { runJava } from "./runner.js";
 import { setScreenshotBlock } from "./app-bridge.js?v=3";
 import { codeBlockHtml, highlightWithin } from "./highlight.js";
@@ -606,13 +606,14 @@ async function computeMissingWorkCounts(shownSubjectIds) {
   ]);
   const sectionToSubject = new Map(sectionsSnap.docs.map((d) => [d.id, d.data().subjectId]));
 
-  const now = new Date();
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  // Manila "today" (UTC+8), matching js/student.js isPastDue: work is open
+  // through the whole due date, so only dueDate < today counts as missing.
+  const today = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
 
   // Past-due graded assignments in subjects the grid shows.
   const pastDue = assignSnap.docs.filter((d) => {
     const a = d.data();
-    return ownedByViewAs(a) && a.type !== "material" && a.dueDate && a.dueDate <= today
+    return ownedByViewAs(a) && a.type !== "material" && a.dueDate && a.dueDate < today
       && shownSubjectIds.has(sectionToSubject.get(a.sectionId));
   });
   // Approved-enrolled headcount per section (a pending join isn't a live
@@ -2111,8 +2112,31 @@ async function genUniqueJoinCode() {
   return genJoinCode() + genJoinCode().slice(0, 2);
 }
 
+// Run an async write with the button disabled; on failure tell the teacher in
+// plain words and restore the button (label too) instead of leaving it stuck.
+// Returns true when fn finished without throwing.
+async function runGuarded(btn, failMsg, fn) {
+  const label = btn ? btn.textContent : "";
+  if (btn) btn.disabled = true;
+  try {
+    await fn();
+    return true;
+  } catch (err) {
+    console.error(failMsg, err);
+    alert(failMsg + (err && err.message ? " (" + err.message + ")" : ""));
+    return false;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+  }
+}
+
 el("add-section-form").addEventListener("submit", async (e) => {
   e.preventDefault();
+  const form = e.target;
+  const submitBtn = form.querySelector('button[type="submit"]');
+  if (submitBtn && submitBtn.disabled) return; // double-click guard
+  if (submitBtn) submitBtn.disabled = true;
+  try {
   const joinCode = await genUniqueJoinCode();
   const ref = await addDoc(collection(db, "sections"), {
     subjectId: state.subjectId,
@@ -2130,8 +2154,13 @@ el("add-section-form").addEventListener("submit", async (e) => {
     await setDoc(doc(db, "joinCodes", joinCode), { sectionId: ref.id, ownerEmail: state.viewAsEmail });
   } catch (_) { /* pointer is best-effort; backfill + join fallback cover it */ }
   alert("Section added.");
-  e.target.reset();
+  form.reset();
   loadSections();
+  } catch (err) {
+    alert("Couldn't add the section: " + (err && err.message ? err.message : "please try again."));
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+  }
 });
 
 // One-time admin migration: create a joinCodes pointer for every EXISTING
@@ -2207,11 +2236,12 @@ async function openEnrolled(onlySectionId) {
     return;
   }
 
-  // Firestore 'in' queries cap at 30 - fine for a solo-teacher class load.
-  const enrollSnap = await getDocs(
-    ownerScopedQuery("enrollments", where("sectionId", "in", sectionIds.slice(0, 30)))
-  );
-  const rows = enrollSnap.docs
+  // Firestore 'in' queries cap at 30 values - chunk so no section is dropped.
+  const enrollChunks = [];
+  for (let i = 0; i < sectionIds.length; i += 30) enrollChunks.push(sectionIds.slice(i, i + 30));
+  const enrollSnaps = await Promise.all(enrollChunks.map((ids) =>
+    getDocs(ownerScopedQuery("enrollments", where("sectionId", "in", ids)))));
+  const rows = enrollSnaps.flatMap((snap) => snap.docs)
     .filter((d) => ownedByViewAs(d.data()))
     .map((d) => ({ id: d.id, ...d.data() }))
     .sort((a, b) =>
@@ -2379,8 +2409,11 @@ async function openEnrolled(onlySectionId) {
         : "Remove this student's enrollment? This frees their roster name for someone else to claim, and they'd need to join again with the code.";
       const ok = confirm(msg);
       if (!ok) return;
-      await deleteDoc(doc(db, "enrollments", b.dataset.removeEnrollment));
-      invalidateStructure(); // cached names/headcounts changed
+      const done = await runGuarded(b, "Couldn't remove the student. Please try again.", async () => {
+        await deleteDoc(doc(db, "enrollments", b.dataset.removeEnrollment));
+        invalidateStructure(); // cached names/headcounts changed
+      });
+      if (!done) return;
       alert("Removed.");
       openEnrolled(onlySectionId);
       refreshNotifications();
@@ -2672,6 +2705,8 @@ window.addEventListener("beforeunload", (e) => {
   }
 });
 
+// Sums of decimal scores (e.g. 0.1 + 0.2) pick up float noise; round for display.
+function roundPts(n) { return Math.round(n * 100) / 100; }
 function parseManualNumber(raw) {
   const t = String(raw).trim();
   if (t === "") return null;
@@ -2763,7 +2798,7 @@ async function renderActivityScores(assignments, sectionId) {
         data-exam="${ex.key}" data-enrollment="${s.enrollmentId}" value="${v ?? ""}"
         aria-label="${ex.label} score" /></td>`;
     }).join("");
-    const total = possible ? `${earned}/${possible}` : "—";
+    const total = possible ? `${roundPts(earned)}/${roundPts(possible)}` : "—";
     const missingCell = `<span class="status-${missing > 0 ? "returned" : "published"}">${missing}</span>`;
     return `<tr><td>${n}</td><td>${displayStudentName(s.studentName)}${s.status === "pending" ? ' <span class="muted">(pending)</span>' : ""}</td>${cells}${examCells}<td><strong>${total}</strong></td><td>${missingCell}</td></tr>`;
   };
@@ -2845,7 +2880,7 @@ async function renderActivityScores(assignments, sectionId) {
       if (v !== null && !Number.isNaN(v) && max !== null) { earned += v; possible += max; }
     });
     const totalCell = row.children[row.children.length - 2];
-    if (totalCell) totalCell.innerHTML = `<strong>${possible ? `${earned}/${possible}` : "—"}</strong>`;
+    if (totalCell) totalCell.innerHTML = `<strong>${possible ? `${roundPts(earned)}/${roundPts(possible)}` : "—"}</strong>`;
   }
 
   function invalidReason(input) {
@@ -2879,7 +2914,13 @@ async function renderActivityScores(assignments, sectionId) {
 
   saveBtn.addEventListener("click", async () => {
     const dirty = dirtyInputs();
-    const bad = dirty.filter(invalidReason);
+    // A lowered max can leave SAVED scores in that column above it, and those
+    // boxes aren't dirty - so when a max changed, check its whole column too.
+    const toCheck = new Set(dirty);
+    dirty.forEach((i) => {
+      if (i.dataset.examMax) box.querySelectorAll(`input[data-exam="${i.dataset.examMax}"]`).forEach((c) => toCheck.add(c));
+    });
+    const bad = [...toCheck].filter(invalidReason);
     if (bad.length) {
       bad[0].focus();
       alert(`${bad.length} box${bad.length === 1 ? " has" : "es have"} a wrong value (${invalidReason(bad[0])}). Fix the red box${bad.length === 1 ? "" : "es"} first.`);
@@ -2990,6 +3031,10 @@ function wireExamImport({ box, students, roster, sectionId, examMax, rerender })
       ${bad.length ? `<p class="muted">Rows marked &#9888; are skipped - type those scores in the table below by hand.</p>` : ""}`;
     preview.querySelector("#exam-import-save")?.addEventListener("click", async (e) => {
       const btn = e.currentTarget;
+      // The re-render after saving rebuilds the whole matrix, which would
+      // silently throw away scores typed by hand but not yet saved.
+      const unsavedTyped = box.querySelectorAll(".scores-matrix input.dirty").length;
+      if (unsavedTyped > 0 && !confirm(`You have ${unsavedTyped} typed score${unsavedTyped === 1 ? "" : "s"} that ${unsavedTyped === 1 ? "isn't" : "aren't"} saved yet. Importing will discard ${unsavedTyped === 1 ? "it" : "them"}. Import anyway?`)) return;
       btn.disabled = true;
       btn.textContent = "Saving...";
       try {
@@ -3210,9 +3255,11 @@ async function loadAssignments() {
         assignmentTitles.get(b.dataset.deleteAssignment) || ""
       );
       if (!ok) return;
-      b.disabled = true;
-      await cascadeDeleteAssignment(b.dataset.deleteAssignment);
-      await touchSection(state.sectionId, { deleted: [b.dataset.deleteAssignment] });
+      const done = await runGuarded(b, "Couldn't delete the assignment. Please try again.", async () => {
+        await cascadeDeleteAssignment(b.dataset.deleteAssignment);
+        await touchSection(state.sectionId, { deleted: [b.dataset.deleteAssignment] });
+      });
+      if (!done) return;
       alert("Deleted.");
       loadAssignments();
     }));
@@ -3583,26 +3630,38 @@ el("add-assignment-form").addEventListener("submit", async (e) => {
     payload.quiz = quizData.quiz;
     payload.totalPoints = quizData.totalPoints;
   }
-  const ref = await addDoc(collection(db, "assignments"), payload);
-  await touchSection(payload.sectionId, { changed: [ref.id] });
-  if (quizData) {
-    // Answer key in its own owner-only doc. If that write is refused (e.g.
-    // the quizKeys rule isn't deployed yet), don't leave behind a quiz with
-    // no key - remove the assignment and say why.
-    try {
-      await setDoc(doc(db, "quizKeys", ref.id), { assignmentId: ref.id, ownerEmail: state.viewAsEmail, answers: quizData.answers });
-    } catch (err) {
-      console.error(err);
-      await deleteDoc(ref).catch(() => {});
-      await touchSection(payload.sectionId, { deleted: [ref.id] });
-      alert("Couldn't save the quiz answer key, so the quiz was not created. (Are the latest Firestore rules deployed?) " + err.message);
-      return;
+  // Disable the submit button across the awaits so a double-click can't create
+  // the same assignment twice.
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  if (submitBtn && submitBtn.disabled) return;
+  if (submitBtn) submitBtn.disabled = true;
+  try {
+    const ref = await addDoc(collection(db, "assignments"), payload);
+    await touchSection(payload.sectionId, { changed: [ref.id] });
+    if (quizData) {
+      // Answer key in its own owner-only doc. If that write is refused (e.g.
+      // the quizKeys rule isn't deployed yet), don't leave behind a quiz with
+      // no key - remove the assignment and say why.
+      try {
+        await setDoc(doc(db, "quizKeys", ref.id), { assignmentId: ref.id, ownerEmail: state.viewAsEmail, answers: quizData.answers });
+      } catch (err) {
+        console.error(err);
+        await deleteDoc(ref).catch(() => {});
+        await touchSection(payload.sectionId, { deleted: [ref.id] });
+        alert("Couldn't save the quiz answer key, so the quiz was not created. (Are the latest Firestore rules deployed?) " + err.message);
+        return;
+      }
     }
+    resetCreateType();
+    loadAssignments();
+    if (type === "material") { alert("Material added."); return; }
+    await notifyOnAssignmentCreate(payload);
+  } catch (err) {
+    console.error(err);
+    alert("Couldn't add it: " + (err && err.message ? err.message : "please try again."));
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
   }
-  resetCreateType();
-  loadAssignments();
-  if (type === "material") { alert("Material added."); return; }
-  await notifyOnAssignmentCreate(payload);
 });
 
 // Bulk-set one due date across the assignments the teacher ticks in the open
@@ -3643,9 +3702,15 @@ el("bulk-due-apply").addEventListener("click", async () => {
   if (!confirm(`Set due date to ${date} for ${ids.length} assignment(s)?`)) return;
 
   statusEl.textContent = "Applying...";
-  await Promise.all(ids.map((id) => updateDoc(doc(db, "assignments", id), { dueDate: date })));
-  await touchSection(state.sectionId, { changed: ids });
-  statusEl.textContent = `Set ${date} on ${ids.length} assignment(s).`;
+  // allSettled: one failed write must not hide which others did save, and
+  // touchSection must only be told about the ids that actually changed.
+  const results = await Promise.allSettled(ids.map((id) => updateDoc(doc(db, "assignments", id), { dueDate: date })));
+  const okIds = ids.filter((_, i) => results[i].status === "fulfilled");
+  const failed = ids.length - okIds.length;
+  if (okIds.length) await touchSection(state.sectionId, { changed: okIds }).catch((err) => console.error(err));
+  statusEl.textContent = failed
+    ? `Set ${date} on ${okIds.length} of ${ids.length} assignment(s). ${failed} could not be saved - tick them and try again.`
+    : `Set ${date} on ${ids.length} assignment(s).`;
   loadAssignments();
 });
 
@@ -3817,8 +3882,12 @@ el("edit-assignment-form").addEventListener("submit", async (e) => {
       return;
     }
   }
-  await updateDoc(doc(db, "assignments", assignmentId), payload);
-  await touchSection(state.assignmentSectionId, { changed: [assignmentId] });
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  const done = await runGuarded(submitBtn, "Couldn't save the changes. Please try again.", async () => {
+    await updateDoc(doc(db, "assignments", assignmentId), payload);
+    await touchSection(state.assignmentSectionId, { changed: [assignmentId] });
+  });
+  if (!done) return;
   alert("Saved.");
   await openAssignment(assignmentId);
 });
@@ -4521,13 +4590,15 @@ async function loadSubmissions(opts = {}) {
     b.addEventListener("click", async () => {
       const ok = confirm("Reopen this graded assignment so the student can redo it? Their current grade stays until you re-grade the new work.");
       if (!ok) return;
-      b.disabled = true;
-      await updateDoc(doc(db, "submissions", b.dataset.allowRedo), {
-        status: "returned",
-        resubmitRequested: false,
-        returnedAt: Date.now(),
+      const done = await runGuarded(b, "Couldn't reopen the submission. Please try again.", async () => {
+        await updateDoc(doc(db, "submissions", b.dataset.allowRedo), {
+          status: "returned",
+          resubmitRequested: false,
+          returnedAt: Date.now(),
+        });
+        await touchStudentSubs(ownedDocs.find((d) => d.id === b.dataset.allowRedo)?.data().studentUID, a.sectionId);
       });
-      await touchStudentSubs(ownedDocs.find((d) => d.id === b.dataset.allowRedo)?.data().studentUID, a.sectionId);
+      if (!done) return;
       alert("Reopened — the student can now edit and resubmit.");
       loadSubmissions();
       refreshNotifications();
@@ -4540,11 +4611,13 @@ async function loadSubmissions(opts = {}) {
         s?.studentName || ""
       );
       if (!ok) return;
-      b.disabled = true;
-      await deleteDoc(doc(db, "submissions", b.dataset.deleteSub));
-      await touchStudentSubs(s?.studentUID, a.sectionId);
-      // Also drop any archived returned-version snapshots for this submission.
-      await deleteWhere("submissionAttempts", "submissionId", b.dataset.deleteSub).catch(() => {});
+      const done = await runGuarded(b, "Couldn't delete the submission. Please try again.", async () => {
+        await deleteDoc(doc(db, "submissions", b.dataset.deleteSub));
+        await touchStudentSubs(s?.studentUID, a.sectionId);
+        // Also drop any archived returned-version snapshots for this submission.
+        await deleteWhere("submissionAttempts", "submissionId", b.dataset.deleteSub).catch(() => {});
+      });
+      if (!done) return;
       alert("Deleted.");
       loadSubmissions();
     }));
@@ -4721,11 +4794,13 @@ function wireQuizReview(list, ownedDocs, quiz) {
       const s = ownedDocs.find((d) => d.id === b.dataset.quizRetake)?.data();
       if (!s) return;
       if (!confirm(`Let ${s.studentName || "this student"} take the quiz again? Their current answers and score are deleted.`)) return;
-      b.disabled = true;
-      await deleteDoc(doc(db, "submissions", b.dataset.quizRetake));
-      await touchStudentSubs(s.studentUID, subsMemo?.aDoc?.data()?.sectionId);
-      const attempt = quiz.attempts.get(s.studentUID);
-      if (attempt) await resetAttempt(attempt.id);
+      const done = await runGuarded(b, "Couldn't reset the quiz. Please try again.", async () => {
+        await deleteDoc(doc(db, "submissions", b.dataset.quizRetake));
+        await touchStudentSubs(s.studentUID, subsMemo?.aDoc?.data()?.sectionId);
+        const attempt = quiz.attempts.get(s.studentUID);
+        if (attempt) await resetAttempt(attempt.id);
+      });
+      if (!done) return;
       alert("Done - the student can start the quiz again.");
       loadSubmissions();
     }));
@@ -4862,8 +4937,14 @@ async function openReview(submissionId) {
   // <input max> only styles the field - it doesn't block typing or block a
   // programmatic .value read, so an over-max score would otherwise save
   // silently. Shared check for both buttons below.
-  function readValidScore() {
-    const score = Number(el(`score-${submissionId}`).value) || 0;
+  function readValidScore({ requireValue = false } = {}) {
+    const raw = String(el(`score-${submissionId}`).value).trim();
+    // A blank box must never publish as 0 - that would silently record a zero.
+    if (requireValue && raw === "") {
+      alert("Type a score before publishing (use 0 if the student really earned none).");
+      return null;
+    }
+    const score = Number(raw) || 0;
     if (score < 0 || score > cap) {
       alert(capNote
         ? `Score must be between 0 and ${cap} for this submission - ${capNote}.`
@@ -4874,11 +4955,9 @@ async function openReview(submissionId) {
   }
 
   container.querySelector(`[data-publish]`).addEventListener("click", async () => {
-    const score = readValidScore();
+    const score = readValidScore({ requireValue: true });
     if (score === null) return;
     const btn = container.querySelector(`[data-publish]`);
-    btn.disabled = true;
-    btn.textContent = "Saving...";
     const published = {
       finalGrade: {
         score,
@@ -4887,8 +4966,12 @@ async function openReview(submissionId) {
       status: "published",
       publishedAt: Date.now(),
     };
-    await updateDoc(ref, published);
-    await touchStudentSubs(s.studentUID, a.sectionId);
+    const done = await runGuarded(btn, "Couldn't publish the grade. Check your connection and try again.", async () => {
+      btn.textContent = "Saving...";
+      await updateDoc(ref, published);
+      await touchStudentSubs(s.studentUID, a.sectionId);
+    });
+    if (!done) return;
     alert("Published — the student can now see their grade and feedback.");
     // Re-render + bell from memory (no re-read of the class) - see subsMemo.
     resolvedLocally.add(submissionId);
@@ -4904,33 +4987,7 @@ async function openReview(submissionId) {
     const score = readValidScore();
     if (score === null) return;
     const btn = container.querySelector(`[data-return]`);
-    btn.disabled = true;
-    btn.textContent = "Saving...";
     const feedback = el(`feedback-${submissionId}`).value;
-    // Archive the version being sent back BEFORE the student overwrites it on
-    // resubmit, so both attempts survive (shown under "Previous attempts" on
-    // this card, see renderPreviousAttempts). Best-effort: a missing collection
-    // rule (not yet deployed) must never block the return itself. Each attempt
-    // is its own doc, so photo pages stay under the 1MiB per-doc cap.
-    try {
-      await addDoc(collection(db, "submissionAttempts"), {
-        submissionId,
-        assignmentId: s.assignmentId,
-        studentUID: s.studentUID,
-        studentName: s.studentName || "",
-        ownerEmail: s.ownerEmail || a.ownerEmail || ADMIN_EMAIL,
-        link: s.link || "",
-        code: s.code || "",
-        codeOutput: s.codeOutput || "",
-        photoPages: s.photoPages || (s.photoData ? [s.photoData] : []),
-        score,
-        feedback,
-        submittedAt: s.submittedAt || null,
-        returnedAt: Date.now(),
-      });
-    } catch (err) {
-      console.error("couldn't archive returned attempt (returning anyway):", err);
-    }
     const returned = {
       finalGrade: { score, feedback },
       status: "returned",
@@ -4939,8 +4996,37 @@ async function openReview(submissionId) {
     // returnCount drives the -10 max penalty; increment() on the server, a
     // plain number for the in-memory patch (never cache the sentinel).
     const nextCount = (Number(s.returnCount) || 0) + 1;
-    await updateDoc(ref, { ...returned, returnCount: increment(1) });
-    await touchStudentSubs(s.studentUID, a.sectionId);
+    const done = await runGuarded(btn, "Couldn't return the work. Check your connection and try again.", async () => {
+      btn.textContent = "Saving...";
+      await updateDoc(ref, { ...returned, returnCount: increment(1) });
+      await touchStudentSubs(s.studentUID, a.sectionId);
+      // Archive the version being sent back so both attempts survive (shown
+      // under "Previous attempts", see renderPreviousAttempts). Written only
+      // AFTER the return succeeded, so a failed return leaves no orphan
+      // snapshot. Best-effort: a missing collection rule (not yet deployed)
+      // must never fail the return. Each attempt is its own doc, so photo
+      // pages stay under the 1MiB per-doc cap.
+      try {
+        await addDoc(collection(db, "submissionAttempts"), {
+          submissionId,
+          assignmentId: s.assignmentId,
+          studentUID: s.studentUID,
+          studentName: s.studentName || "",
+          ownerEmail: s.ownerEmail || a.ownerEmail || ADMIN_EMAIL,
+          link: s.link || "",
+          code: s.code || "",
+          codeOutput: s.codeOutput || "",
+          photoPages: s.photoPages || (s.photoData ? [s.photoData] : []),
+          score,
+          feedback,
+          submittedAt: s.submittedAt || null,
+          returnedAt: returned.returnedAt,
+        });
+      } catch (err) {
+        console.error("couldn't archive returned attempt (returned anyway):", err);
+      }
+    });
+    if (!done) return;
     alert(`Returned for revision — the student can now redo and resubmit.\nTheir max score for this work is now ${maxAfterReturns(a.totalPoints, nextCount)} of ${a.totalPoints} (−${RETURN_PENALTY} per return).`);
     resolvedLocally.add(submissionId);
     loadSubmissions({ reuse: true, patch: { id: submissionId, data: { ...returned, returnCount: nextCount } } });
