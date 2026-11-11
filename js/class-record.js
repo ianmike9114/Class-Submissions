@@ -85,7 +85,9 @@ export function readExamScores(ws, { maxScanRows = 60, maxScanCols = 30 } = {}) 
     gap = 0;
     const sc = ws[`${colLetter(scoreCol)}${r}`];
     const score = sc && sc.v !== "" && sc.v != null ? Number(sc.v) : NaN;
-    if (Number.isFinite(score)) rows.push({ name, score });
+    // Negative scores are typos/garbage, never valid - skip them (the row then
+    // shows as "not in file" for the teacher to type by hand).
+    if (Number.isFinite(score) && score >= 0) rows.push({ name, score });
   }
 
   let maxScore = null;

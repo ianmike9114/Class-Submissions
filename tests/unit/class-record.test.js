@@ -148,6 +148,21 @@ describe("readExamScores", () => {
     expect(() => readExamScores({ A1: { t: "s", v: "Hello" } })).toThrow(/Learner/);
   });
 
+  it("rejects negative scores", () => {
+    const ws = itemAnalysisSheet();
+    ws.D21 = { t: "n", v: -5 };
+    const names = readExamScores(ws).rows.map((r) => r.name);
+    expect(names).not.toContain("CASTELO, JERIC SOMBILON");
+    expect(names).toContain("DISCIPULO, ANGEL ALMAZAN");
+  });
+
+  it("keeps a zero score", () => {
+    const ws = itemAnalysisSheet();
+    ws.D21 = { t: "n", v: 0 };
+    const row = readExamScores(ws).rows.find((r) => r.name === "CASTELO, JERIC SOMBILON");
+    expect(row.score).toBe(0);
+  });
+
   it("returns null max when no Highest Possible Score label", () => {
     const ws = itemAnalysisSheet();
     delete ws.G21;
