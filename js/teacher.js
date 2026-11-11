@@ -4,6 +4,7 @@ import {
   collection, addDoc, doc, setDoc, updateDoc, deleteDoc, deleteField, writeBatch, getDoc, getDocs, getCountFromServer, query, where, serverTimestamp, increment,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { RETURN_PENALTY, maxAfterReturns, penaltyNote } from "./grading.js?v=1";
+import { toast, friendlyError } from "./ui-feedback.js?v=1";
 import { getGeminiKey, setGeminiKey, getGroqKey, setGroqKey, runRubricCheck, generateCodeExample, generateQuiz } from "./gemini.js?v=8";
 import { extractLessonText } from "./lesson-text.js?v=1";
 import {
@@ -1754,7 +1755,7 @@ async function loadSubjects() {
       const archiving = b.dataset.value === "true";
       await updateDoc(doc(db, "subjects", b.dataset.archive), { archived: archiving });
       invalidateStructure(); // cached names/headcounts changed
-      alert(archiving ? "Archived." : "Unarchived.");
+      toast(archiving ? "Archived." : "Unarchived.");
       loadSubjects();
     }));
   list.querySelectorAll("[data-delete-subject]").forEach((b) =>
@@ -1767,7 +1768,7 @@ async function loadSubjects() {
       b.disabled = true;
       await cascadeDeleteSubject(b.dataset.deleteSubject);
       invalidateStructure(); // cached names/headcounts changed
-      alert("Deleted.");
+      toast("Deleted.");
       loadSubjects();
     }));
 }
@@ -1792,7 +1793,7 @@ async function editSubjectYearTerm(subjectId) {
       term: el(`edit-term-${subjectId}`).value,
     });
     invalidateStructure(); // cached names/headcounts changed
-    alert("Saved.");
+    toast("Saved.");
     loadSubjects();
   });
 }
@@ -1809,7 +1810,7 @@ el("add-subject-form").addEventListener("submit", async (e) => {
     ownerName: currentUser.displayName || currentUser.email,
   });
   invalidateStructure(); // cached names/headcounts changed
-  alert("Subject added.");
+  toast("Subject added.");
   e.target.reset();
   loadSubjects();
 });
@@ -1842,7 +1843,7 @@ el("set-current-term").addEventListener("click", async () => {
       }
     }
   } catch (err) {
-    alert("Couldn't save the current term: " + err.message);
+    alert("Couldn't save the current term: " + friendlyError(err));
     return;
   }
   el("term-filter").value = "current";
@@ -2088,7 +2089,7 @@ async function loadSections() {
       b.disabled = true;
       await cascadeDeleteSection(b.dataset.deleteSection);
       invalidateStructure(); // cached names/headcounts changed
-      alert("Deleted.");
+      toast("Deleted.");
       loadSections();
     }));
 }
@@ -2106,7 +2107,7 @@ async function editSectionName(sectionId) {
     if (!name) return;
     await updateDoc(doc(db, "sections", sectionId), { sectionName: name });
     invalidateStructure(); // cached names/headcounts changed
-    alert("Saved.");
+    toast("Saved.");
     loadSections();
   });
 }
@@ -2164,7 +2165,7 @@ el("add-section-form").addEventListener("submit", async (e) => {
   try {
     await setDoc(doc(db, "joinCodes", joinCode), { sectionId: ref.id, ownerEmail: state.viewAsEmail });
   } catch (_) { /* pointer is best-effort; backfill + join fallback cover it */ }
-  alert("Section added.");
+  toast("Section added.");
   form.reset();
   loadSections();
   } catch (err) {
@@ -2352,7 +2353,7 @@ async function openEnrolled(onlySectionId) {
         await updateDoc(doc(db, "enrollments", b.dataset.approveEnrollment), { status: "approved", seen: true });
         invalidateStructure(); // cached names/headcounts changed
       } catch (err) {
-        alert("Couldn't approve: " + err.message);
+        alert("Couldn't approve: " + friendlyError(err));
         b.disabled = false;
         return;
       }
@@ -2379,7 +2380,7 @@ async function openEnrolled(onlySectionId) {
     linkSelect.addEventListener("change", async () => {
       const newListId = linkSelect.value || null;
       await updateDoc(doc(db, "sections", onlySectionId), { masterListId: newListId });
-      alert(newListId ? "Linked to that master list." : "Unlinked.");
+      toast(newListId ? "Linked to that master list." : "Unlinked.");
       openEnrolled(onlySectionId);
     });
   }
@@ -2425,7 +2426,7 @@ async function openEnrolled(onlySectionId) {
         invalidateStructure(); // cached names/headcounts changed
       });
       if (!done) return;
-      alert("Removed.");
+      toast("Removed.");
       openEnrolled(onlySectionId);
       refreshNotifications();
     }));
@@ -2442,7 +2443,7 @@ async function openEnrolled(onlySectionId) {
       try {
         await updateDoc(doc(db, "enrollments", b.dataset.declineLeave), { leaveRequested: false });
       } catch (err) {
-        alert("Couldn't update: " + err.message);
+        alert("Couldn't update: " + friendlyError(err));
         return;
       }
       openEnrolled(onlySectionId);
@@ -2926,6 +2927,47 @@ async function renderActivityScores(assignments, sectionId) {
     refreshSaveState();
   }));
 
+  // Keyboard entry: Enter / Down = next student in the same exam column, Up =
+  // previous. Paste of a newline-separated column (copied from Excel) fills
+  // downward from the focused box; each box gets a real `input` event so the
+  // yellow/validation/total handling above runs unchanged.
+  const matrixEl = box.querySelector(".scores-matrix");
+  // Sticky offsets for css/style.css: first header row height + "#" column width.
+  const hdr1 = matrixEl.querySelector("thead tr:first-child");
+  const hashTh = matrixEl.querySelector("thead tr:first-child th");
+  if (hdr1) matrixEl.style.setProperty("--sm-h1", `${hdr1.offsetHeight}px`);
+  if (hashTh) matrixEl.style.setProperty("--sm-col1", `${hashTh.offsetWidth}px`);
+  const columnOf = (input) => [...matrixEl.querySelectorAll(`tbody input[data-exam="${input.dataset.exam}"]`)];
+  matrixEl.addEventListener("keydown", (e) => {
+    const input = e.target;
+    if (!input.matches?.("input[data-exam]")) return;
+    if (e.key !== "Enter" && e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    const col = columnOf(input);
+    const next = col[col.indexOf(input) + (e.key === "ArrowUp" ? -1 : 1)];
+    e.preventDefault();
+    if (next) { next.focus(); next.select(); }
+  });
+  matrixEl.addEventListener("paste", (e) => {
+    const input = e.target;
+    if (!input.matches?.("input[data-exam]")) return;
+    const text = (e.clipboardData?.getData("text") || "").replace(/\r/g, "");
+    const lines = text.split("\n");
+    if (lines.length && lines[lines.length - 1].trim() === "") lines.pop();
+    if (!lines.length) return;
+    const nums = lines.map((l) => parseManualNumber(l.trim()));
+    // Single value or anything non-numeric: normal paste.
+    if (lines.length < 2 || nums.some((n) => Number.isNaN(n))) return;
+    e.preventDefault();
+    const col = columnOf(input);
+    const start = col.indexOf(input);
+    nums.forEach((n, k) => {
+      const target = col[start + k];
+      if (!target) return;
+      target.value = n === null ? "" : String(n);
+      target.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  });
+
   saveBtn.addEventListener("click", async () => {
     const dirty = dirtyInputs();
     // A lowered max can leave SAVED scores in that column above it, and those
@@ -3056,7 +3098,7 @@ function wireExamImport({ box, students, roster, sectionId, examMax, rerender })
         ok.forEach((r) => batch.update(doc(db, "enrollments", r.student.enrollmentId), { [`manualScores.${key}`]: r.score }));
         batch.update(doc(db, "sections", sectionId), { [`manualExams.${key}`]: max });
         await batch.commit();
-        alert(`Saved ${ok.length} score${ok.length === 1 ? "" : "s"}.`);
+        toast(`Saved ${ok.length} score${ok.length === 1 ? "" : "s"}.`);
         rerender();
       } catch (err) {
         console.error(err);
@@ -3289,7 +3331,7 @@ async function loadAssignments() {
         await touchSection(state.sectionId, { deleted: [b.dataset.deleteAssignment] });
       });
       if (!done) return;
-      alert("Deleted.");
+      toast("Deleted.");
       loadAssignments();
     }));
 }
@@ -3528,7 +3570,7 @@ function quizItemEditorHtml(it, i) {
   }
   return `<li data-qi="${i}" class="qb-item">
     <div class="qb-item-head"><strong>Item ${i + 1}</strong> ${typeSel}
-      <button type="button" class="danger qb-del" data-qdel="${i}" title="Delete item">&#10005;</button></div>
+      <button type="button" class="danger qb-del" data-qdel="${i}" title="Delete item" aria-label="Delete item">&#10005;</button></div>
     <textarea data-f="prompt" rows="2" placeholder="Question">${escAttr(it.prompt || "")}</textarea>
     ${answerHtml}
   </li>`;
@@ -3677,13 +3719,13 @@ el("add-assignment-form").addEventListener("submit", async (e) => {
         console.error(err);
         await deleteDoc(ref).catch(() => {});
         await touchSection(payload.sectionId, { deleted: [ref.id] });
-        alert("Couldn't save the quiz answer key, so the quiz was not created. (Are the latest Firestore rules deployed?) " + err.message);
+        alert("Couldn't save the quiz answer key, so the quiz was not created. (Are the latest Firestore rules deployed?) " + friendlyError(err));
         return;
       }
     }
     resetCreateType();
     loadAssignments();
-    if (type === "material") { alert("Material added."); return; }
+    if (type === "material") { toast("Material added."); return; }
     await notifyOnAssignmentCreate(payload);
   } catch (err) {
     console.error(err);
@@ -3907,7 +3949,7 @@ el("edit-assignment-form").addEventListener("submit", async (e) => {
     try {
       await setDoc(doc(db, "quizKeys", assignmentId), { assignmentId, ownerEmail: state.viewAsEmail, answers: quizData.answers });
     } catch (err) {
-      alert("Couldn't save the quiz answer key - nothing was changed. " + err.message);
+      alert("Couldn't save the quiz answer key - nothing was changed. " + friendlyError(err));
       return;
     }
   }
@@ -3917,7 +3959,7 @@ el("edit-assignment-form").addEventListener("submit", async (e) => {
     await touchSection(state.assignmentSectionId, { changed: [assignmentId] });
   });
   if (!done) return;
-  alert("Saved.");
+  toast("Saved.");
   await openAssignment(assignmentId);
 });
 
@@ -4653,7 +4695,7 @@ async function loadSubmissions(opts = {}) {
         await deleteWhere("submissionAttempts", "submissionId", b.dataset.deleteSub).catch(() => {});
       });
       if (!done) return;
-      alert("Deleted.");
+      toast("Deleted.");
       loadSubmissions();
     }));
 
@@ -4836,7 +4878,7 @@ function wireQuizReview(list, ownedDocs, quiz) {
         if (attempt) await resetAttempt(attempt.id);
       });
       if (!done) return;
-      alert("Done - the student can start the quiz again.");
+      toast("Done - the student can start the quiz again.");
       loadSubmissions();
     }));
   list.querySelectorAll("[data-quiz-reset-attempt]").forEach((b) =>
@@ -5349,7 +5391,7 @@ async function openQuizzes() {
           await touchSection(b.dataset.section, { deleted: [b.dataset.quizRemove] });
         } catch (err) {
           console.error(err);
-          alert("Couldn't delete the quiz: " + err.message);
+          alert("Couldn't delete the quiz: " + friendlyError(err));
           b.disabled = false;
           return;
         }
@@ -5505,7 +5547,7 @@ async function loadMasterLists() {
         const name = el(`master-list-name-input-${listId}`).value.trim();
         if (!name) return;
         await updateDoc(doc(db, "masterLists", listId), { name, updatedAt: serverTimestamp() });
-        alert("Renamed.");
+        toast("Renamed.");
         loadMasterLists();
       });
     }));
@@ -5547,7 +5589,7 @@ async function loadMasterLists() {
       const ok = confirm(`Delete the student list "${list.name}"? This only deletes the saved list — it doesn't affect anyone already enrolled or invited.`);
       if (!ok) return;
       await deleteDoc(doc(db, "masterLists", listId));
-      alert("Deleted.");
+      toast("Deleted.");
       loadMasterLists();
     }));
 }
@@ -5590,7 +5632,7 @@ function renderMasterListStudentsEditor(listId, students) {
       b.addEventListener("click", () => { draft.splice(Number(b.dataset.removeStudent), 1); render(); }));
     el(`save-master-list-students-${listId}`).addEventListener("click", async () => {
       await updateDoc(doc(db, "masterLists", listId), { students: draft, updatedAt: serverTimestamp() });
-      alert("Saved.");
+      toast("Saved.");
       loadMasterLists();
     });
   };
@@ -6004,7 +6046,7 @@ async function loadTeachers() {
       if (!ok) return;
       b.disabled = true;
       await deleteDoc(doc(db, "teachers", email));
-      alert("Access removed.");
+      toast("Access removed.");
       teachersSnapPromise = null;
       loadTeachers();
       renderViewAsPicker();
@@ -6020,7 +6062,7 @@ el("add-teacher-form").addEventListener("submit", async (e) => {
     addedAt: Date.now(),
     addedBy: currentUser.email,
   });
-  alert("Access granted.");
+  toast("Access granted.");
   e.target.reset();
   teachersSnapPromise = null;
   loadTeachers();
