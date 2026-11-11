@@ -204,6 +204,34 @@ describe("submissions: multi-teacher isolation + student self-scope", () => {
   });
 });
 
+describe("submissions: create cannot carry grading state", () => {
+  const base = { studentUID: "student9", ownerEmail: TEACHER_A };
+  it("denies create with status published", async () => {
+    const db = ctxFor("student9", "s9@x.com");
+    await assertFails(setDoc(doc(db, "submissions", "g1"), { ...base, status: "published" }));
+  });
+  it("denies create with finalGrade", async () => {
+    const db = ctxFor("student9", "s9@x.com");
+    await assertFails(setDoc(doc(db, "submissions", "g2"), { ...base, status: "pending", finalGrade: { score: 100 } }));
+  });
+  it("denies create with returnCount/publishedAt/aiDraft or missing status", async () => {
+    const db = ctxFor("student9", "s9@x.com");
+    await assertFails(setDoc(doc(db, "submissions", "g3"), { ...base, status: "pending", returnCount: 0 }));
+    await assertFails(setDoc(doc(db, "submissions", "g4"), { ...base, status: "pending", publishedAt: 1 }));
+    await assertFails(setDoc(doc(db, "submissions", "g5"), { ...base, status: "pending", aiDraft: {} }));
+    await assertFails(setDoc(doc(db, "submissions", "g6"), { ...base }));
+  });
+  it("allows a normal pending create (link, photos, quiz fields)", async () => {
+    const db = ctxFor("student9", "s9@x.com");
+    await assertSucceeds(
+      setDoc(doc(db, "submissions", "g7"), {
+        ...base, status: "pending", assignmentId: "a1", link: "https://x.y", code: "", codeOutput: "",
+        photoPages: [], quizAnswers: {}, quizServed: [], quizLog: {}, submittedAt: 1,
+      })
+    );
+  });
+});
+
 describe("submissions: student edits are field-limited and status-gated", () => {
   it("student can edit their own pending submission's link (re-queues it)", async () => {
     const db = ctxFor("student1", "s1@x.com");
@@ -286,6 +314,23 @@ describe("enrollments: self-enroll + limited self-edit", () => {
         sectionId: "secA",
         studentName: "Juan",
         seen: false,
+      })
+    );
+  });
+  it("student cannot create an enrollment with manualScores", async () => {
+    const db = ctxFor("student1", "s1@x.com");
+    await assertFails(
+      addDoc(collection(db, "enrollments"), {
+        studentUID: "student1", ownerEmail: TEACHER_A, sectionId: "secA", studentName: "Juan",
+        manualScores: { termExam: 100 },
+      })
+    );
+  });
+  it("student can create an approved enrollment (invite path)", async () => {
+    const db = ctxFor("student1", "s1@x.com");
+    await assertSucceeds(
+      addDoc(collection(db, "enrollments"), {
+        studentUID: "student1", ownerEmail: TEACHER_A, sectionId: "secA", studentName: "Juan", status: "approved",
       })
     );
   });

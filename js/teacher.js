@@ -14,7 +14,7 @@ import {
 } from "./quiz.js?v=7";
 import { getEmailConfig, saveEmailConfig, notifySection } from "./notify.js";
 import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=3";
-import { loadWorkbook, readExamScores, pickBestSheet } from "./class-record.js";
+import { loadWorkbook, readExamScores, pickBestSheet } from "./class-record.js?v=1";
 import { runJava } from "./runner.js";
 import { setScreenshotBlock } from "./app-bridge.js?v=3";
 import { codeBlockHtml, highlightWithin } from "./highlight.js";
@@ -607,13 +607,14 @@ async function computeMissingWorkCounts(shownSubjectIds) {
   ]);
   const sectionToSubject = new Map(sectionsSnap.docs.map((d) => [d.id, d.data().subjectId]));
 
-  const now = new Date();
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  // Manila "today" (UTC+8), matching js/student.js isPastDue: work is open
+  // through the whole due date, so only dueDate < today counts as missing.
+  const today = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
 
   // Past-due graded assignments in subjects the grid shows.
   const pastDue = assignSnap.docs.filter((d) => {
     const a = d.data();
-    return ownedByViewAs(a) && a.type !== "material" && a.dueDate && a.dueDate <= today
+    return ownedByViewAs(a) && a.type !== "material" && a.dueDate && a.dueDate < today
       && shownSubjectIds.has(sectionToSubject.get(a.sectionId));
   });
   // Approved-enrolled headcount per section (a pending join isn't a live
@@ -755,7 +756,7 @@ function renderAddStudentPanel(container, sectionId, section, pendingInvites, ma
         <div class="invite-pending">
           ${pendingInvites.length ? pendingInvites.map((inv) => `
             <div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.35rem;">
-              <span class="muted">Pending: ${displayStudentName(inv.studentName)} (${inv.studentEmail})</span>
+              <span class="muted">Pending: ${escAttr(displayStudentName(inv.studentName))} (${escAttr(inv.studentEmail || "")})</span>
               <button type="button" class="secondary" data-cancel-invite="${inv.id}">Cancel</button>
             </div>`).join("") : ""}
         </div>
@@ -1511,7 +1512,7 @@ function renderNotRespondingOverview(data) {
           <div class="progress-track"><div class="progress-fill" style="width:${pct}%;"></div></div>
           <div class="muted" style="font-size:0.85em;">${sec.submittedCount}/${sec.expectedCount} submissions in — ${pct}% complete. Table numbers show submitted / total per student.</div>
           <table class="records-grid"><thead><tr><th>Name</th><th>Email</th><th>Written</th><th>Performance</th></tr></thead><tbody>
-            ${sec.rows.map((r) => `<tr><td>${r.name}</td><td>${r.email}</td><td>${r.writtenDone}/${r.writtenTotal}</td><td>${r.performanceDone}/${r.performanceTotal}</td></tr>`).join("")}
+            ${sec.rows.map((r) => `<tr><td>${escAttr(r.name || "")}</td><td>${escAttr(r.email || "")}</td><td>${r.writtenDone}/${r.writtenTotal}</td><td>${r.performanceDone}/${r.performanceTotal}</td></tr>`).join("")}
           </tbody></table>
         </div>`;
       }).join("")}
@@ -1637,6 +1638,7 @@ function renderTermPreview(filterByTerm, hiddenNames, visibleNames, noTermNames 
     </div>`;
 }
 
+let subjectsRenderSeq = 0; // bumps per loadSubjects() so late badge rollups from an older render are dropped
 async function loadSubjects() {
   // Every path back to the Home view calls this - reset the global search
   // box here too, so a stale query/result list from before navigating away
@@ -1655,8 +1657,11 @@ async function loadSubjects() {
   // the grid mirrors it here too. globalActive drives the label/checkbox.
   // Order matches what students get: site-wide override, else the super admin's
   // own term (school-wide), else this teacher's own (only when admin set none).
-  const [ownSetting, globalSetting, adminSetting] = await Promise.all([
-    getCurrentTermSetting(), getGlobalTermSetting(), getAdminTermSetting()]);
+  // Subjects are fetched in the same round trip as the three term docs (they
+  // don't depend on each other) so the grid isn't waiting on two sequential waves.
+  const [ownSetting, globalSetting, adminSetting, snap] = await Promise.all([
+    getCurrentTermSetting(), getGlobalTermSetting(), getAdminTermSetting(),
+    getDocs(ownerScopedQuery("subjects"))]);
   const globalActive = termIsSet(globalSetting);
   const adminWide = !globalActive && termIsSet(adminSetting);
   const termSetting = globalActive ? globalSetting : (adminWide ? adminSetting : ownSetting);
@@ -1669,16 +1674,18 @@ async function loadSubjects() {
   // badges, it never blanks the whole dashboard. (This is what used to make a
   // regular teacher's freshly-created subject silently not show: a failed bell
   // query rejected the shared Promise.all here before any subject rendered.)
-  const snap = await getDocs(ownerScopedQuery("subjects"));
   const shownSubjectIds = new Set(snap.docs
     .filter((d) => ownedByViewAs(d.data()) && subjectShown(d.data(), { showArchived, filterByTerm, termSetting }, normYear, normTerm))
     .map((d) => d.id));
-  const [counts, leaveCounts, joinCounts, missingCounts] = await Promise.all([
-    getPendingCounts().catch((err) => { console.error("pending-count rollup failed (badges only):", err); return { byAssignment: new Map(), bySection: new Map(), bySubject: new Map() }; }),
-    getLeaveRequestCounts().catch((err) => { console.error("leave-count rollup failed (badges only):", err); return { bySection: new Map(), bySubject: new Map() }; }),
-    getJoinWaitingCounts().catch((err) => { console.error("join-waiting rollup failed (badges only):", err); return { bySection: new Map(), bySubject: new Map() }; }),
-    getMissingWorkCounts(shownSubjectIds).catch((err) => { console.error("missing-work rollup failed (badges only):", err); return { bySubject: new Map() }; }),
-  ]);
+  // Badge rollups start now but are NOT awaited: the grid draws first and each
+  // badge slot fills in as its rollup resolves (same idea as loadSections()).
+  const subjectsLoadId = ++subjectsRenderSeq;
+  const badgeJobs = [
+    ["pending", getPendingCounts().catch((err) => { console.error("pending-count rollup failed (badges only):", err); return { byAssignment: new Map(), bySection: new Map(), bySubject: new Map() }; }), (c, id) => pendingBadge(c.bySubject.get(id), id)],
+    ["join", getJoinWaitingCounts().catch((err) => { console.error("join-waiting rollup failed (badges only):", err); return { bySection: new Map(), bySubject: new Map() }; }), (c, id) => joinWaitingBadge(c.bySubject.get(id))],
+    ["missing", getMissingWorkCounts(shownSubjectIds).catch((err) => { console.error("missing-work rollup failed (badges only):", err); return { bySubject: new Map() }; }), (c, id) => missingWorkBadge(c.bySubject.get(id))],
+    ["leave", getLeaveRequestCounts().catch((err) => { console.error("leave-count rollup failed (badges only):", err); return { bySection: new Map(), bySubject: new Map() }; }), (c, id) => leaveBadge(c.bySubject.get(id), id)],
+  ];
   const list = el("subjects-list");
   list.innerHTML = "";
   const subjectNames = new Map(); // id -> name, for the delete-confirm prompt below
@@ -1716,10 +1723,7 @@ async function loadSubjects() {
     row.innerHTML = `
       <strong>${s.name}</strong>
       <span class="muted" id="year-term-${d.id}">(${s.gradeLevel} — SY ${s.schoolYear || "—"} · Term ${s.term || "—"})</span>
-      ${pendingBadge(counts.bySubject.get(d.id), d.id)}
-      ${joinWaitingBadge(joinCounts.bySubject.get(d.id))}
-      ${missingWorkBadge(missingCounts.bySubject.get(d.id))}
-      ${leaveBadge(leaveCounts.bySubject.get(d.id), d.id)}
+      <span data-subj-badge="pending:${d.id}"></span><span data-subj-badge="join:${d.id}"></span><span data-subj-badge="missing:${d.id}"></span><span data-subj-badge="leave:${d.id}"></span>
       ${s.archived ? '<span class="muted"> — archived</span>' : ""}
       <div id="year-term-edit-${d.id}"></div>
       <div style="margin-top:0.5rem;">
@@ -1734,6 +1738,14 @@ async function loadSubjects() {
   });
   renderTermFilterHint(filterByTerm, termSetting, termsPresent.size, hiddenByTerm);
   renderTermPreview(filterByTerm, hiddenTermNames, visibleTermNames, noTermNames);
+  // Fill each badge slot when its rollup resolves; a newer loadSubjects() call
+  // (or a failed rollup, which yields empty maps) just leaves the slots empty.
+  badgeJobs.forEach(([kind, job, render]) => job.then((c) => {
+    if (subjectsLoadId !== subjectsRenderSeq) return; // grid was re-rendered since
+    list.querySelectorAll(`[data-subj-badge^="${kind}:"]`).forEach((slot) => {
+      slot.innerHTML = render(c, slot.dataset.subjBadge.slice(kind.length + 1));
+    });
+  }));
   list.querySelectorAll("[data-open]").forEach((b) =>
     b.addEventListener("click", () => openSubject(b.dataset.open)));
   list.querySelectorAll("[data-edit-year]").forEach((b) =>
@@ -1937,7 +1949,7 @@ async function searchGlobally() {
     const subj = subjectsById.get(sec.subjectId) || {};
     return `
       <button class="notif-item" data-jump-student="${sec.subjectId || ""}|${a.sectionId || ""}|${m.assignmentId}">
-        ${displayStudentName(m.studentName)} <span class="status-${m.status}">— ${m.status}</span>
+        ${escAttr(displayStudentName(m.studentName))} <span class="status-${escAttr(m.status)}">— ${escAttr(m.status)}</span>
         <div class="muted">${subj.name || "—"} &rsaquo; ${sec.sectionName || "—"} &rsaquo; ${a.title || "—"}</div>
       </button>`;
   }).join("");
@@ -2112,8 +2124,31 @@ async function genUniqueJoinCode() {
   return genJoinCode() + genJoinCode().slice(0, 2);
 }
 
+// Run an async write with the button disabled; on failure tell the teacher in
+// plain words and restore the button (label too) instead of leaving it stuck.
+// Returns true when fn finished without throwing.
+async function runGuarded(btn, failMsg, fn) {
+  const label = btn ? btn.textContent : "";
+  if (btn) btn.disabled = true;
+  try {
+    await fn();
+    return true;
+  } catch (err) {
+    console.error(failMsg, err);
+    alert(failMsg + (err && err.message ? " (" + err.message + ")" : ""));
+    return false;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+  }
+}
+
 el("add-section-form").addEventListener("submit", async (e) => {
   e.preventDefault();
+  const form = e.target;
+  const submitBtn = form.querySelector('button[type="submit"]');
+  if (submitBtn && submitBtn.disabled) return; // double-click guard
+  if (submitBtn) submitBtn.disabled = true;
+  try {
   const joinCode = await genUniqueJoinCode();
   const ref = await addDoc(collection(db, "sections"), {
     subjectId: state.subjectId,
@@ -2131,8 +2166,13 @@ el("add-section-form").addEventListener("submit", async (e) => {
     await setDoc(doc(db, "joinCodes", joinCode), { sectionId: ref.id, ownerEmail: state.viewAsEmail });
   } catch (_) { /* pointer is best-effort; backfill + join fallback cover it */ }
   toast("Section added.");
-  e.target.reset();
+  form.reset();
   loadSections();
+  } catch (err) {
+    alert("Couldn't add the section: " + (err && err.message ? err.message : "please try again."));
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+  }
 });
 
 // One-time admin migration: create a joinCodes pointer for every EXISTING
@@ -2208,11 +2248,12 @@ async function openEnrolled(onlySectionId) {
     return;
   }
 
-  // Firestore 'in' queries cap at 30 - fine for a solo-teacher class load.
-  const enrollSnap = await getDocs(
-    ownerScopedQuery("enrollments", where("sectionId", "in", sectionIds.slice(0, 30)))
-  );
-  const rows = enrollSnap.docs
+  // Firestore 'in' queries cap at 30 values - chunk so no section is dropped.
+  const enrollChunks = [];
+  for (let i = 0; i < sectionIds.length; i += 30) enrollChunks.push(sectionIds.slice(i, i + 30));
+  const enrollSnaps = await Promise.all(enrollChunks.map((ids) =>
+    getDocs(ownerScopedQuery("enrollments", where("sectionId", "in", ids)))));
+  const rows = enrollSnaps.flatMap((snap) => snap.docs)
     .filter((d) => ownedByViewAs(d.data()))
     .map((d) => ({ id: d.id, ...d.data() }))
     .sort((a, b) =>
@@ -2244,10 +2285,10 @@ async function openEnrolled(onlySectionId) {
   // just the super admin - a regular teacher's preview is owner-scoped to
   // their own classes (asOwner below), which firestore.rules allows.
   const canViewAsStudent = !!currentUser;
-  const renderEnrolledRow = (r, n) => { const pending = r.status === "pending"; return `<tr><td>${n}</td><td id="enroll-name-${r.id}">${displayStudentName(r.studentName)}${pending ? ' <span class="status-pending">(pending approval)</span>' : ""}${r.leaveRequested ? ' <span class="status-pending">(leave requested)</span>' : ""}</td><td>${r.studentEmail || ""}</td><td>${sectionMap.get(r.sectionId) || ""}</td><td>
-          <button class="secondary" data-edit-enrollment="${r.id}" data-uid="${r.studentUID}" data-raw="${r.studentName}">Edit name</button>
+  const renderEnrolledRow = (r, n) => { const pending = r.status === "pending"; return `<tr><td>${n}</td><td id="enroll-name-${r.id}">${escAttr(displayStudentName(r.studentName))}${pending ? ' <span class="status-pending">(pending approval)</span>' : ""}${r.leaveRequested ? ' <span class="status-pending">(leave requested)</span>' : ""}</td><td>${escAttr(r.studentEmail || "")}</td><td>${sectionMap.get(r.sectionId) || ""}</td><td>
+          <button class="secondary" data-edit-enrollment="${r.id}" data-uid="${r.studentUID}" data-raw="${escAttr(r.studentName || "")}">Edit name</button>
           ${pending ? `<button data-approve-enrollment="${r.id}" title="Approve this student's join request">Approve</button>` : ""}
-          ${canViewAsStudent ? `<button class="secondary" data-view-as="${r.studentUID}" data-vemail="${r.studentEmail || ""}" data-vname="${r.studentName || ""}" title="Open this student's page (read-only)">View as</button>` : ""}
+          ${canViewAsStudent ? `<button class="secondary" data-view-as="${r.studentUID}" data-vemail="${escAttr(r.studentEmail || "")}" data-vname="${escAttr(r.studentName || "")}" title="Open this student's page (read-only)">View as</button>` : ""}
           ${r.leaveRequested && !pending ? `<button class="secondary" data-decline-leave="${r.id}" title="Keep this student in the class and clear their leave request">Keep in class</button>` : ""}
           <button class="danger icon" data-remove-enrollment="${r.id}" data-leave-requested="${!!r.leaveRequested}" title="${pending ? "Reject join request" : "Remove"}" aria-label="Remove enrollment">×</button>
         </td></tr>`; };
@@ -2354,7 +2395,7 @@ async function openEnrolled(onlySectionId) {
       const enrollmentId = b.dataset.editEnrollment;
       const cell = el(`enroll-name-${enrollmentId}`);
       const current = b.dataset.raw;
-      cell.innerHTML = `<input id="edit-enroll-${enrollmentId}" value="${current}" style="margin-bottom:0;" />`;
+      cell.innerHTML = `<input id="edit-enroll-${enrollmentId}" value="${escAttr(current)}" style="margin-bottom:0;" />`;
       const input = el(`edit-enroll-${enrollmentId}`);
       input.focus();
       input.select();
@@ -2380,8 +2421,11 @@ async function openEnrolled(onlySectionId) {
         : "Remove this student's enrollment? This frees their roster name for someone else to claim, and they'd need to join again with the code.";
       const ok = confirm(msg);
       if (!ok) return;
-      await deleteDoc(doc(db, "enrollments", b.dataset.removeEnrollment));
-      invalidateStructure(); // cached names/headcounts changed
+      const done = await runGuarded(b, "Couldn't remove the student. Please try again.", async () => {
+        await deleteDoc(doc(db, "enrollments", b.dataset.removeEnrollment));
+        invalidateStructure(); // cached names/headcounts changed
+      });
+      if (!done) return;
       toast("Removed.");
       openEnrolled(onlySectionId);
       refreshNotifications();
@@ -2507,6 +2551,9 @@ async function openSection(sectionId) {
 // collection and no firestore.rules change - a section update is already
 // owner-scoped.
 function escAttr(s) { return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+// Student-controlled values: only http(s) links become <a href>, only data:image/ becomes <img src>.
+function isHttpUrl(u) { return /^https?:\/\//i.test(String(u || "").trim()); }
+function isImageDataUrl(u) { return /^data:image\//i.test(String(u || "")); }
 
 // Options for a topic <select>: a "no topic" default, every managed topic,
 // and (so an edit never loses a legacy value) the current value if unlisted.
@@ -2673,6 +2720,8 @@ window.addEventListener("beforeunload", (e) => {
   }
 });
 
+// Sums of decimal scores (e.g. 0.1 + 0.2) pick up float noise; round for display.
+function roundPts(n) { return Math.round(n * 100) / 100; }
 function parseManualNumber(raw) {
   const t = String(raw).trim();
   if (t === "") return null;
@@ -2742,7 +2791,7 @@ async function renderActivityScores(assignments, sectionId) {
     let earned = 0, possible = 0, missing = 0;
     const cells = ordered.map((a) => {
       const sub = subsByAssignment.get(a.id).get(s.studentUID);
-      const attrs = `class="score-cell" data-score-assignment="${a.id}" data-score-student="${s.studentName || ""}" title="Open ${a.title}"`;
+      const attrs = `class="score-cell" data-score-assignment="${a.id}" data-score-student="${escAttr(s.studentName || "")}" title="Open ${escAttr(a.title)}"`;
       if (!sub) { missing++; return `<td ${attrs}><span class="muted">—</span></td>`; }
       if (sub.status === "published") {
         const score = Number(sub.finalGrade?.score) || 0;
@@ -2750,7 +2799,7 @@ async function renderActivityScores(assignments, sectionId) {
         possible += Number(a.totalPoints) || 0;
         const note = penaltyNote(a.totalPoints, sub.returnCount);
         return note
-          ? `<td class="score-cell" data-score-assignment="${a.id}" data-score-student="${s.studentName || ""}" title="${note}">${score}/${a.totalPoints}*</td>`
+          ? `<td class="score-cell" data-score-assignment="${a.id}" data-score-student="${escAttr(s.studentName || "")}" title="${escAttr(note)}">${score}/${a.totalPoints}*</td>`
           : `<td ${attrs}>${score}/${a.totalPoints}</td>`;
       }
       const label = STATUS_LABELS[sub.status] || sub.status;
@@ -2764,9 +2813,9 @@ async function renderActivityScores(assignments, sectionId) {
         data-exam="${ex.key}" data-enrollment="${s.enrollmentId}" value="${v ?? ""}"
         aria-label="${ex.label} score" /></td>`;
     }).join("");
-    const total = possible ? `${earned}/${possible}` : "—";
+    const total = possible ? `${roundPts(earned)}/${roundPts(possible)}` : "—";
     const missingCell = `<span class="status-${missing > 0 ? "returned" : "published"}">${missing}</span>`;
-    return `<tr><td>${n}</td><td>${displayStudentName(s.studentName)}${s.status === "pending" ? ' <span class="muted">(pending)</span>' : ""}</td>${cells}${examCells}<td><strong>${total}</strong></td><td>${missingCell}</td></tr>`;
+    return `<tr><td>${n}</td><td>${escAttr(displayStudentName(s.studentName))}${s.status === "pending" ? ' <span class="muted">(pending)</span>' : ""}</td>${cells}${examCells}<td><strong>${total}</strong></td><td>${missingCell}</td></tr>`;
   };
   const bodyRows = blocks.map(([label, list]) =>
     (label ? `<tr class="gender-group"><td colspan="${colCount}">${label}</td></tr>` : "")
@@ -2795,7 +2844,7 @@ async function renderActivityScores(assignments, sectionId) {
             ${groups.map((g) => `<th colspan="${g.items.length}">${g.label}</th>`).join("")}
             <th colspan="${MANUAL_EXAMS.length}">Exams (manual)</th>
             <th rowspan="2">Total</th><th rowspan="2">Missing</th></tr>
-          <tr>${ordered.map((a) => `<th><button type="button" class="link-button" data-score-assignment="${a.id}" title="Open ${a.title}">${a.title}</button><br><span class="muted">${a.totalPoints} pts</span></th>`).join("")}
+          <tr>${ordered.map((a) => `<th><button type="button" class="link-button" data-score-assignment="${a.id}" title="Open ${escAttr(a.title)}">${escAttr(a.title)}</button><br><span class="muted">${a.totalPoints} pts</span></th>`).join("")}
             ${MANUAL_EXAMS.map((ex) => `<th>${ex.label}<br><label class="muted manual-max-label">max
               <input type="number" min="0" step="any" inputmode="decimal" class="manual-score manual-max" data-exam-max="${ex.key}"
                 value="${examMax[ex.key] ?? ""}" placeholder="pts" aria-label="${ex.label} max points" /></label></th>`).join("")}</tr>
@@ -2846,7 +2895,7 @@ async function renderActivityScores(assignments, sectionId) {
       if (v !== null && !Number.isNaN(v) && max !== null) { earned += v; possible += max; }
     });
     const totalCell = row.children[row.children.length - 2];
-    if (totalCell) totalCell.innerHTML = `<strong>${possible ? `${earned}/${possible}` : "—"}</strong>`;
+    if (totalCell) totalCell.innerHTML = `<strong>${possible ? `${roundPts(earned)}/${roundPts(possible)}` : "—"}</strong>`;
   }
 
   function invalidReason(input) {
@@ -2921,7 +2970,13 @@ async function renderActivityScores(assignments, sectionId) {
 
   saveBtn.addEventListener("click", async () => {
     const dirty = dirtyInputs();
-    const bad = dirty.filter(invalidReason);
+    // A lowered max can leave SAVED scores in that column above it, and those
+    // boxes aren't dirty - so when a max changed, check its whole column too.
+    const toCheck = new Set(dirty);
+    dirty.forEach((i) => {
+      if (i.dataset.examMax) box.querySelectorAll(`input[data-exam="${i.dataset.examMax}"]`).forEach((c) => toCheck.add(c));
+    });
+    const bad = [...toCheck].filter(invalidReason);
     if (bad.length) {
       bad[0].focus();
       alert(`${bad.length} box${bad.length === 1 ? " has" : "es have"} a wrong value (${invalidReason(bad[0])}). Fix the red box${bad.length === 1 ? "" : "es"} first.`);
@@ -3032,6 +3087,10 @@ function wireExamImport({ box, students, roster, sectionId, examMax, rerender })
       ${bad.length ? `<p class="muted">Rows marked &#9888; are skipped - type those scores in the table below by hand.</p>` : ""}`;
     preview.querySelector("#exam-import-save")?.addEventListener("click", async (e) => {
       const btn = e.currentTarget;
+      // The re-render after saving rebuilds the whole matrix, which would
+      // silently throw away scores typed by hand but not yet saved.
+      const unsavedTyped = box.querySelectorAll(".scores-matrix input.dirty").length;
+      if (unsavedTyped > 0 && !confirm(`You have ${unsavedTyped} typed score${unsavedTyped === 1 ? "" : "s"} that ${unsavedTyped === 1 ? "isn't" : "aren't"} saved yet. Importing will discard ${unsavedTyped === 1 ? "it" : "them"}. Import anyway?`)) return;
       btn.disabled = true;
       btn.textContent = "Saving...";
       try {
@@ -3094,9 +3153,14 @@ document.addEventListener("click", (e) => {
   });
 });
 
+let assignmentsRenderSeq = 0; // drops late pending-badge fills from a superseded loadAssignments()
 async function loadAssignments() {
   const q = query(collection(db, "assignments"), where("sectionId", "==", state.sectionId));
-  const [snap, counts] = await Promise.all([getDocs(q), getPendingCounts()]);
+  // Pending-count badges are best-effort and filled in after the list is drawn
+  // (they need the all-pending-submissions read, which can be slow); only the
+  // assignments query gates the first paint.
+  const snap = await getDocs(q);
+  const assignmentsLoadId = ++assignmentsRenderSeq;
   backfillAssignmentVersions(state.sectionId, snap.docs.map((d) => d.id)); // not awaited - background, once per section
   // Materials aren't graded activities - keep them out of the Written/
   // Performance points overview.
@@ -3163,7 +3227,7 @@ async function loadAssignments() {
           <div class="assign-title">
             <span class="chip ${isMaterial ? "chip-material" : "chip-todo"}">${isMaterial ? "&#128196; Material" : isQuiz ? "&#128221; Quiz" : "&#9998; Assignment"}</span>
             <strong>${escAttr(a.title || "(untitled)")}</strong>
-            ${isMaterial ? "" : pendingBadge(counts.byAssignment.get(d.id), `${state.subjectId}|${state.sectionId}|${d.id}`)}
+            ${isMaterial ? "" : `<span data-assign-pending="${d.id}"></span>`}
           </div>
           <div class="muted assign-meta">${meta}</div>
           ${a.instructions ? `<p class="muted assign-desc">${escAttr(a.instructions)}</p>` : ""}
@@ -3225,6 +3289,16 @@ async function loadAssignments() {
     });
     list.appendChild(group);
   });
+  const badgeSubjectId = state.subjectId, badgeSectionId = state.sectionId;
+  getPendingCounts()
+    .then((counts) => {
+      if (assignmentsLoadId !== assignmentsRenderSeq) return; // list re-rendered since
+      list.querySelectorAll("[data-assign-pending]").forEach((slot) => {
+        const id = slot.dataset.assignPending;
+        slot.innerHTML = pendingBadge(counts.byAssignment.get(id), `${badgeSubjectId}|${badgeSectionId}|${id}`);
+      });
+    })
+    .catch((err) => console.error("assignment pending-badge rollup failed (badges only):", err));
   // Bulk-deadline picker: one checkbox per graded assignment in this section
   // (materials excluded - they have no due date). Rebuilt on every load so it
   // always mirrors the current assignment set.
@@ -3252,9 +3326,11 @@ async function loadAssignments() {
         assignmentTitles.get(b.dataset.deleteAssignment) || ""
       );
       if (!ok) return;
-      b.disabled = true;
-      await cascadeDeleteAssignment(b.dataset.deleteAssignment);
-      await touchSection(state.sectionId, { deleted: [b.dataset.deleteAssignment] });
+      const done = await runGuarded(b, "Couldn't delete the assignment. Please try again.", async () => {
+        await cascadeDeleteAssignment(b.dataset.deleteAssignment);
+        await touchSection(state.sectionId, { deleted: [b.dataset.deleteAssignment] });
+      });
+      if (!done) return;
       toast("Deleted.");
       loadAssignments();
     }));
@@ -3625,26 +3701,38 @@ el("add-assignment-form").addEventListener("submit", async (e) => {
     payload.quiz = quizData.quiz;
     payload.totalPoints = quizData.totalPoints;
   }
-  const ref = await addDoc(collection(db, "assignments"), payload);
-  await touchSection(payload.sectionId, { changed: [ref.id] });
-  if (quizData) {
-    // Answer key in its own owner-only doc. If that write is refused (e.g.
-    // the quizKeys rule isn't deployed yet), don't leave behind a quiz with
-    // no key - remove the assignment and say why.
-    try {
-      await setDoc(doc(db, "quizKeys", ref.id), { assignmentId: ref.id, ownerEmail: state.viewAsEmail, answers: quizData.answers });
-    } catch (err) {
-      console.error(err);
-      await deleteDoc(ref).catch(() => {});
-      await touchSection(payload.sectionId, { deleted: [ref.id] });
-      alert("Couldn't save the quiz answer key, so the quiz was not created. (Are the latest Firestore rules deployed?) " + friendlyError(err));
-      return;
+  // Disable the submit button across the awaits so a double-click can't create
+  // the same assignment twice.
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  if (submitBtn && submitBtn.disabled) return;
+  if (submitBtn) submitBtn.disabled = true;
+  try {
+    const ref = await addDoc(collection(db, "assignments"), payload);
+    await touchSection(payload.sectionId, { changed: [ref.id] });
+    if (quizData) {
+      // Answer key in its own owner-only doc. If that write is refused (e.g.
+      // the quizKeys rule isn't deployed yet), don't leave behind a quiz with
+      // no key - remove the assignment and say why.
+      try {
+        await setDoc(doc(db, "quizKeys", ref.id), { assignmentId: ref.id, ownerEmail: state.viewAsEmail, answers: quizData.answers });
+      } catch (err) {
+        console.error(err);
+        await deleteDoc(ref).catch(() => {});
+        await touchSection(payload.sectionId, { deleted: [ref.id] });
+        alert("Couldn't save the quiz answer key, so the quiz was not created. (Are the latest Firestore rules deployed?) " + friendlyError(err));
+        return;
+      }
     }
+    resetCreateType();
+    loadAssignments();
+    if (type === "material") { toast("Material added."); return; }
+    await notifyOnAssignmentCreate(payload);
+  } catch (err) {
+    console.error(err);
+    alert("Couldn't add it: " + (err && err.message ? err.message : "please try again."));
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
   }
-  resetCreateType();
-  loadAssignments();
-  if (type === "material") { toast("Material added."); return; }
-  await notifyOnAssignmentCreate(payload);
 });
 
 // Bulk-set one due date across the assignments the teacher ticks in the open
@@ -3665,7 +3753,7 @@ function renderBulkDueList(docs) {
     const comp = a.component === "performance" ? "Performance Task" : "Written";
     return `<label style="display:flex; align-items:center; gap:0.4rem; font-weight:normal;">
       <input type="checkbox" class="bulk-due-cb" value="${d.id}" style="width:auto;" />
-      ${a.title} <span class="muted">(${comp}${a.dueDate ? ` — due ${a.dueDate}` : ""})</span>
+      ${escAttr(a.title)} <span class="muted">(${comp}${a.dueDate ? ` — due ${a.dueDate}` : ""})</span>
     </label>`;
   }).join("");
 }
@@ -3685,9 +3773,15 @@ el("bulk-due-apply").addEventListener("click", async () => {
   if (!confirm(`Set due date to ${date} for ${ids.length} assignment(s)?`)) return;
 
   statusEl.textContent = "Applying...";
-  await Promise.all(ids.map((id) => updateDoc(doc(db, "assignments", id), { dueDate: date })));
-  await touchSection(state.sectionId, { changed: ids });
-  statusEl.textContent = `Set ${date} on ${ids.length} assignment(s).`;
+  // allSettled: one failed write must not hide which others did save, and
+  // touchSection must only be told about the ids that actually changed.
+  const results = await Promise.allSettled(ids.map((id) => updateDoc(doc(db, "assignments", id), { dueDate: date })));
+  const okIds = ids.filter((_, i) => results[i].status === "fulfilled");
+  const failed = ids.length - okIds.length;
+  if (okIds.length) await touchSection(state.sectionId, { changed: okIds }).catch((err) => console.error(err));
+  statusEl.textContent = failed
+    ? `Set ${date} on ${okIds.length} of ${ids.length} assignment(s). ${failed} could not be saved - tick them and try again.`
+    : `Set ${date} on ${ids.length} assignment(s).`;
   loadAssignments();
 });
 
@@ -3859,8 +3953,12 @@ el("edit-assignment-form").addEventListener("submit", async (e) => {
       return;
     }
   }
-  await updateDoc(doc(db, "assignments", assignmentId), payload);
-  await touchSection(state.assignmentSectionId, { changed: [assignmentId] });
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  const done = await runGuarded(submitBtn, "Couldn't save the changes. Please try again.", async () => {
+    await updateDoc(doc(db, "assignments", assignmentId), payload);
+    await touchSection(state.assignmentSectionId, { changed: [assignmentId] });
+  });
+  if (!done) return;
   toast("Saved.");
   await openAssignment(assignmentId);
 });
@@ -3879,7 +3977,7 @@ function renderScoresSummary(submissions, totalPoints) {
       <summary><strong>Scores summary (${graded.length} graded)</strong></summary>
       <table class="records-grid" style="margin-top:0.75rem;">
         <thead><tr><th>Name</th><th>Score</th></tr></thead>
-        <tbody>${graded.map((s) => `<tr><td>${displayStudentName(s.studentName)}</td><td>${s.finalGrade?.score ?? "—"}/${totalPoints ?? "—"}${s.returnCount > 0 ? ` <span class="muted">(max ${maxAfterReturns(totalPoints, s.returnCount)})</span>` : ""}</td></tr>`).join("")}</tbody>
+        <tbody>${graded.map((s) => `<tr><td>${escAttr(displayStudentName(s.studentName))}</td><td>${s.finalGrade?.score ?? "—"}/${totalPoints ?? "—"}${s.returnCount > 0 ? ` <span class="muted">(max ${maxAfterReturns(totalPoints, s.returnCount)})</span>` : ""}</td></tr>`).join("")}</tbody>
       </table>
     </details>`;
 }
@@ -4282,7 +4380,7 @@ async function generateOfficialAccomplishmentReport(context, canvas, buttonEl) {
 function renderImagesGallery(submissions, assignmentTitle, context) {
   const container = el("images-gallery");
   const withPhotos = submissions
-    .map((s) => ({ name: displayStudentName(s.studentName), photos: s.photoPages?.length ? s.photoPages : s.photoData ? [s.photoData] : [] }))
+    .map((s) => ({ name: displayStudentName(s.studentName), photos: (s.photoPages?.length ? s.photoPages : s.photoData ? [s.photoData] : []).filter(isImageDataUrl) }))
     .filter((s) => s.photos.length > 0);
   if (withPhotos.length === 0) {
     container.innerHTML = "";
@@ -4299,7 +4397,7 @@ function renderImagesGallery(submissions, assignmentTitle, context) {
         <button type="button" id="download-all-photos">Download all as ZIP</button>
         <div class="photo-thumbs" style="margin-top:0.75rem;">
           ${withPhotos.map((s) => s.photos.map((p, i) =>
-            `<button type="button" class="photo-thumb-btn" data-photo-src="${p}" title="${s.name} - page ${i + 1}"><img src="${p}" /></button>`
+            `<button type="button" class="photo-thumb-btn" data-photo-src="${escAttr(p)}" title="${escAttr(s.name)} - page ${i + 1}"><img src="${escAttr(p)}" /></button>`
           ).join("")).join("")}
         </div>
       </div>
@@ -4363,9 +4461,11 @@ function renderImagesGallery(submissions, assignmentTitle, context) {
 // assignment's own (collapsed-by-default) Photo submissions card first.
 async function getPhotoAssignments() {
   const [subjectsSnap, sectionsSnap, assignSnap, subSnap] = await Promise.all([
-    getDocs(ownerScopedQuery("subjects")),
-    getDocs(ownerScopedQuery("sections")),
-    getDocs(ownerScopedQuery("assignments")),
+    // Names only: reuse the structure cache (invalidateStructure() keeps it
+    // fresh). Submissions stay a direct read - the photos themselves are needed.
+    cachedOwnerDocs("subjects", "subjects"),
+    cachedOwnerDocs("sections", "sections"),
+    cachedOwnerDocs("assignments", "assignments"),
     getDocs(ownerScopedQuery("submissions")),
   ]);
   const subjectNames = new Map(subjectsSnap.docs.map((d) => [d.id, d.data().name]));
@@ -4486,15 +4586,19 @@ async function loadSubmissions(opts = {}) {
     const row = document.createElement("div");
     row.className = "card";
     if (highlight && matchesNameSearch(s.studentName, highlight)) row.dataset.searchHighlight = "true";
-    const embedUrl = toEmbedUrl(s.link);
-    const linkBlock = (s.photoPages && s.photoPages.length > 0)
-      ? `<div class="photo-thumbs">${s.photoPages.map((p, i) => `<button type="button" class="photo-thumb-btn" data-photo-src="${p}" title="page ${i + 1}"><img src="${p}" /></button>`).join("")}</div>`
-      : s.photoData // legacy single-photo submissions made before multi-page support
-        ? `<button type="button" class="photo-thumb-btn" data-photo-src="${s.photoData}" title="submitted photo"><img src="${s.photoData}" class="photo-preview" /></button>`
+    const safeLink = isHttpUrl(s.link) ? String(s.link).trim() : "";
+    const embedUrl = safeLink ? toEmbedUrl(safeLink) : null;
+    const safePages = (s.photoPages || []).filter(isImageDataUrl);
+    const linkBlock = safePages.length > 0
+      ? `<div class="photo-thumbs">${safePages.map((p, i) => `<button type="button" class="photo-thumb-btn" data-photo-src="${escAttr(p)}" title="page ${i + 1}"><img src="${escAttr(p)}" /></button>`).join("")}</div>`
+      : isImageDataUrl(s.photoData) // legacy single-photo submissions made before multi-page support
+        ? `<button type="button" class="photo-thumb-btn" data-photo-src="${escAttr(s.photoData)}" title="submitted photo"><img src="${escAttr(s.photoData)}" class="photo-preview" /></button>`
         : embedUrl
-        ? `<iframe src="${embedUrl}" class="submission-preview"></iframe>
-         <div class="muted"><a href="${s.link}" target="_blank" rel="noopener">open in new tab</a></div>`
-        : `<div class="muted"><a href="${s.link}" target="_blank" rel="noopener">${s.link}</a></div>`;
+        ? `<iframe src="${escAttr(embedUrl)}" class="submission-preview"></iframe>
+         <div class="muted"><a href="${escAttr(safeLink)}" target="_blank" rel="noopener">open in new tab</a></div>`
+        : safeLink
+        ? `<div class="muted"><a href="${escAttr(safeLink)}" target="_blank" rel="noopener">${escAttr(safeLink)}</a></div>`
+        : (s.link ? `<div class="muted">${escAttr(s.link)}</div>` : "");
     // Pasted-code submissions (Code assignments): show the source highlighted,
     // the student's saved run output, and a Run button so the teacher can
     // re-run it here without leaving the review screen.
@@ -4506,9 +4610,9 @@ async function loadSubmissions(opts = {}) {
       : "";
     const quizBlock = quiz ? quizResultHtml(d.id, s, a, quiz) : "";
     row.innerHTML = `
-      <strong id="sub-name-${d.id}">${displayStudentName(s.studentName)}</strong>
-      <button type="button" class="secondary" data-edit-sub-name="${d.id}" data-uid="${s.studentUID}" data-raw="${s.studentName}" style="margin-left:0.4rem;">Edit name</button>
-      <span class="status-${s.status}"> — ${s.status}</span>
+      <strong id="sub-name-${d.id}">${escAttr(displayStudentName(s.studentName))}</strong>
+      <button type="button" class="secondary" data-edit-sub-name="${d.id}" data-uid="${escAttr(s.studentUID || "")}" data-raw="${escAttr(s.studentName || "")}" style="margin-left:0.4rem;">Edit name</button>
+      <span class="status-${escAttr(s.status)}"> — ${escAttr(s.status)}</span>
       ${s.resubmitRequested ? ' <span class="status-pending">redo requested</span>' : ""}
       ${quizBlock}
       ${quiz ? "" : codeBlock}
@@ -4563,13 +4667,15 @@ async function loadSubmissions(opts = {}) {
     b.addEventListener("click", async () => {
       const ok = confirm("Reopen this graded assignment so the student can redo it? Their current grade stays until you re-grade the new work.");
       if (!ok) return;
-      b.disabled = true;
-      await updateDoc(doc(db, "submissions", b.dataset.allowRedo), {
-        status: "returned",
-        resubmitRequested: false,
-        returnedAt: Date.now(),
+      const done = await runGuarded(b, "Couldn't reopen the submission. Please try again.", async () => {
+        await updateDoc(doc(db, "submissions", b.dataset.allowRedo), {
+          status: "returned",
+          resubmitRequested: false,
+          returnedAt: Date.now(),
+        });
+        await touchStudentSubs(ownedDocs.find((d) => d.id === b.dataset.allowRedo)?.data().studentUID, a.sectionId);
       });
-      await touchStudentSubs(ownedDocs.find((d) => d.id === b.dataset.allowRedo)?.data().studentUID, a.sectionId);
+      if (!done) return;
       alert("Reopened — the student can now edit and resubmit.");
       loadSubmissions();
       refreshNotifications();
@@ -4582,11 +4688,13 @@ async function loadSubmissions(opts = {}) {
         s?.studentName || ""
       );
       if (!ok) return;
-      b.disabled = true;
-      await deleteDoc(doc(db, "submissions", b.dataset.deleteSub));
-      await touchStudentSubs(s?.studentUID, a.sectionId);
-      // Also drop any archived returned-version snapshots for this submission.
-      await deleteWhere("submissionAttempts", "submissionId", b.dataset.deleteSub).catch(() => {});
+      const done = await runGuarded(b, "Couldn't delete the submission. Please try again.", async () => {
+        await deleteDoc(doc(db, "submissions", b.dataset.deleteSub));
+        await touchStudentSubs(s?.studentUID, a.sectionId);
+        // Also drop any archived returned-version snapshots for this submission.
+        await deleteWhere("submissionAttempts", "submissionId", b.dataset.deleteSub).catch(() => {});
+      });
+      if (!done) return;
       toast("Deleted.");
       loadSubmissions();
     }));
@@ -4650,7 +4758,7 @@ async function loadQuizReviewData(assignmentId, a, ownedDocs, memo = null) {
     <strong>Quiz</strong> <span class="muted">${drawCount ? `Bank: ${questions.length} items · each student gets ${drawCount}` : `${questions.length} items`} · ${formatDuration(quizTimeLimitSeconds(perStudent, a.quiz?.secondsPerItem) * 1000)} time limit</span>
     ${key ? "" : `<p class="status-pending">Answer key not found - auto-check is off; grade by hand.</p>`}
     ${unfinished.length ? `<div style="margin-top:0.5rem;"><div class="muted">Started but not submitted (may still be taking it):</div>
-      ${unfinished.map((t) => `<div class="quiz-unfinished">${displayStudentName(t.studentName || t.studentUID)}
+      ${unfinished.map((t) => `<div class="quiz-unfinished">${escAttr(displayStudentName(t.studentName || t.studentUID))}
         <span class="muted">started ${t.startedAt?.toDate ? t.startedAt.toDate().toLocaleString() : ""}</span>
         <button type="button" class="secondary" data-quiz-reset-attempt="${t.id}">Allow retake</button></div>`).join("")}</div>` : ""}`;
   return { key, attempts, questions, assignment: a, overrides: new Map(), unfinishedCard };
@@ -4763,11 +4871,13 @@ function wireQuizReview(list, ownedDocs, quiz) {
       const s = ownedDocs.find((d) => d.id === b.dataset.quizRetake)?.data();
       if (!s) return;
       if (!confirm(`Let ${s.studentName || "this student"} take the quiz again? Their current answers and score are deleted.`)) return;
-      b.disabled = true;
-      await deleteDoc(doc(db, "submissions", b.dataset.quizRetake));
-      await touchStudentSubs(s.studentUID, subsMemo?.aDoc?.data()?.sectionId);
-      const attempt = quiz.attempts.get(s.studentUID);
-      if (attempt) await resetAttempt(attempt.id);
+      const done = await runGuarded(b, "Couldn't reset the quiz. Please try again.", async () => {
+        await deleteDoc(doc(db, "submissions", b.dataset.quizRetake));
+        await touchStudentSubs(s.studentUID, subsMemo?.aDoc?.data()?.sectionId);
+        const attempt = quiz.attempts.get(s.studentUID);
+        if (attempt) await resetAttempt(attempt.id);
+      });
+      if (!done) return;
       toast("Done - the student can start the quiz again.");
       loadSubmissions();
     }));
@@ -4825,15 +4935,19 @@ async function renderPreviousAttempts(submissionId, assignmentId) {
     }
     host.innerHTML = attempts.map((att, i) => {
       const when = att.returnedAt ? new Date(att.returnedAt).toLocaleString() : "";
-      const embedUrl = att.link ? toEmbedUrl(att.link) : null;
-      const work = (att.photoPages && att.photoPages.length > 0)
-        ? `<div class="photo-thumbs">${att.photoPages.map((p, n) => `<a href="${p}" target="_blank" rel="noopener"><img src="${p}" /></a>`).join("")}</div>`
+      const attLink = isHttpUrl(att.link) ? String(att.link).trim() : "";
+      const embedUrl = attLink ? toEmbedUrl(attLink) : null;
+      const attPages = (att.photoPages || []).filter(isImageDataUrl);
+      const work = attPages.length > 0
+        ? `<div class="photo-thumbs">${attPages.map((p, n) => `<a href="${escAttr(p)}" target="_blank" rel="noopener"><img src="${escAttr(p)}" /></a>`).join("")}</div>`
         : att.code
           ? codeBlockHtml(att.code, "java") + (att.codeOutput ? `<div class="muted">Saved output</div><pre class="code-output">${escAttr(att.codeOutput)}</pre>` : "")
           : att.link
             ? (embedUrl
-              ? `<iframe src="${embedUrl}" class="submission-preview"></iframe>`
-              : `<div class="muted"><a href="${att.link}" target="_blank" rel="noopener">${att.link}</a></div>`)
+              ? `<iframe src="${escAttr(embedUrl)}" class="submission-preview"></iframe>`
+              : attLink
+                ? `<div class="muted"><a href="${escAttr(attLink)}" target="_blank" rel="noopener">${escAttr(attLink)}</a></div>`
+                : `<div class="muted">${escAttr(att.link)}</div>`)
             : `<div class="muted">(no work saved)</div>`;
       return `<div class="card" style="margin-bottom:0.5rem;">
         <strong>Attempt ${attempts.length - i}</strong> <span class="muted">returned ${when}</span>
@@ -4877,7 +4991,7 @@ async function openReview(submissionId) {
       ${capNote ? `<div class="status-returned" data-cap-note style="margin-bottom:0.3rem;">${capNote}</div>` : ""}
       <input type="number" id="score-${submissionId}" min="0" max="${cap}" value="${draftScore}" />
       <label>Feedback</label>
-      <textarea id="feedback-${submissionId}" rows="3">${draft.feedback || ""}</textarea>
+      <textarea id="feedback-${submissionId}" rows="3">${escAttr(draft.feedback || "")}</textarea>
       <button data-publish="${submissionId}">Publish to student</button>
       ${isQuiz ? `<div class="muted" style="margin-top:0.4rem; font-size:0.85em;">Score is pre-filled from the auto-check (including any answers you ticked "Accept"). Publish shows the score to the student - correct answers stay hidden.</div>`
         : `<button type="button" class="secondary" data-return="${submissionId}">Return for revision</button>
@@ -4904,8 +5018,14 @@ async function openReview(submissionId) {
   // <input max> only styles the field - it doesn't block typing or block a
   // programmatic .value read, so an over-max score would otherwise save
   // silently. Shared check for both buttons below.
-  function readValidScore() {
-    const score = Number(el(`score-${submissionId}`).value) || 0;
+  function readValidScore({ requireValue = false } = {}) {
+    const raw = String(el(`score-${submissionId}`).value).trim();
+    // A blank box must never publish as 0 - that would silently record a zero.
+    if (requireValue && raw === "") {
+      alert("Type a score before publishing (use 0 if the student really earned none).");
+      return null;
+    }
+    const score = Number(raw) || 0;
     if (score < 0 || score > cap) {
       alert(capNote
         ? `Score must be between 0 and ${cap} for this submission - ${capNote}.`
@@ -4916,11 +5036,9 @@ async function openReview(submissionId) {
   }
 
   container.querySelector(`[data-publish]`).addEventListener("click", async () => {
-    const score = readValidScore();
+    const score = readValidScore({ requireValue: true });
     if (score === null) return;
     const btn = container.querySelector(`[data-publish]`);
-    btn.disabled = true;
-    btn.textContent = "Saving...";
     const published = {
       finalGrade: {
         score,
@@ -4929,8 +5047,12 @@ async function openReview(submissionId) {
       status: "published",
       publishedAt: Date.now(),
     };
-    await updateDoc(ref, published);
-    await touchStudentSubs(s.studentUID, a.sectionId);
+    const done = await runGuarded(btn, "Couldn't publish the grade. Check your connection and try again.", async () => {
+      btn.textContent = "Saving...";
+      await updateDoc(ref, published);
+      await touchStudentSubs(s.studentUID, a.sectionId);
+    });
+    if (!done) return;
     alert("Published — the student can now see their grade and feedback.");
     // Re-render + bell from memory (no re-read of the class) - see subsMemo.
     resolvedLocally.add(submissionId);
@@ -4946,33 +5068,7 @@ async function openReview(submissionId) {
     const score = readValidScore();
     if (score === null) return;
     const btn = container.querySelector(`[data-return]`);
-    btn.disabled = true;
-    btn.textContent = "Saving...";
     const feedback = el(`feedback-${submissionId}`).value;
-    // Archive the version being sent back BEFORE the student overwrites it on
-    // resubmit, so both attempts survive (shown under "Previous attempts" on
-    // this card, see renderPreviousAttempts). Best-effort: a missing collection
-    // rule (not yet deployed) must never block the return itself. Each attempt
-    // is its own doc, so photo pages stay under the 1MiB per-doc cap.
-    try {
-      await addDoc(collection(db, "submissionAttempts"), {
-        submissionId,
-        assignmentId: s.assignmentId,
-        studentUID: s.studentUID,
-        studentName: s.studentName || "",
-        ownerEmail: s.ownerEmail || a.ownerEmail || ADMIN_EMAIL,
-        link: s.link || "",
-        code: s.code || "",
-        codeOutput: s.codeOutput || "",
-        photoPages: s.photoPages || (s.photoData ? [s.photoData] : []),
-        score,
-        feedback,
-        submittedAt: s.submittedAt || null,
-        returnedAt: Date.now(),
-      });
-    } catch (err) {
-      console.error("couldn't archive returned attempt (returning anyway):", err);
-    }
     const returned = {
       finalGrade: { score, feedback },
       status: "returned",
@@ -4981,8 +5077,37 @@ async function openReview(submissionId) {
     // returnCount drives the -10 max penalty; increment() on the server, a
     // plain number for the in-memory patch (never cache the sentinel).
     const nextCount = (Number(s.returnCount) || 0) + 1;
-    await updateDoc(ref, { ...returned, returnCount: increment(1) });
-    await touchStudentSubs(s.studentUID, a.sectionId);
+    const done = await runGuarded(btn, "Couldn't return the work. Check your connection and try again.", async () => {
+      btn.textContent = "Saving...";
+      await updateDoc(ref, { ...returned, returnCount: increment(1) });
+      await touchStudentSubs(s.studentUID, a.sectionId);
+      // Archive the version being sent back so both attempts survive (shown
+      // under "Previous attempts", see renderPreviousAttempts). Written only
+      // AFTER the return succeeded, so a failed return leaves no orphan
+      // snapshot. Best-effort: a missing collection rule (not yet deployed)
+      // must never fail the return. Each attempt is its own doc, so photo
+      // pages stay under the 1MiB per-doc cap.
+      try {
+        await addDoc(collection(db, "submissionAttempts"), {
+          submissionId,
+          assignmentId: s.assignmentId,
+          studentUID: s.studentUID,
+          studentName: s.studentName || "",
+          ownerEmail: s.ownerEmail || a.ownerEmail || ADMIN_EMAIL,
+          link: s.link || "",
+          code: s.code || "",
+          codeOutput: s.codeOutput || "",
+          photoPages: s.photoPages || (s.photoData ? [s.photoData] : []),
+          score,
+          feedback,
+          submittedAt: s.submittedAt || null,
+          returnedAt: returned.returnedAt,
+        });
+      } catch (err) {
+        console.error("couldn't archive returned attempt (returned anyway):", err);
+      }
+    });
+    if (!done) return;
     alert(`Returned for revision — the student can now redo and resubmit.\nTheir max score for this work is now ${maxAfterReturns(a.totalPoints, nextCount)} of ${a.totalPoints} (−${RETURN_PENALTY} per return).`);
     resolvedLocally.add(submissionId);
     loadSubmissions({ reuse: true, patch: { id: submissionId, data: { ...returned, returnCount: nextCount } } });
@@ -5114,7 +5239,7 @@ el("roster-config-form").addEventListener("submit", async (e) => {
 function renderRosterPreview() {
   const container = el("roster-preview");
   const rows = rosterPreviewNames.map((r, i) => `
-    <tr><td>${i + 1}</td><td>${r.name}</td><td>
+    <tr><td>${i + 1}</td><td>${escAttr(r.name || "")}</td><td>
       <select data-gender-index="${i}">
         <option value="" ${r.gender ? "" : "selected"}>—</option>
         <option value="Male" ${r.gender === "Male" ? "selected" : ""}>Male</option>
@@ -5353,7 +5478,7 @@ function renderMasterListPreview() {
     return;
   }
   const rows = masterListPreviewStudents.map((s, i) => `
-    <tr><td>${i + 1}</td><td>${s.name}</td><td>${s.email}</td><td>
+    <tr><td>${i + 1}</td><td>${escAttr(s.name || "")}</td><td>${escAttr(s.email || "")}</td><td>
       <button type="button" class="secondary" data-remove-master-preview="${i}">Remove</button>
     </td></tr>`).join("");
   container.innerHTML = `
@@ -5485,7 +5610,7 @@ function renderMasterListStudentsEditor(listId, students) {
   const render = () => {
     container.innerHTML = `
       <table class="records-grid"><thead><tr><th>#</th><th>Name</th><th>Email</th><th></th></tr></thead><tbody>
-        ${draft.map((s, i) => `<tr><td>${i + 1}</td><td>${s.name}</td><td>${s.email}</td><td>
+        ${draft.map((s, i) => `<tr><td>${i + 1}</td><td>${escAttr(s.name || "")}</td><td>${escAttr(s.email || "")}</td><td>
           <button type="button" class="secondary" data-remove-student="${i}">Remove</button>
         </td></tr>`).join("")}
       </tbody></table>
@@ -5526,7 +5651,7 @@ function renderMasterListSuspects(listId, groups, removedCount) {
     <p class="muted" style="margin-top:0.5rem;">${intro}Possible same-person entries below (different email or middle initial) — <strong>not</strong> auto-removed. Remove the ones you don't want; keep the rest.</p>
     ${groups.map((g, gi) => `
       <table class="records-grid"><thead><tr><th>#</th><th>Name</th><th>Email</th><th></th></tr></thead><tbody>
-        ${g.map((s, i) => `<tr><td>${i + 1}</td><td>${s.name}</td><td>${s.email || '<span class="muted">(no email)</span>'}</td><td>
+        ${g.map((s, i) => `<tr><td>${i + 1}</td><td>${escAttr(s.name || "")}</td><td>${s.email ? escAttr(s.email) : '<span class="muted">(no email)</span>'}</td><td>
           <button type="button" class="secondary" data-remove-suspect="${gi}|${i}">Remove</button></td></tr>`).join("")}
       </tbody></table>${gi < groups.length - 1 ? '<hr style="margin:0.75rem 0;" />' : ""}`).join("")}
     <button type="button" id="suspects-done-${listId}" style="margin-top:0.5rem;">Done</button>`;
@@ -5580,16 +5705,20 @@ async function loadRecords() {
     return;
   }
 
-  const enrollSnap = await getDocs(ownerScopedQuery("enrollments", where("sectionId", "==", state.sectionId)));
+  // Enrollments + every assignment's submissions in one parallel wave (was one
+  // sequential round trip per assignment), same as renderActivityScores().
+  const [enrollSnap, subSnaps] = await Promise.all([
+    getDocs(ownerScopedQuery("enrollments", where("sectionId", "==", state.sectionId))),
+    Promise.all(assignments.map((a) => getDocs(ownerScopedQuery("submissions", where("assignmentId", "==", a.id))))),
+  ]);
   const enrollments = enrollSnap.docs.filter((d) => ownedByViewAs(d.data())).map((d) => d.data());
 
   const submissionsByAssignment = {};
-  for (const a of assignments) {
-    const subSnap = await getDocs(ownerScopedQuery("submissions", where("assignmentId", "==", a.id)));
+  assignments.forEach((a, i) => {
     const byStudent = new Map();
-    subSnap.forEach((d) => { if (ownedByViewAs(d.data())) byStudent.set(d.data().studentUID, d.data()); });
+    subSnaps[i].forEach((d) => { if (ownedByViewAs(d.data())) byStudent.set(d.data().studentUID, d.data()); });
     submissionsByAssignment[a.id] = byStudent;
-  }
+  });
 
   // Group by component (Written Work / Performance Task) for the header,
   // in that order. Older assignments made before this field existed have
@@ -5637,7 +5766,7 @@ async function loadRecords() {
           ? `<td title="${note}">${sub.finalGrade?.score ?? 0}/${a.totalPoints}*</td>`
           : `<td>${sub.finalGrade?.score ?? 0}/${a.totalPoints}</td>`;
       }
-      return `<td class="status-${sub.status}">${sub.status}</td>`;
+      return `<td class="status-${escAttr(sub.status)}">${escAttr(sub.status)}</td>`;
     }).join("") + MANUAL_EXAMS.map((ex) => {
       const v = enrollment?.manualScores?.[ex.key];
       if (v == null) return `<td class="muted">—</td>`;
@@ -5677,8 +5806,8 @@ async function loadRecords() {
         <tbody>
           ${unmatchedEnrollments.map((en, i) => `
             <tr>
-              <td>${displayStudentName(en.studentName)}</td>
-              <td>${en.studentEmail || ""}</td>
+              <td>${escAttr(displayStudentName(en.studentName))}</td>
+              <td>${escAttr(en.studentEmail || "")}</td>
               <td>
                 <select id="unmatched-select-${i}" style="width:auto; display:inline-block;">
                   <option value="">— pick roster name —</option>
@@ -5888,8 +6017,18 @@ el("codegen-copy").addEventListener("click", async () => {
 });
 
 // ---------- admin: teacher accounts (super admin only, see firestore.rules) ----------
+// One shared read of `teachers` for the access list and the view-as picker
+// (both are rendered on boot). Reset after any grant/revoke.
+let teachersSnapPromise = null;
+function getTeachersSnap() {
+  if (!teachersSnapPromise) {
+    teachersSnapPromise = getDocs(collection(db, "teachers"));
+    teachersSnapPromise.catch(() => { teachersSnapPromise = null; }); // never cache a failed read
+  }
+  return teachersSnapPromise;
+}
 async function loadTeachers() {
-  const snap = await getDocs(collection(db, "teachers"));
+  const snap = await getTeachersSnap();
   const rows = snap.docs.map((d) => d.data()).sort((a, b) => a.email.localeCompare(b.email));
   const container = el("teachers-list");
   container.innerHTML = rows.length
@@ -5908,6 +6047,7 @@ async function loadTeachers() {
       b.disabled = true;
       await deleteDoc(doc(db, "teachers", email));
       toast("Access removed.");
+      teachersSnapPromise = null;
       loadTeachers();
       renderViewAsPicker();
     }));
@@ -5924,6 +6064,7 @@ el("add-teacher-form").addEventListener("submit", async (e) => {
   });
   toast("Access granted.");
   e.target.reset();
+  teachersSnapPromise = null;
   loadTeachers();
   renderViewAsPicker();
 });
@@ -5931,7 +6072,7 @@ el("add-teacher-form").addEventListener("submit", async (e) => {
 // ---------- admin: "view as" picker (super admin only) ----------
 async function renderViewAsPicker() {
   const picker = el("view-as-picker");
-  const snap = await getDocs(collection(db, "teachers"));
+  const snap = await getTeachersSnap();
   // "My Classes" is the signed-in admin's OWN email (not a hardcoded one) so
   // the picker resolves correctly for whichever super admin is signed in.
   const self = currentUser.email;
@@ -6064,11 +6205,11 @@ function renderOverviewStudents(studentRows) {
     ? `<table class="records-grid"><thead><tr><th>#</th><th>Name</th><th>Gmail</th><th>Teacher</th><th>Class</th><th></th></tr></thead><tbody>
         ${rows.map((r, i) => `<tr>
           <td>${i + 1}</td>
-          <td>${displayStudentName(r.name)}</td>
-          <td>${r.email}</td>
+          <td>${escAttr(displayStudentName(r.name))}</td>
+          <td>${escAttr(r.email || "")}</td>
           <td>${r.teacher === currentUser.email ? "You" : r.teacher}</td>
           <td>${r.section}${r.subject ? ` <span class="muted">(${r.subject})</span>` : ""}</td>
-          <td><button class="secondary" data-view-as="${r.uid}" data-vemail="${r.email}" data-vname="${r.name}" title="Open this student's page (read-only)">View as</button></td>
+          <td><button class="secondary" data-view-as="${r.uid}" data-vemail="${escAttr(r.email || "")}" data-vname="${escAttr(r.name || "")}" title="Open this student's page (read-only)">View as</button></td>
         </tr>`).join("")}
       </tbody></table>`
     : '<p class="muted">No students match that search.</p>';
@@ -6208,8 +6349,10 @@ guardPage("teacher").then(async (user) => {
     renderViewAsPicker();
   }
   try {
-    await refreshNotifications();
-    showDebugBanner(lastNotifications.errorDetail); // ?debug=1 only: reveal a swallowed bell-query error on-screen
+    // Bell (7 queries) fills in on its own; the Home grid must not wait for it.
+    refreshNotifications()
+      .then(() => showDebugBanner(lastNotifications.errorDetail)) // ?debug=1 only: reveal a swallowed bell-query error on-screen
+      .catch((err) => console.error("notification refresh failed (bell only):", err));
     await restoreNavState();
   } catch (err) {
     showConnectionError(err);

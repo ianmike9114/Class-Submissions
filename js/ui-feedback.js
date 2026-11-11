@@ -37,6 +37,12 @@ export function toast(message, ms = 3200) {
 export function friendlyError(err) {
   console.error(err);
   const code = String(err?.code || "").replace(/^(firestore|auth|functions)\//, "");
+  const text = friendlyText(code, err);
+  // Students screenshot errors for the teacher, so keep the short code visible.
+  return code ? `${text} (${code})` : text;
+}
+
+function friendlyText(code, err) {
   const msg = String(err?.message || "");
   if (typeof navigator !== "undefined" && navigator.onLine === false) {
     return "You seem to be offline. Check your internet connection and try again.";

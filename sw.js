@@ -22,7 +22,7 @@
  * activate handler deletes every cache that isn't the current one.
  */
 
-const CACHE_NAME = "class-submissions-v41";
+const CACHE_NAME = "class-submissions-v42";
 
 self.addEventListener("install", () => {
   // Activate this worker as soon as it's installed, don't wait for old tabs
@@ -51,19 +51,35 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
-  event.respondWith(networkFirst(req));
+  event.respondWith(networkFirst(req, event));
 });
 
-async function networkFirst(req) {
+// Network-first, but a hung connection (weak signal) no longer blocks forever:
+// if the network has not answered in NETWORK_TIMEOUT_MS and a cached copy
+// exists, serve that, while the fetch keeps going and refreshes the cache.
+// With no cached copy we still wait for the network (nothing else to show).
+const NETWORK_TIMEOUT_MS = 4000;
+
+async function networkFirst(req, event) {
   const cache = await caches.open(CACHE_NAME);
-  try {
-    const fresh = await fetch(req);
+  const network = fetch(req).then((fresh) => {
     // Cache a copy for offline use. Only cache real successful responses
     // (skip opaque/partial/error) so we never persist a broken page.
     if (fresh && fresh.ok && fresh.type === "basic") {
       cache.put(req, fresh.clone());
     }
     return fresh;
+  });
+  // Keep the worker alive so a slow fetch can still finish refreshing the cache.
+  if (event) event.waitUntil(network.catch(() => {}));
+  try {
+    const cachedFirst = await cache.match(req);
+    if (!cachedFirst) return await network;
+    let timer;
+    const timeout = new Promise((resolve) => { timer = setTimeout(() => resolve(null), NETWORK_TIMEOUT_MS); });
+    const winner = await Promise.race([network, timeout]);
+    clearTimeout(timer);
+    return winner || cachedFirst;
   } catch (err) {
     // Offline (or network failed): serve the cached copy if we have one.
     const cached = await cache.match(req);
