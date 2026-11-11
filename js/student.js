@@ -10,6 +10,7 @@ import { runJava } from "./runner.js";
 import { codeBlockHtml, highlightWithin } from "./highlight.js";
 import { seededShuffle, quizDeadlineMs, servedQuestions, QUIZ_BREACH_LIMIT, isSplitWindow, hasSecondScreen } from "./quiz.js?v=7";
 import { RETURN_PENALTY, maxAfterReturns, penaltyNote } from "./grading.js?v=1";
+import { toast, friendlyError } from "./ui-feedback.js?v=1";
 import {
   readCache, writeCache, staleSectionIds, assignmentDelta, asDoc, chunk, readStore, writeStore, fitToBudget,
   SUB_PREFIX, SUB_CACHE_TTL_MS, TERM_PREFIX, TERM_CACHE_TTL_MS,
@@ -597,10 +598,10 @@ async function loadEverything() {
         try {
           if (name && name !== current) {
             await updateDoc(doc(db, "enrollments", enrollmentId), { studentName: name });
-            alert("Saved.");
+            toast("Saved.");
           }
         } catch (err) {
-          alert("Couldn't save name: " + err.message);
+          alert("Couldn't save name: " + friendlyError(err));
         }
         loadEverything();
       };
@@ -624,9 +625,9 @@ async function loadEverything() {
       b.disabled = true;
       try {
         await updateDoc(doc(db, "enrollments", enrollmentId), { leaveRequested: next });
-        alert(next ? "Leave request sent." : "Leave request cancelled.");
+        toast(next ? "Leave request sent." : "Leave request cancelled.");
       } catch (err) {
-        alert("Couldn't update leave request: " + err.message);
+        alert("Couldn't update leave request: " + friendlyError(err));
       }
       loadEverything();
     }));
@@ -953,7 +954,7 @@ async function loadEverything() {
             alert("Request sent — your teacher will decide whether to reopen it.");
             loadEverything();
           } catch (err) {
-            alert("Couldn't send request: " + err.message);
+            alert("Couldn't send request: " + friendlyError(err));
             requestRedoBtn.disabled = false;
           }
         });
@@ -968,7 +969,7 @@ async function loadEverything() {
             await afterOwnSubmissionWrite(subDoc.data().assignmentId);
             loadEverything();
           } catch (err) {
-            alert("Couldn't cancel request: " + err.message);
+            alert("Couldn't cancel request: " + friendlyError(err));
             cancelRedoBtn.disabled = false;
           }
         });
@@ -988,10 +989,10 @@ async function loadEverything() {
             try {
               await deleteDoc(doc(db, "submissions", subDoc.id));
               await afterOwnSubmissionWrite(subDoc.data().assignmentId);
-              alert("Removed — you can resubmit now.");
+              toast("Removed — you can resubmit now.");
               loadEverything();
             } catch (err) {
-              alert("Couldn't remove submission: " + err.message);
+              alert("Couldn't remove submission: " + friendlyError(err));
               removeBtn.disabled = false;
             }
           });
@@ -1800,10 +1801,10 @@ function wireSubmitForm(form) {
       await afterOwnSubmissionWrite(assignmentId);
       pendingPhotos.delete(assignmentId);
       pendingCodeOutput.delete(assignmentId);
-      alert(submissionId ? "Saved — resubmitted for review." : "Submitted!");
+      toast(submissionId ? "Saved — resubmitted for review." : "Submitted!");
       loadEverything();
     } catch (err) {
-      alert((submissionId ? "Save failed: " : "Submit failed: ") + err.message);
+      alert((submissionId ? "Save failed: " : "Submit failed: ") + friendlyError(err));
       btn.disabled = false;
       btn.textContent = originalLabel;
     }
@@ -1994,7 +1995,7 @@ document.addEventListener("click", async (e) => {
     runQuiz(assignmentId, a, snap.data().startedAt.toMillis(), resuming);
   } catch (err) {
     console.error(err);
-    alert("Couldn't start the quiz: " + err.message);
+    alert("Couldn't start the quiz: " + friendlyError(err));
   } finally {
     btn.disabled = false;
     btn.textContent = original;
