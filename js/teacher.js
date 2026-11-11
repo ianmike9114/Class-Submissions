@@ -754,7 +754,7 @@ function renderAddStudentPanel(container, sectionId, section, pendingInvites, ma
         <div class="invite-pending">
           ${pendingInvites.length ? pendingInvites.map((inv) => `
             <div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.35rem;">
-              <span class="muted">Pending: ${displayStudentName(inv.studentName)} (${inv.studentEmail})</span>
+              <span class="muted">Pending: ${escAttr(displayStudentName(inv.studentName))} (${escAttr(inv.studentEmail || "")})</span>
               <button type="button" class="secondary" data-cancel-invite="${inv.id}">Cancel</button>
             </div>`).join("") : ""}
         </div>
@@ -1510,7 +1510,7 @@ function renderNotRespondingOverview(data) {
           <div class="progress-track"><div class="progress-fill" style="width:${pct}%;"></div></div>
           <div class="muted" style="font-size:0.85em;">${sec.submittedCount}/${sec.expectedCount} submissions in — ${pct}% complete. Table numbers show submitted / total per student.</div>
           <table class="records-grid"><thead><tr><th>Name</th><th>Email</th><th>Written</th><th>Performance</th></tr></thead><tbody>
-            ${sec.rows.map((r) => `<tr><td>${r.name}</td><td>${r.email}</td><td>${r.writtenDone}/${r.writtenTotal}</td><td>${r.performanceDone}/${r.performanceTotal}</td></tr>`).join("")}
+            ${sec.rows.map((r) => `<tr><td>${escAttr(r.name || "")}</td><td>${escAttr(r.email || "")}</td><td>${r.writtenDone}/${r.writtenTotal}</td><td>${r.performanceDone}/${r.performanceTotal}</td></tr>`).join("")}
           </tbody></table>
         </div>`;
       }).join("")}
@@ -1936,7 +1936,7 @@ async function searchGlobally() {
     const subj = subjectsById.get(sec.subjectId) || {};
     return `
       <button class="notif-item" data-jump-student="${sec.subjectId || ""}|${a.sectionId || ""}|${m.assignmentId}">
-        ${displayStudentName(m.studentName)} <span class="status-${m.status}">— ${m.status}</span>
+        ${escAttr(displayStudentName(m.studentName))} <span class="status-${escAttr(m.status)}">— ${escAttr(m.status)}</span>
         <div class="muted">${subj.name || "—"} &rsaquo; ${sec.sectionName || "—"} &rsaquo; ${a.title || "—"}</div>
       </button>`;
   }).join("");
@@ -2243,10 +2243,10 @@ async function openEnrolled(onlySectionId) {
   // just the super admin - a regular teacher's preview is owner-scoped to
   // their own classes (asOwner below), which firestore.rules allows.
   const canViewAsStudent = !!currentUser;
-  const renderEnrolledRow = (r, n) => { const pending = r.status === "pending"; return `<tr><td>${n}</td><td id="enroll-name-${r.id}">${displayStudentName(r.studentName)}${pending ? ' <span class="status-pending">(pending approval)</span>' : ""}${r.leaveRequested ? ' <span class="status-pending">(leave requested)</span>' : ""}</td><td>${r.studentEmail || ""}</td><td>${sectionMap.get(r.sectionId) || ""}</td><td>
+  const renderEnrolledRow = (r, n) => { const pending = r.status === "pending"; return `<tr><td>${n}</td><td id="enroll-name-${r.id}">${escAttr(displayStudentName(r.studentName))}${pending ? ' <span class="status-pending">(pending approval)</span>' : ""}${r.leaveRequested ? ' <span class="status-pending">(leave requested)</span>' : ""}</td><td>${escAttr(r.studentEmail || "")}</td><td>${sectionMap.get(r.sectionId) || ""}</td><td>
           <button class="secondary" data-edit-enrollment="${r.id}" data-uid="${r.studentUID}" data-raw="${escAttr(r.studentName || "")}">Edit name</button>
           ${pending ? `<button data-approve-enrollment="${r.id}" title="Approve this student's join request">Approve</button>` : ""}
-          ${canViewAsStudent ? `<button class="secondary" data-view-as="${r.studentUID}" data-vemail="${r.studentEmail || ""}" data-vname="${r.studentName || ""}" title="Open this student's page (read-only)">View as</button>` : ""}
+          ${canViewAsStudent ? `<button class="secondary" data-view-as="${r.studentUID}" data-vemail="${escAttr(r.studentEmail || "")}" data-vname="${escAttr(r.studentName || "")}" title="Open this student's page (read-only)">View as</button>` : ""}
           ${r.leaveRequested && !pending ? `<button class="secondary" data-decline-leave="${r.id}" title="Keep this student in the class and clear their leave request">Keep in class</button>` : ""}
           <button class="danger icon" data-remove-enrollment="${r.id}" data-leave-requested="${!!r.leaveRequested}" title="${pending ? "Reject join request" : "Remove"}" aria-label="Remove enrollment">×</button>
         </td></tr>`; };
@@ -2752,7 +2752,7 @@ async function renderActivityScores(assignments, sectionId) {
         possible += Number(a.totalPoints) || 0;
         const note = penaltyNote(a.totalPoints, sub.returnCount);
         return note
-          ? `<td class="score-cell" data-score-assignment="${a.id}" data-score-student="${s.studentName || ""}" title="${note}">${score}/${a.totalPoints}*</td>`
+          ? `<td class="score-cell" data-score-assignment="${a.id}" data-score-student="${escAttr(s.studentName || "")}" title="${escAttr(note)}">${score}/${a.totalPoints}*</td>`
           : `<td ${attrs}>${score}/${a.totalPoints}</td>`;
       }
       const label = STATUS_LABELS[sub.status] || sub.status;
@@ -3840,7 +3840,7 @@ function renderScoresSummary(submissions, totalPoints) {
       <summary><strong>Scores summary (${graded.length} graded)</strong></summary>
       <table class="records-grid" style="margin-top:0.75rem;">
         <thead><tr><th>Name</th><th>Score</th></tr></thead>
-        <tbody>${graded.map((s) => `<tr><td>${displayStudentName(s.studentName)}</td><td>${s.finalGrade?.score ?? "—"}/${totalPoints ?? "—"}${s.returnCount > 0 ? ` <span class="muted">(max ${maxAfterReturns(totalPoints, s.returnCount)})</span>` : ""}</td></tr>`).join("")}</tbody>
+        <tbody>${graded.map((s) => `<tr><td>${escAttr(displayStudentName(s.studentName))}</td><td>${s.finalGrade?.score ?? "—"}/${totalPoints ?? "—"}${s.returnCount > 0 ? ` <span class="muted">(max ${maxAfterReturns(totalPoints, s.returnCount)})</span>` : ""}</td></tr>`).join("")}</tbody>
       </table>
     </details>`;
 }
@@ -4473,7 +4473,7 @@ async function loadSubmissions(opts = {}) {
     row.innerHTML = `
       <strong id="sub-name-${d.id}">${escAttr(displayStudentName(s.studentName))}</strong>
       <button type="button" class="secondary" data-edit-sub-name="${d.id}" data-uid="${escAttr(s.studentUID || "")}" data-raw="${escAttr(s.studentName || "")}" style="margin-left:0.4rem;">Edit name</button>
-      <span class="status-${s.status}"> — ${s.status}</span>
+      <span class="status-${escAttr(s.status)}"> — ${escAttr(s.status)}</span>
       ${s.resubmitRequested ? ' <span class="status-pending">redo requested</span>' : ""}
       ${quizBlock}
       ${quiz ? "" : codeBlock}
@@ -4615,7 +4615,7 @@ async function loadQuizReviewData(assignmentId, a, ownedDocs, memo = null) {
     <strong>Quiz</strong> <span class="muted">${drawCount ? `Bank: ${questions.length} items · each student gets ${drawCount}` : `${questions.length} items`} · ${formatDuration(quizTimeLimitSeconds(perStudent, a.quiz?.secondsPerItem) * 1000)} time limit</span>
     ${key ? "" : `<p class="status-pending">Answer key not found - auto-check is off; grade by hand.</p>`}
     ${unfinished.length ? `<div style="margin-top:0.5rem;"><div class="muted">Started but not submitted (may still be taking it):</div>
-      ${unfinished.map((t) => `<div class="quiz-unfinished">${displayStudentName(t.studentName || t.studentUID)}
+      ${unfinished.map((t) => `<div class="quiz-unfinished">${escAttr(displayStudentName(t.studentName || t.studentUID))}
         <span class="muted">started ${t.startedAt?.toDate ? t.startedAt.toDate().toLocaleString() : ""}</span>
         <button type="button" class="secondary" data-quiz-reset-attempt="${t.id}">Allow retake</button></div>`).join("")}</div>` : ""}`;
   return { key, attempts, questions, assignment: a, overrides: new Map(), unfinishedCard };
@@ -5083,7 +5083,7 @@ el("roster-config-form").addEventListener("submit", async (e) => {
 function renderRosterPreview() {
   const container = el("roster-preview");
   const rows = rosterPreviewNames.map((r, i) => `
-    <tr><td>${i + 1}</td><td>${r.name}</td><td>
+    <tr><td>${i + 1}</td><td>${escAttr(r.name || "")}</td><td>
       <select data-gender-index="${i}">
         <option value="" ${r.gender ? "" : "selected"}>—</option>
         <option value="Male" ${r.gender === "Male" ? "selected" : ""}>Male</option>
@@ -5322,7 +5322,7 @@ function renderMasterListPreview() {
     return;
   }
   const rows = masterListPreviewStudents.map((s, i) => `
-    <tr><td>${i + 1}</td><td>${s.name}</td><td>${s.email}</td><td>
+    <tr><td>${i + 1}</td><td>${escAttr(s.name || "")}</td><td>${escAttr(s.email || "")}</td><td>
       <button type="button" class="secondary" data-remove-master-preview="${i}">Remove</button>
     </td></tr>`).join("");
   container.innerHTML = `
@@ -5454,7 +5454,7 @@ function renderMasterListStudentsEditor(listId, students) {
   const render = () => {
     container.innerHTML = `
       <table class="records-grid"><thead><tr><th>#</th><th>Name</th><th>Email</th><th></th></tr></thead><tbody>
-        ${draft.map((s, i) => `<tr><td>${i + 1}</td><td>${s.name}</td><td>${s.email}</td><td>
+        ${draft.map((s, i) => `<tr><td>${i + 1}</td><td>${escAttr(s.name || "")}</td><td>${escAttr(s.email || "")}</td><td>
           <button type="button" class="secondary" data-remove-student="${i}">Remove</button>
         </td></tr>`).join("")}
       </tbody></table>
@@ -5495,7 +5495,7 @@ function renderMasterListSuspects(listId, groups, removedCount) {
     <p class="muted" style="margin-top:0.5rem;">${intro}Possible same-person entries below (different email or middle initial) — <strong>not</strong> auto-removed. Remove the ones you don't want; keep the rest.</p>
     ${groups.map((g, gi) => `
       <table class="records-grid"><thead><tr><th>#</th><th>Name</th><th>Email</th><th></th></tr></thead><tbody>
-        ${g.map((s, i) => `<tr><td>${i + 1}</td><td>${s.name}</td><td>${s.email || '<span class="muted">(no email)</span>'}</td><td>
+        ${g.map((s, i) => `<tr><td>${i + 1}</td><td>${escAttr(s.name || "")}</td><td>${s.email ? escAttr(s.email) : '<span class="muted">(no email)</span>'}</td><td>
           <button type="button" class="secondary" data-remove-suspect="${gi}|${i}">Remove</button></td></tr>`).join("")}
       </tbody></table>${gi < groups.length - 1 ? '<hr style="margin:0.75rem 0;" />' : ""}`).join("")}
     <button type="button" id="suspects-done-${listId}" style="margin-top:0.5rem;">Done</button>`;
@@ -5606,7 +5606,7 @@ async function loadRecords() {
           ? `<td title="${note}">${sub.finalGrade?.score ?? 0}/${a.totalPoints}*</td>`
           : `<td>${sub.finalGrade?.score ?? 0}/${a.totalPoints}</td>`;
       }
-      return `<td class="status-${sub.status}">${sub.status}</td>`;
+      return `<td class="status-${escAttr(sub.status)}">${escAttr(sub.status)}</td>`;
     }).join("") + MANUAL_EXAMS.map((ex) => {
       const v = enrollment?.manualScores?.[ex.key];
       if (v == null) return `<td class="muted">—</td>`;
@@ -5646,8 +5646,8 @@ async function loadRecords() {
         <tbody>
           ${unmatchedEnrollments.map((en, i) => `
             <tr>
-              <td>${displayStudentName(en.studentName)}</td>
-              <td>${en.studentEmail || ""}</td>
+              <td>${escAttr(displayStudentName(en.studentName))}</td>
+              <td>${escAttr(en.studentEmail || "")}</td>
               <td>
                 <select id="unmatched-select-${i}" style="width:auto; display:inline-block;">
                   <option value="">— pick roster name —</option>
@@ -6033,11 +6033,11 @@ function renderOverviewStudents(studentRows) {
     ? `<table class="records-grid"><thead><tr><th>#</th><th>Name</th><th>Gmail</th><th>Teacher</th><th>Class</th><th></th></tr></thead><tbody>
         ${rows.map((r, i) => `<tr>
           <td>${i + 1}</td>
-          <td>${displayStudentName(r.name)}</td>
-          <td>${r.email}</td>
+          <td>${escAttr(displayStudentName(r.name))}</td>
+          <td>${escAttr(r.email || "")}</td>
           <td>${r.teacher === currentUser.email ? "You" : r.teacher}</td>
           <td>${r.section}${r.subject ? ` <span class="muted">(${r.subject})</span>` : ""}</td>
-          <td><button class="secondary" data-view-as="${r.uid}" data-vemail="${r.email}" data-vname="${r.name}" title="Open this student's page (read-only)">View as</button></td>
+          <td><button class="secondary" data-view-as="${r.uid}" data-vemail="${escAttr(r.email || "")}" data-vname="${escAttr(r.name || "")}" title="Open this student's page (read-only)">View as</button></td>
         </tr>`).join("")}
       </tbody></table>`
     : '<p class="muted">No students match that search.</p>';
