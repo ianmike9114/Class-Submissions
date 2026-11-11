@@ -1636,6 +1636,7 @@ function renderTermPreview(filterByTerm, hiddenNames, visibleNames, noTermNames 
     </div>`;
 }
 
+let subjectsRenderSeq = 0; // bumps per loadSubjects() so late badge rollups from an older render are dropped
 async function loadSubjects() {
   // Every path back to the Home view calls this - reset the global search
   // box here too, so a stale query/result list from before navigating away
@@ -1654,8 +1655,11 @@ async function loadSubjects() {
   // the grid mirrors it here too. globalActive drives the label/checkbox.
   // Order matches what students get: site-wide override, else the super admin's
   // own term (school-wide), else this teacher's own (only when admin set none).
-  const [ownSetting, globalSetting, adminSetting] = await Promise.all([
-    getCurrentTermSetting(), getGlobalTermSetting(), getAdminTermSetting()]);
+  // Subjects are fetched in the same round trip as the three term docs (they
+  // don't depend on each other) so the grid isn't waiting on two sequential waves.
+  const [ownSetting, globalSetting, adminSetting, snap] = await Promise.all([
+    getCurrentTermSetting(), getGlobalTermSetting(), getAdminTermSetting(),
+    getDocs(ownerScopedQuery("subjects"))]);
   const globalActive = termIsSet(globalSetting);
   const adminWide = !globalActive && termIsSet(adminSetting);
   const termSetting = globalActive ? globalSetting : (adminWide ? adminSetting : ownSetting);
@@ -1668,16 +1672,18 @@ async function loadSubjects() {
   // badges, it never blanks the whole dashboard. (This is what used to make a
   // regular teacher's freshly-created subject silently not show: a failed bell
   // query rejected the shared Promise.all here before any subject rendered.)
-  const snap = await getDocs(ownerScopedQuery("subjects"));
   const shownSubjectIds = new Set(snap.docs
     .filter((d) => ownedByViewAs(d.data()) && subjectShown(d.data(), { showArchived, filterByTerm, termSetting }, normYear, normTerm))
     .map((d) => d.id));
-  const [counts, leaveCounts, joinCounts, missingCounts] = await Promise.all([
-    getPendingCounts().catch((err) => { console.error("pending-count rollup failed (badges only):", err); return { byAssignment: new Map(), bySection: new Map(), bySubject: new Map() }; }),
-    getLeaveRequestCounts().catch((err) => { console.error("leave-count rollup failed (badges only):", err); return { bySection: new Map(), bySubject: new Map() }; }),
-    getJoinWaitingCounts().catch((err) => { console.error("join-waiting rollup failed (badges only):", err); return { bySection: new Map(), bySubject: new Map() }; }),
-    getMissingWorkCounts(shownSubjectIds).catch((err) => { console.error("missing-work rollup failed (badges only):", err); return { bySubject: new Map() }; }),
-  ]);
+  // Badge rollups start now but are NOT awaited: the grid draws first and each
+  // badge slot fills in as its rollup resolves (same idea as loadSections()).
+  const subjectsLoadId = ++subjectsRenderSeq;
+  const badgeJobs = [
+    ["pending", getPendingCounts().catch((err) => { console.error("pending-count rollup failed (badges only):", err); return { byAssignment: new Map(), bySection: new Map(), bySubject: new Map() }; }), (c, id) => pendingBadge(c.bySubject.get(id), id)],
+    ["join", getJoinWaitingCounts().catch((err) => { console.error("join-waiting rollup failed (badges only):", err); return { bySection: new Map(), bySubject: new Map() }; }), (c, id) => joinWaitingBadge(c.bySubject.get(id))],
+    ["missing", getMissingWorkCounts(shownSubjectIds).catch((err) => { console.error("missing-work rollup failed (badges only):", err); return { bySubject: new Map() }; }), (c, id) => missingWorkBadge(c.bySubject.get(id))],
+    ["leave", getLeaveRequestCounts().catch((err) => { console.error("leave-count rollup failed (badges only):", err); return { bySection: new Map(), bySubject: new Map() }; }), (c, id) => leaveBadge(c.bySubject.get(id), id)],
+  ];
   const list = el("subjects-list");
   list.innerHTML = "";
   const subjectNames = new Map(); // id -> name, for the delete-confirm prompt below
@@ -1715,10 +1721,7 @@ async function loadSubjects() {
     row.innerHTML = `
       <strong>${s.name}</strong>
       <span class="muted" id="year-term-${d.id}">(${s.gradeLevel} — SY ${s.schoolYear || "—"} · Term ${s.term || "—"})</span>
-      ${pendingBadge(counts.bySubject.get(d.id), d.id)}
-      ${joinWaitingBadge(joinCounts.bySubject.get(d.id))}
-      ${missingWorkBadge(missingCounts.bySubject.get(d.id))}
-      ${leaveBadge(leaveCounts.bySubject.get(d.id), d.id)}
+      <span data-subj-badge="pending:${d.id}"></span><span data-subj-badge="join:${d.id}"></span><span data-subj-badge="missing:${d.id}"></span><span data-subj-badge="leave:${d.id}"></span>
       ${s.archived ? '<span class="muted"> — archived</span>' : ""}
       <div id="year-term-edit-${d.id}"></div>
       <div style="margin-top:0.5rem;">
@@ -1733,6 +1736,14 @@ async function loadSubjects() {
   });
   renderTermFilterHint(filterByTerm, termSetting, termsPresent.size, hiddenByTerm);
   renderTermPreview(filterByTerm, hiddenTermNames, visibleTermNames, noTermNames);
+  // Fill each badge slot when its rollup resolves; a newer loadSubjects() call
+  // (or a failed rollup, which yields empty maps) just leaves the slots empty.
+  badgeJobs.forEach(([kind, job, render]) => job.then((c) => {
+    if (subjectsLoadId !== subjectsRenderSeq) return; // grid was re-rendered since
+    list.querySelectorAll(`[data-subj-badge^="${kind}:"]`).forEach((slot) => {
+      slot.innerHTML = render(c, slot.dataset.subjBadge.slice(kind.length + 1));
+    });
+  }));
   list.querySelectorAll("[data-open]").forEach((b) =>
     b.addEventListener("click", () => openSubject(b.dataset.open)));
   list.querySelectorAll("[data-edit-year]").forEach((b) =>
@@ -3052,9 +3063,14 @@ document.addEventListener("click", (e) => {
   });
 });
 
+let assignmentsRenderSeq = 0; // drops late pending-badge fills from a superseded loadAssignments()
 async function loadAssignments() {
   const q = query(collection(db, "assignments"), where("sectionId", "==", state.sectionId));
-  const [snap, counts] = await Promise.all([getDocs(q), getPendingCounts()]);
+  // Pending-count badges are best-effort and filled in after the list is drawn
+  // (they need the all-pending-submissions read, which can be slow); only the
+  // assignments query gates the first paint.
+  const snap = await getDocs(q);
+  const assignmentsLoadId = ++assignmentsRenderSeq;
   backfillAssignmentVersions(state.sectionId, snap.docs.map((d) => d.id)); // not awaited - background, once per section
   // Materials aren't graded activities - keep them out of the Written/
   // Performance points overview.
@@ -3121,7 +3137,7 @@ async function loadAssignments() {
           <div class="assign-title">
             <span class="chip ${isMaterial ? "chip-material" : "chip-todo"}">${isMaterial ? "&#128196; Material" : isQuiz ? "&#128221; Quiz" : "&#9998; Assignment"}</span>
             <strong>${escAttr(a.title || "(untitled)")}</strong>
-            ${isMaterial ? "" : pendingBadge(counts.byAssignment.get(d.id), `${state.subjectId}|${state.sectionId}|${d.id}`)}
+            ${isMaterial ? "" : `<span data-assign-pending="${d.id}"></span>`}
           </div>
           <div class="muted assign-meta">${meta}</div>
           ${a.instructions ? `<p class="muted assign-desc">${escAttr(a.instructions)}</p>` : ""}
@@ -3183,6 +3199,16 @@ async function loadAssignments() {
     });
     list.appendChild(group);
   });
+  const badgeSubjectId = state.subjectId, badgeSectionId = state.sectionId;
+  getPendingCounts()
+    .then((counts) => {
+      if (assignmentsLoadId !== assignmentsRenderSeq) return; // list re-rendered since
+      list.querySelectorAll("[data-assign-pending]").forEach((slot) => {
+        const id = slot.dataset.assignPending;
+        slot.innerHTML = pendingBadge(counts.byAssignment.get(id), `${badgeSubjectId}|${badgeSectionId}|${id}`);
+      });
+    })
+    .catch((err) => console.error("assignment pending-badge rollup failed (badges only):", err));
   // Bulk-deadline picker: one checkbox per graded assignment in this section
   // (materials excluded - they have no due date). Rebuilt on every load so it
   // always mirrors the current assignment set.
@@ -4321,9 +4347,11 @@ function renderImagesGallery(submissions, assignmentTitle, context) {
 // assignment's own (collapsed-by-default) Photo submissions card first.
 async function getPhotoAssignments() {
   const [subjectsSnap, sectionsSnap, assignSnap, subSnap] = await Promise.all([
-    getDocs(ownerScopedQuery("subjects")),
-    getDocs(ownerScopedQuery("sections")),
-    getDocs(ownerScopedQuery("assignments")),
+    // Names only: reuse the structure cache (invalidateStructure() keeps it
+    // fresh). Submissions stay a direct read - the photos themselves are needed.
+    cachedOwnerDocs("subjects", "subjects"),
+    cachedOwnerDocs("sections", "sections"),
+    cachedOwnerDocs("assignments", "assignments"),
     getDocs(ownerScopedQuery("submissions")),
   ]);
   const subjectNames = new Map(subjectsSnap.docs.map((d) => [d.id, d.data().name]));
@@ -5538,16 +5566,20 @@ async function loadRecords() {
     return;
   }
 
-  const enrollSnap = await getDocs(ownerScopedQuery("enrollments", where("sectionId", "==", state.sectionId)));
+  // Enrollments + every assignment's submissions in one parallel wave (was one
+  // sequential round trip per assignment), same as renderActivityScores().
+  const [enrollSnap, subSnaps] = await Promise.all([
+    getDocs(ownerScopedQuery("enrollments", where("sectionId", "==", state.sectionId))),
+    Promise.all(assignments.map((a) => getDocs(ownerScopedQuery("submissions", where("assignmentId", "==", a.id))))),
+  ]);
   const enrollments = enrollSnap.docs.filter((d) => ownedByViewAs(d.data())).map((d) => d.data());
 
   const submissionsByAssignment = {};
-  for (const a of assignments) {
-    const subSnap = await getDocs(ownerScopedQuery("submissions", where("assignmentId", "==", a.id)));
+  assignments.forEach((a, i) => {
     const byStudent = new Map();
-    subSnap.forEach((d) => { if (ownedByViewAs(d.data())) byStudent.set(d.data().studentUID, d.data()); });
+    subSnaps[i].forEach((d) => { if (ownedByViewAs(d.data())) byStudent.set(d.data().studentUID, d.data()); });
     submissionsByAssignment[a.id] = byStudent;
-  }
+  });
 
   // Group by component (Written Work / Performance Task) for the header,
   // in that order. Older assignments made before this field existed have
@@ -5846,8 +5878,18 @@ el("codegen-copy").addEventListener("click", async () => {
 });
 
 // ---------- admin: teacher accounts (super admin only, see firestore.rules) ----------
+// One shared read of `teachers` for the access list and the view-as picker
+// (both are rendered on boot). Reset after any grant/revoke.
+let teachersSnapPromise = null;
+function getTeachersSnap() {
+  if (!teachersSnapPromise) {
+    teachersSnapPromise = getDocs(collection(db, "teachers"));
+    teachersSnapPromise.catch(() => { teachersSnapPromise = null; }); // never cache a failed read
+  }
+  return teachersSnapPromise;
+}
 async function loadTeachers() {
-  const snap = await getDocs(collection(db, "teachers"));
+  const snap = await getTeachersSnap();
   const rows = snap.docs.map((d) => d.data()).sort((a, b) => a.email.localeCompare(b.email));
   const container = el("teachers-list");
   container.innerHTML = rows.length
@@ -5866,6 +5908,7 @@ async function loadTeachers() {
       b.disabled = true;
       await deleteDoc(doc(db, "teachers", email));
       alert("Access removed.");
+      teachersSnapPromise = null;
       loadTeachers();
       renderViewAsPicker();
     }));
@@ -5882,6 +5925,7 @@ el("add-teacher-form").addEventListener("submit", async (e) => {
   });
   alert("Access granted.");
   e.target.reset();
+  teachersSnapPromise = null;
   loadTeachers();
   renderViewAsPicker();
 });
@@ -5889,7 +5933,7 @@ el("add-teacher-form").addEventListener("submit", async (e) => {
 // ---------- admin: "view as" picker (super admin only) ----------
 async function renderViewAsPicker() {
   const picker = el("view-as-picker");
-  const snap = await getDocs(collection(db, "teachers"));
+  const snap = await getTeachersSnap();
   // "My Classes" is the signed-in admin's OWN email (not a hardcoded one) so
   // the picker resolves correctly for whichever super admin is signed in.
   const self = currentUser.email;
@@ -6166,8 +6210,10 @@ guardPage("teacher").then(async (user) => {
     renderViewAsPicker();
   }
   try {
-    await refreshNotifications();
-    showDebugBanner(lastNotifications.errorDetail); // ?debug=1 only: reveal a swallowed bell-query error on-screen
+    // Bell (7 queries) fills in on its own; the Home grid must not wait for it.
+    refreshNotifications()
+      .then(() => showDebugBanner(lastNotifications.errorDetail)) // ?debug=1 only: reveal a swallowed bell-query error on-screen
+      .catch((err) => console.error("notification refresh failed (bell only):", err));
     await restoreNavState();
   } catch (err) {
     showConnectionError(err);
