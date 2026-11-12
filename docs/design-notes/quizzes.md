@@ -82,7 +82,7 @@ when needed. Read before editing this area; add new notes for this area here.
   `isLmsApp()` detects it. Inside the app `js/student.js`'s
   `syncScreenshotBlock()` turns `setScreenshotBlock()` (PrivacyScreen plugin →
   Android `FLAG_SECURE`, screenshots/recordings black) on while a **module**
-  (open `.card[data-material]`) or a **quiz** is on screen, off otherwise —
+  (open `.card[data-material]`, or any card with `data-protected` = `protectFile`) or a **quiz** is on screen, off otherwise —
   not the whole app, by request: students must still screenshot errors for
   the teacher. Called from `openAssignment()`, list re-render, tab switch and
   quiz cleanup. The flag outlives page loads, so `index.html` and

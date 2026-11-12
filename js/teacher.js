@@ -14,7 +14,7 @@ import {
   balanceAnswerPositions, answerPatternWarning,
 } from "./quiz.js?v=7";
 import { getEmailConfig, saveEmailConfig, notifySection } from "./notify.js";
-import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=3";
+import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=4";
 import { loadWorkbook, readExamScores, pickBestSheet } from "./class-record.js?v=1";
 import { runJava } from "./runner.js";
 import { setScreenshotBlock } from "./app-bridge.js?v=3";
@@ -235,7 +235,7 @@ function buildAssignmentAnnouncement(a) {
     isMaterial ? `📚 New material: ${a.title}` : `📌 New assignment: ${a.title}`,
     `Class: ${state.subjectName || "—"} — ${state.sectionName || "—"}`,
     isMaterial ? "" : `Due: ${a.dueDate || "no deadline"}`,
-    isMaterial && a.instructionsLink ? `File: ${a.instructionsLink}` : "",
+    isMaterial && a.instructionsLink && !a.protectFile ? `File: ${a.instructionsLink}` : "",
     state.joinCode ? `Open/join here: ${joinLinkFor(state.joinCode)}` : "",
   ].filter(Boolean).join("\n");
 }
@@ -3660,6 +3660,7 @@ el("add-assignment-form").addEventListener("submit", async (e) => {
     instructions: el("assignment-instructions").value.trim(),
     instructionsLink: el("assignment-instructions-link").value.trim(),
     allowDownload: el("assignment-allow-download").checked,
+    protectFile: el("assignment-protect-file").checked,
     createdAt: Date.now(),
     ownerEmail: state.viewAsEmail,
   };
@@ -3847,6 +3848,7 @@ async function openAssignment(assignmentId) {
   el("edit-assignment-instructions").value = data.instructions || "";
   el("edit-assignment-instructions-link").value = data.instructionsLink || "";
   el("edit-assignment-allow-download").checked = data.allowDownload !== false; // missing = allowed
+  el("edit-assignment-protect-file").checked = !!data.protectFile; // missing = not protected
   el("edit-assignment-upload-link").value = data.uploadFolderLink || "";
   el("edit-assignment-component").value = data.component || "written";
   el("edit-assignment-due").value = data.dueDate || "";
@@ -3910,6 +3912,7 @@ el("edit-assignment-form").addEventListener("submit", async (e) => {
     instructions: el("edit-assignment-instructions").value.trim(),
     instructionsLink: el("edit-assignment-instructions-link").value.trim(),
     allowDownload: el("edit-assignment-allow-download").checked,
+    protectFile: el("edit-assignment-protect-file").checked,
   };
   const payload = isMaterial ? base : {
     ...base,

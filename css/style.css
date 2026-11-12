@@ -1359,6 +1359,24 @@ body.quiz-open { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .quiz-mover { transition: none; }
 }
+/* Protected module file (assignments.protectFile): name/email tiled over the
+   viewer so a leaked screenshot shows whose it is. pointer-events: none keeps
+   the embedded PDF scrollable. */
+.module-protect { position: relative; overflow: hidden; }
+.module-watermark {
+  position: absolute;
+  inset: -20%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2.5rem 3rem;
+  align-content: flex-start;
+  transform: rotate(-24deg);
+  opacity: 0.12;
+  font-size: 0.9rem;
+  pointer-events: none;
+  z-index: 1;
+  color: var(--text);
+}
 /* Breach (left full screen / switched apps / screenshot key): red blink. */
 .quiz-breach-flash::after {
   content: "";

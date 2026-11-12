@@ -78,11 +78,13 @@ export function extractFirstEmbeddableUrl(text) {
 // sizing class on the iframe ("material" => the taller reading pane used
 // for lesson material, "" => the default 400px box); `label` names the
 // plain-link fallback.
-export function embedBlockFor(link, { variant = "", label = "Open file" } = {}) {
+export function embedBlockFor(link, { variant = "", label = "Open file", bare = false } = {}) {
   if (!link) return "";
   const embed = toEmbedUrl(link);
   if (embed) {
     const cls = variant ? `submission-preview ${variant}` : "submission-preview";
+    // bare = protected file: the iframe only, no link that hands out the raw file.
+    if (bare) return `<iframe src="${embed}" class="${cls}"></iframe>`;
     // The iframe shows an empty gray box (no error the page can detect) when
     // the file isn't shared "Anyone with the link" or the browser blocks
     // Google's viewer (Brave Shields, strict tracking protection) - so
@@ -90,6 +92,7 @@ export function embedBlockFor(link, { variant = "", label = "Open file" } = {}) 
     return `<iframe src="${embed}" class="${cls}"></iframe>
       <div class="muted embed-fallback">Blank box? <a href="${link}" target="_blank" rel="noopener">Open in new tab</a>${openInChromeButton(link)} - the file must be shared "Anyone with the link can view".</div>`;
   }
+  if (bare) return `<div class="muted">This file can't be shown here. Ask your teacher for it.</div>`;
   return `<div class="muted"><a href="${link}" target="_blank" rel="noopener">${label}</a>${openInChromeButton(link)}</div>`;
 }
 

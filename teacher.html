@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
   <noscript><link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap" rel="stylesheet"></noscript>
-  <link rel="stylesheet" href="css/style.css?v=58" />
+  <link rel="stylesheet" href="css/style.css?v=59" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="theme-color" content="#002045" />
   <link rel="apple-touch-icon" href="/icons/icon-192.png" />
@@ -400,6 +400,8 @@
           <label>Material / instructions file link (optional - a Drive-hosted PDF/doc, shared as "anyone with the link". Shows embedded to students, not just as a link.)</label>
           <input id="assignment-instructions-link" type="url" placeholder="https://drive.google.com/file/d/..." />
           <label class="qb-check" style="margin-top:0.4rem;"><input type="checkbox" id="assignment-allow-download" checked /> Allow students to download this file (for offline reading)</label>
+          <label class="qb-check" style="margin-top:0.4rem;"><input type="checkbox" id="assignment-protect-file" /> Protect this file from screenshots: Android students must open it in the app; others see their name over it; no open/download links</label>
+          <p class="muted" style="margin:0.2rem 0 0;">Deterrence only: iPhone (no way to block screenshots there), computers and a second phone's camera can't be blocked; they see the name watermark. Also turn off "Viewers can download, print, copy" in the file's Drive share settings.</p>
 
           <div class="assignment-only">
             <div class="not-quiz">
@@ -477,6 +479,7 @@
           <label>Material / instructions file link (optional)</label>
           <input id="edit-assignment-instructions-link" type="url" placeholder="https://drive.google.com/file/d/..." />
           <label class="qb-check" style="margin-top:0.4rem;"><input type="checkbox" id="edit-assignment-allow-download" checked /> Allow students to download this file (for offline reading)</label>
+          <label class="qb-check" style="margin-top:0.4rem;"><input type="checkbox" id="edit-assignment-protect-file" /> Protect this file from screenshots: Android students must open it in the app; others see their name over it; no open/download links</label>
           <div class="assignment-only">
             <div class="not-quiz">
               <label>Upload folder link (optional - Drive folder shared "Anyone with the link: Editor", shown to students as an "Upload here" button)</label>
@@ -544,7 +547,7 @@
     <button type="button" id="photo-lightbox-close" aria-label="Close preview">&times;</button>
   </div>
 
-  <script type="module" src="js/teacher.js?v=122"></script>
+  <script type="module" src="js/teacher.js?v=123"></script>
 
   <!-- PWA: register the service worker (see sw.js). Failure swallowed. -->
   <script>
