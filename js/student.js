@@ -6,7 +6,7 @@ import { startApkDownload } from "./pwa-install.js?v=2";
 import {
   collection, addDoc, setDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where, arrayUnion, arrayRemove, serverTimestamp, documentId, onSnapshot,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { toEmbedUrl, toDownloadUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=3";
+import { toEmbedUrl, toDownloadUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=4";
 import { runJava } from "./runner.js";
 import { codeBlockHtml, highlightWithin } from "./highlight.js";
 import { seededShuffle, quizDeadlineMs, servedQuestions, QUIZ_BREACH_LIMIT, isSplitWindow, hasSecondScreen } from "./quiz.js?v=7";
@@ -827,6 +827,7 @@ async function loadEverything() {
       row.dataset.title = a.title;
       row.dataset.subject = subjectName;
       row.dataset.assignmentId = aDoc.id;
+      if (a.protectFile) row.dataset.protected = "1"; // screenshot-blocked in the app (syncScreenshotBlock)
 
       if (a.type === "material") {
         // Read-only reference material: no due date, no points, no submit
@@ -838,7 +839,7 @@ async function loadEverything() {
           <strong>${a.title}</strong> <span class="status-ai-drafted">Material</span>
           ${isDone ? '<span class="status-published"> ✓ Done</span>' : ""}
           ${isNew ? '<span class="status-pending"> New</span>' : ""}
-          ${a.instructions ? `<p>${a.instructions}</p>` : ""}
+          ${instructionsText(a) ? `<p>${instructionsText(a)}</p>` : ""}
           ${materialBlock(a)}
           <div style="margin-top:0.6rem;">
             <button type="button" class="${isDone ? "secondary" : ""}" data-toggle-done="${aDoc.id}" data-section="${a.sectionId}">
@@ -853,7 +854,7 @@ async function loadEverything() {
         row.innerHTML = `
           <strong>${a.title}</strong> <span class="muted">due ${a.dueDate || "no date"}</span>
           ${isNew ? '<span class="status-pending"> New</span>' : ""}
-          ${a.instructions ? `<p>${a.instructions}</p>` : ""}
+          ${instructionsText(a) ? `<p>${instructionsText(a)}</p>` : ""}
           ${instructionsFileBlock}
           ${uploadFolderBlock}
           ${a.allowedFileTypes === "quiz" ? "" : `<div class="muted">Type: ${a.allowedFileTypes}</div>`}
@@ -1386,7 +1387,7 @@ function openAssignment(assignmentId) {
 // screenshot-able so students can still send the teacher error screenshots.
 function syncScreenshotBlock() {
   const moduleOpen = !el("assignments-panel")?.classList.contains("hidden")
-    && !!el("assignments-list")?.querySelector(".card.is-open[data-material]");
+    && !!el("assignments-list")?.querySelector(".card.is-open[data-material], .card.is-open[data-protected]");
   setScreenshotBlock(moduleOpen || document.body.classList.contains("quiz-open"));
 }
 
@@ -1433,7 +1434,31 @@ document.addEventListener("click", (e) => {
 // text (a.instructions) - handle both, in the taller "material" reading
 // pane, and never render the same file twice (dedupe by embed URL so a link
 // present in both places shows once).
+// Instructions text for a card. A protected file's Drive link would otherwise
+// print as raw text (a way to open the file directly), so links are removed.
+function instructionsText(a) {
+  if (!a.instructions) return "";
+  return a.protectFile ? a.instructions.replace(/https?:\/\/[^\s<>"')]+/g, "").trim() : a.instructions;
+}
+
+// Faint name + email tiled over a protected file (pointer-events: none, so the
+// PDF still scrolls). A leaked screenshot then shows whose it is.
+function moduleWatermark() {
+  const who = esc(currentUser?.displayName || "") + " &middot; " + esc(currentUser?.email || "");
+  return `<div class="module-watermark" aria-hidden="true">${Array.from({ length: 30 }, () => `<span>${who}</span>`).join("")}</div>`;
+}
+
 function materialBlock(a) {
+  // Protected file: Android browsers must use the app (where screenshots are
+  // blocked); everyone else gets a watermarked viewer with no open/download links.
+  if (a.protectFile) {
+    if (isAndroid() && !isLmsApp()) return renderGetAppGate("module");
+    const url = a.instructionsLink || extractFirstEmbeddableUrl(a.instructions);
+    if (!url) return "";
+    return `<div class="material-viewer"><div class="material-viewer-head"><strong>Lesson material</strong></div>
+      <div class="module-protect">${embedBlockFor(url, { variant: "material", bare: true, label: "Lesson material" })}${moduleWatermark()}</div>
+      <div class="muted" style="padding:0.55rem 0.9rem; border-top:1px solid var(--gray-border); font-size:0.9em;">Can't see the preview? Tell your teacher.</div></div>`;
+  }
   const sources = [
     [a.instructionsLink || null, "Instructions file"],
     [extractFirstEmbeddableUrl(a.instructions), "Lesson material"],
@@ -1954,14 +1979,14 @@ function quizNeedsApp(a) {
   return !!a.quiz?.requireApp && isAndroid() && !isLmsApp();
 }
 
-function renderGetAppGate() {
+function renderGetAppGate(noun = "quiz") {
   return `
     <div class="quiz-intro">
-      <p><strong>&#128241; This quiz must be taken in the Class Submissions app.</strong></p>
-      <p class="muted">The app blocks screenshots during quizzes. Install it once, sign in with the same Gmail, then open this quiz there.</p>
+      <p><strong>&#128241; This ${noun} must be opened in the Class Submissions app.</strong></p>
+      <p class="muted">The app blocks screenshots. Install it once, sign in with the same Gmail, then open this ${noun} there.</p>
       <a class="button" href="${APP_APK_URL}">&#11015; Download the app</a>
       ${APK_INSTALL_STEPS_HTML}
-      <p class="muted">Then open this quiz in the app.</p>
+      <p class="muted">Then open this ${noun} in the app.</p>
     </div>`;
 }
 

@@ -53,6 +53,16 @@ when needed. Read before editing this area; add new notes for this area here.
   (so older modules show it too). Straight from Google, no Storage; in the
   Android app the link opens in the phone's browser, which downloads it. No
   rules change.
+- **Protect file (`assignment.protectFile`, missing = off).** Teacher checkbox
+  in add/edit forms. `materialBlock()` then: Android browser -> app gate
+  (`renderGetAppGate("module")`); everyone else -> `embedBlockFor(..., {bare:
+  true})` (iframe only, no Open/Download/Open-in-Chrome links) under a
+  `.module-watermark` (student name + email, `pointer-events: none`); URLs are
+  stripped from the shown instructions text (`instructionsText()`); the class
+  email/Messenger text omits the file link. **Deterrence only:** iPhone,
+  computers and a second phone's camera can't be blocked (iOS has no
+  `FLAG_SECURE` equivalent; a native iOS app would need a Mac + paid Apple
+  account). The iframe `src` is still visible in desktop devtools. No rules change.
 - **Accomplishment report + photo collage generator, per assignment**
   (`js/teacher.js`'s `renderCollagePreview()`/`drawScatteredCollage()`/
   `buildOfficialReportDocxBlob()`/`generateOfficialAccomplishmentReport()`,

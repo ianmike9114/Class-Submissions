@@ -5,7 +5,7 @@
 // The Gemini key is typed once into the teacher's Settings box and kept in
 // localStorage only - never written to any file, never committed to git,
 // and never loaded on student.html.
-import { extractDriveFileId } from "./embed.js?v=3";
+import { extractDriveFileId } from "./embed.js?v=4";
 
 const STORAGE_KEY = "geminiApiKey";
 // "-latest" alias tracks Google's current Flash model, so
