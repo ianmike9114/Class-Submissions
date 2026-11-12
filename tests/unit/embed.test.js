@@ -133,6 +133,27 @@ describe("embedBlockFor", () => {
     expect(embedBlockFor("")).toBe("");
     expect(embedBlockFor(null)).toBe("");
   });
+
+  // Protected files (assignment.protectFile): iframe only, nothing that hands
+  // out the raw file.
+  it("bare: embeddable link gives only the iframe, no open/download links", () => {
+    vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (Linux; Android 13)" });
+    const html = embedBlockFor("https://drive.google.com/file/d/ABC/view", { variant: "material", bare: true });
+    expect(html).toContain('<iframe src="https://drive.google.com/file/d/ABC/preview"');
+    expect(html).toContain("submission-preview material");
+    expect(html).not.toContain("<a ");
+    expect(html).not.toContain("Open in Chrome");
+    expect(html).not.toContain("Blank box");
+  });
+  it("bare: non-embeddable link shows no href, only a short message", () => {
+    const html = embedBlockFor("https://gist.github.com/x/1", { bare: true });
+    expect(html).not.toContain("gist.github.com");
+    expect(html).not.toContain("<a ");
+    expect(html).toContain("Ask your teacher");
+  });
+  it("bare: empty link still returns an empty string", () => {
+    expect(embedBlockFor("", { bare: true })).toBe("");
+  });
 });
 
 describe("openInChromeButton (UA-dependent)", () => {
