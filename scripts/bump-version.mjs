@@ -12,7 +12,8 @@
 //   node scripts/bump-version.mjs --list        # list assets + current versions, change nothing
 //   node scripts/bump-version.mjs --dry-run quiz.js   # show what would change, write nothing
 //
-// Any real bump also advances sw.js CACHE_NAME (its `activate` handler purges
+// Any real bump also advances version.json ({ "v": N }) and the matching
+// `const APP_VERSION = N;` in js/student.js (the stale-page check), and sw.js CACHE_NAME (its `activate` handler purges
 // the stale caches). Run `git diff` after to confirm only version strings changed.
 
 import { readFileSync, writeFileSync, readdirSync } from "node:fs";
@@ -41,6 +42,22 @@ function bumpServiceWorker(dry) {
   const next = Number(m[2]) + 1;
   if (!dry) write("sw.js", src.replace(re, `$1${next}$3`));
   console.log(`  sw.js CACHE_NAME: v${m[2]} -> v${next}`);
+}
+
+// version.json + js/student.js APP_VERSION move together: the page compares the
+// two to notice it is stale (see "stale-page guard" in js/student.js).
+function bumpAppVersion(dry) {
+  let cur = 0;
+  try { cur = Number(JSON.parse(read("version.json")).v) || 0; } catch { /* first run */ }
+  const next = cur + 1;
+  if (!dry) {
+    write("version.json", JSON.stringify({ v: next }) + "\n");
+    const src = read("js/student.js");
+    const re = /(const APP_VERSION = )(\d+)(;)/;
+    if (re.test(src)) write("js/student.js", src.replace(re, `$1${next}$3`));
+    else console.log("  (skip APP_VERSION: pattern not found in js/student.js)");
+  }
+  console.log(`  version.json / APP_VERSION: v${cur} -> v${next}`);
 }
 
 const args = process.argv.slice(2);
@@ -85,4 +102,5 @@ for (const a of targets) {
 if (any) {
   if (!dry) for (const f of SCAN) { const t = files[f]; if (t !== undefined && t !== read(f)) write(f, t); }
   bumpServiceWorker(dry);
+  bumpAppVersion(dry);
 } else console.log("Nothing bumped.");

@@ -1,25 +1,25 @@
 import { db, ADMIN_EMAIL, isSuperAdmin } from "./firebase-config.js";
-import { normTerm, normYear, displayStudentName, escAttr, matchesNameSearch, parseManualNumber } from "./shared.js?v=1";
-import { guardPage, signOutUser } from "./auth.js?v=8";
+import { normTerm, normYear, displayStudentName, escAttr, matchesNameSearch, parseManualNumber, inviteDocId, photosFreeable, photoSig } from "./shared.js?v=2";
+import { guardPage, signOutUser } from "./auth.js?v=9";
 import {
   collection, addDoc, doc, setDoc, updateDoc, deleteDoc, deleteField, writeBatch, getDoc, getDocs, getCountFromServer, query, where, serverTimestamp, increment,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { RETURN_PENALTY, maxAfterReturns, penaltyNote } from "./grading.js?v=1";
-import { toast, friendlyError } from "./ui-feedback.js?v=1";
-import { getGeminiKey, setGeminiKey, getGroqKey, setGroqKey, runRubricCheck, generateCodeExample, generateQuiz } from "./gemini.js?v=8";
-import { extractLessonText } from "./lesson-text.js?v=1";
+import { RETURN_PENALTY, maxAfterReturns, penaltyNote } from "./grading.js?v=2";
+import { toast, friendlyError } from "./ui-feedback.js?v=2";
+import { getGeminiKey, setGeminiKey, getGroqKey, setGroqKey, runRubricCheck, generateCodeExample, generateQuiz } from "./gemini.js?v=9";
+import { extractLessonText } from "./lesson-text.js?v=2";
 import {
   QUIZ_MIN_ITEMS, QUIZ_MAX_ITEMS, QUIZ_MAX_BANK, servedQuestions, choiceLengthWarning, countChoiceLengthWarnings, QUIZ_TYPES, QUIZ_GRACE_SECONDS, splitQuiz, joinQuiz, validateQuizItems,
   parseGeneratedQuiz, newItemId, splitAccepted, scoreQuiz, quizTimeLimitSeconds, formatDuration,
   balanceAnswerPositions, answerPatternWarning,
-} from "./quiz.js?v=7";
+} from "./quiz.js?v=8";
 import { getEmailConfig, saveEmailConfig, notifySection } from "./notify.js";
-import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=4";
-import { loadWorkbook, readExamScores, pickBestSheet } from "./class-record.js?v=1";
+import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=5";
+import { loadWorkbook, readExamScores, pickBestSheet } from "./class-record.js?v=2";
 import { runJava } from "./runner.js";
-import { setScreenshotBlock } from "./app-bridge.js?v=3";
+import { setScreenshotBlock } from "./app-bridge.js?v=4";
 import { codeBlockHtml, highlightWithin } from "./highlight.js";
-import { ttlForKey, STRUCTURE_KEYS, MISSING_TTL_MS, subjectShown, patchedDoc, approvedHeadcount } from "./teacher-reads.js?v=1";
+import { ttlForKey, STRUCTURE_KEYS, MISSING_TTL_MS, subjectShown, patchedDoc, approvedHeadcount } from "./teacher-reads.js?v=2";
 
 // AI rubric-check is hidden (not deleted) - per-call Gemini cost isn't
 // worth it right now. Flip this back to true to restore the Run AI Check
@@ -677,7 +677,7 @@ async function inviteStudentsToSection(students, sectionId, sectionName, pending
   const skippedEnrolled = students.filter((s) => s.email && enrolledEmails.has(s.email.toLowerCase())).length;
   const skippedInvited = students.filter((s) => s.email && invitedEmails.has(s.email.toLowerCase())).length;
 
-  await Promise.all(toInvite.map((student) => addDoc(collection(db, "invites"), {
+  await Promise.all(toInvite.map((student) => setDoc(doc(db, "invites", inviteDocId(sectionId, student.email)), {
     studentEmail: student.email.toLowerCase(),
     studentName: student.name,
     subjectId: state.subjectId,
@@ -816,7 +816,9 @@ function renderAddStudentPanel(container, sectionId, section, pendingInvites, ma
     const btn = form.querySelector("button");
     btn.disabled = true;
     try {
-      await addDoc(collection(db, "invites"), {
+      // Id = sectionId_email so firestore.rules can check the invite exists
+      // before letting the student enroll as "approved".
+      await setDoc(doc(db, "invites", inviteDocId(sectionId, email)), {
         studentEmail: email,
         studentName,
         subjectId: state.subjectId,
@@ -830,7 +832,9 @@ function renderAddStudentPanel(container, sectionId, section, pendingInvites, ma
       msg.textContent = `Invited ${studentName} — they'll join automatically once they sign in with ${email}.`;
       await refreshAddStudentPanel(sectionId, container);
     } catch (err) {
-      msg.textContent = "Invite failed: " + err.message;
+      msg.textContent = err && err.code === "permission-denied"
+        ? `${email} is already invited to this section (see the pending list), or you don't own it.`
+        : "Invite failed: " + friendlyError(err);
       btn.disabled = false;
     }
   });
@@ -3968,7 +3972,9 @@ function renderScoresSummary(submissions, totalPoints) {
 // ZIPs" panel (getPhotoAssignments()/renderPhotosDropdown()) - all
 // client-side (JSZip CDN), no Storage involved, since the images already
 // live inline on the submission docs.
-async function downloadPhotosZip(withPhotos, filename, buttonEl) {
+// onDownloaded (optional) runs after a successful download; "Free up space"
+// uses it to learn which submissions' photos were safely saved (zippedSigs).
+async function downloadPhotosZip(withPhotos, filename, buttonEl, onDownloaded) {
   buttonEl.disabled = true;
   const original = buttonEl.textContent;
   buttonEl.textContent = "Zipping...";
@@ -3989,11 +3995,74 @@ async function downloadPhotosZip(withPhotos, filename, buttonEl) {
     a.download = filename;
     a.click();
     URL.revokeObjectURL(a.href);
+    // Remember what was zipped (submission id -> photo fingerprint) so
+    // "Free up space" only ever removes photos that are in a ZIP saved this session.
+    withPhotos.forEach((s) => { if (s.id) zippedSigs.set(s.id, s.sig); });
+    if (onDownloaded) onDownloaded();
   } catch (err) {
     alert("Couldn't build the ZIP: " + err.message);
   }
   buttonEl.disabled = false;
   buttonEl.textContent = original;
+}
+
+// submission id -> photoSig() at the moment its ZIP was downloaded (this
+// session only; never persisted, so a reload requires a fresh ZIP first).
+const zippedSigs = new Map();
+
+// "Free up space": removes the photos of GRADED (published) submissions of one
+// assignment once their ZIP is saved, to stay inside the 1 GiB Spark quota.
+// Hard limits: published only (never pending/returned), only submissions whose
+// photos are in a ZIP downloaded this session AND unchanged since (live re-read
+// right before each write), only after the teacher types the assignment name.
+// Scores, feedback and links stay. Attempt snapshots (they duplicate every
+// photo) of those submissions are deleted too. Returns the freed ids.
+async function freeUpPhotoSpace({ title, subs, sectionId, buttonEl }) {
+  const candidates = photosFreeable(subs).filter((t) => zippedSigs.has(t.id));
+  if (!candidates.length) {
+    alert("Nothing to free: only graded (published) submissions whose photos are in a ZIP downloaded in this session can be removed. Download the ZIP first.");
+    return [];
+  }
+  const pages = candidates.reduce((n, t) => n + t.pages, 0);
+  const mb = (candidates.reduce((n, t) => n + t.bytes, 0) / 1048576).toFixed(1);
+  const ok = confirmByTyping(
+    `Remove the photos of ${candidates.length} graded submission${candidates.length > 1 ? "s" : ""} (${pages} page${pages > 1 ? "s" : ""}, about ${mb} MB) for "${title}"?
+
+Only work you already published is touched; pending and returned work is never changed. Scores, feedback and links stay. The photos stay only in the ZIP you downloaded - this cannot be undone.`,
+    title
+  );
+  if (!ok) return [];
+  const original = buttonEl ? buttonEl.textContent : "";
+  if (buttonEl) { buttonEl.disabled = true; buttonEl.textContent = "Freeing..."; }
+  const freed = [];
+  let freedBytes = 0;
+  let skipped = 0;
+  try {
+    for (const t of candidates) {
+      const ref = doc(db, "submissions", t.id);
+      const fresh = await getDoc(ref);
+      const f = fresh.exists() ? fresh.data() : null;
+      // Re-check the LIVE doc: still published and photos unchanged since the ZIP.
+      if (!f || f.status !== "published" || photoSig(f) !== zippedSigs.get(t.id)) { skipped++; continue; }
+      await updateDoc(ref, {
+        photoPages: [],
+        photoData: deleteField(),
+        photosRemovedAt: Date.now(),
+        photosRemovedCount: t.pages,
+      });
+      await deleteWhere("submissionAttempts", "submissionId", t.id).catch((err) => console.warn("attempt cleanup failed:", err));
+      await touchStudentSubs(f.studentUID, sectionId);
+      zippedSigs.delete(t.id);
+      freed.push(t.id);
+      freedBytes += t.bytes;
+    }
+  } catch (err) {
+    alert("Stopped early: " + friendlyError(err));
+  }
+  invalidateInbox();
+  if (buttonEl) { buttonEl.disabled = false; buttonEl.textContent = original; }
+  toast(`Freed ${(freedBytes / 1048576).toFixed(1)} MB from ${freed.length} submission${freed.length === 1 ? "" : "s"}${skipped ? ` (${skipped} skipped: changed since the ZIP)` : ""}.`, 6000);
+  return freed;
 }
 
 const MAX_COLLAGE_PHOTOS = 14;
@@ -4362,7 +4431,7 @@ async function generateOfficialAccomplishmentReport(context, canvas, buttonEl) {
 function renderImagesGallery(submissions, assignmentTitle, context) {
   const container = el("images-gallery");
   const withPhotos = submissions
-    .map((s) => ({ name: displayStudentName(s.studentName), photos: (s.photoPages?.length ? s.photoPages : s.photoData ? [s.photoData] : []).filter(isImageDataUrl) }))
+    .map((s) => ({ id: s.id, sig: photoSig(s), name: displayStudentName(s.studentName), photos: (s.photoPages?.length ? s.photoPages : s.photoData ? [s.photoData] : []).filter(isImageDataUrl) }))
     .filter((s) => s.photos.length > 0);
   if (withPhotos.length === 0) {
     container.innerHTML = "";
@@ -4377,6 +4446,7 @@ function renderImagesGallery(submissions, assignmentTitle, context) {
       <summary><strong>Photo submissions</strong> (${total} image${total > 1 ? "s" : ""} from ${withPhotos.length} student${withPhotos.length > 1 ? "s" : ""})</summary>
       <div style="margin-top:0.75rem;">
         <button type="button" id="download-all-photos">Download all as ZIP</button>
+        ${context?.assignmentId ? '<button type="button" class="secondary" id="free-up-space" disabled title="Download the ZIP first, then remove the photos of graded work to free database space">Free up space</button>' : ""}
         <div class="photo-thumbs" style="margin-top:0.75rem;">
           ${withPhotos.map((s) => s.photos.map((p, i) =>
             `<button type="button" class="photo-thumb-btn" data-photo-src="${escAttr(p)}" title="${escAttr(s.name)} - page ${i + 1}"><img src="${escAttr(p)}" /></button>`
@@ -4431,8 +4501,17 @@ function renderImagesGallery(submissions, assignmentTitle, context) {
         </details>
       </div>
     </details>`;
+  const freeBtn = el("free-up-space");
+  const syncFreeBtn = () => {
+    if (freeBtn) freeBtn.disabled = !photosFreeable(submissions).some((t) => zippedSigs.has(t.id));
+  };
+  syncFreeBtn();
   el("download-all-photos").addEventListener("click", (e) =>
-    downloadPhotosZip(withPhotos, `${assignmentTitle.replace(/[/\\:*?"<>|]/g, "-")}-photos.zip`, e.target));
+    downloadPhotosZip(withPhotos, `${assignmentTitle.replace(/[/\\:*?"<>|]/g, "-")}-photos.zip`, e.target, syncFreeBtn));
+  if (freeBtn) freeBtn.addEventListener("click", async () => {
+    const freed = await freeUpPhotoSpace({ title: assignmentTitle, subs: submissions, sectionId: context.sectionId, buttonEl: freeBtn });
+    if (freed.length) loadSubmissions(); // fresh fetch so cards show "Photos archived"
+  });
 
   renderCollagePreview(withPhotos, { ...context, assignmentTitle });
 }
@@ -4461,7 +4540,10 @@ async function getPhotoAssignments() {
     const photos = s.photoPages?.length ? s.photoPages : s.photoData ? [s.photoData] : [];
     if (photos.length === 0) return;
     if (!byAssignment.has(s.assignmentId)) byAssignment.set(s.assignmentId, []);
-    byAssignment.get(s.assignmentId).push({ name: displayStudentName(s.studentName), photos });
+    byAssignment.get(s.assignmentId).push({
+      id: d.id, sig: photoSig(s), status: s.status, studentUID: s.studentUID, photoPages: s.photoPages, photoData: s.photoData,
+      name: displayStudentName(s.studentName), photos,
+    });
   });
 
   return [...byAssignment.entries()].map(([assignmentId, withPhotos]) => {
@@ -4470,6 +4552,7 @@ async function getPhotoAssignments() {
     const total = withPhotos.reduce((sum, s) => sum + s.photos.length, 0);
     return {
       assignmentId,
+      sectionId: a.sectionId,
       title: a.title || "(deleted assignment)",
       sectionName: section.sectionName || "(deleted section)",
       subjectName: subjectNames.get(section.subjectId) || "(deleted subject)",
@@ -4488,12 +4571,32 @@ function renderPhotosDropdown(list) {
   dropdown.innerHTML = list.map((p, i) => `
     <div class="notif-item" style="display:flex; align-items:center; justify-content:space-between; gap:0.5rem;">
       <span>${p.title} <span class="muted">(${p.subjectName} &rsaquo; ${p.sectionName}) — ${p.total} photo${p.total > 1 ? "s" : ""}</span></span>
-      <button type="button" class="secondary" data-zip-index="${i}" style="flex-shrink:0;">ZIP</button>
+      <span style="flex-shrink:0; display:flex; gap:0.35rem;">
+        <button type="button" class="secondary" data-zip-index="${i}">ZIP</button>
+        <button type="button" class="secondary" data-free-index="${i}" disabled title="Download this ZIP first, then remove the photos of graded work to free database space">Free up space</button>
+      </span>
     </div>`).join("");
+  const syncFree = (i) => {
+    const b = dropdown.querySelector(`[data-free-index="${i}"]`);
+    if (b) b.disabled = !photosFreeable(list[i].withPhotos).some((t) => zippedSigs.has(t.id));
+  };
+  list.forEach((_, i) => syncFree(i));
   dropdown.querySelectorAll("[data-zip-index]").forEach((b) =>
     b.addEventListener("click", () => {
-      const p = list[Number(b.dataset.zipIndex)];
-      downloadPhotosZip(p.withPhotos, `${p.title.replace(/[/\\:*?"<>|]/g, "-")}-photos.zip`, b);
+      const i = Number(b.dataset.zipIndex);
+      const p = list[i];
+      downloadPhotosZip(p.withPhotos, `${p.title.replace(/[/\\:*?"<>|]/g, "-")}-photos.zip`, b, () => syncFree(i));
+    }));
+  dropdown.querySelectorAll("[data-free-index]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const i = Number(b.dataset.freeIndex);
+      const p = list[i];
+      const freed = await freeUpPhotoSpace({ title: p.title, subs: p.withPhotos, sectionId: p.sectionId, buttonEl: b });
+      if (!freed.length) return;
+      // Update the list in memory (no whole-collection re-read) and redraw.
+      p.withPhotos = p.withPhotos.filter((s) => !freed.includes(s.id));
+      p.total = p.withPhotos.reduce((sum, s) => sum + s.photos.length, 0);
+      renderPhotosDropdown(list.filter((x) => x.withPhotos.length > 0));
     }));
 }
 
@@ -4544,7 +4647,9 @@ async function loadSubmissions(opts = {}) {
   const aDoc = memo.aDoc;
   const ownedDocs = snap.docs.filter((d) => ownedByViewAs(d.data()));
   renderScoresSummary(ownedDocs.map((d) => d.data()), aDoc.data()?.totalPoints);
-  renderImagesGallery(ownedDocs.map((d) => d.data()), aDoc.data()?.title || "submissions", {
+  renderImagesGallery(ownedDocs.map((d) => ({ id: d.id, ...d.data() })), aDoc.data()?.title || "submissions", {
+    assignmentId: state.assignmentId,
+    sectionId: aDoc.data()?.sectionId,
     subjectName: state.subjectName,
     sectionName: el("section-view-name").textContent,
     instructions: aDoc.data()?.instructions,
@@ -4589,6 +4694,9 @@ async function loadSubmissions(opts = {}) {
         : safeLink
         ? `<div class="muted"><a href="${escAttr(safeLink)}" target="_blank" rel="noopener">${escAttr(safeLink)}</a></div>`
         : (s.link ? `<div class="muted">${escAttr(s.link)}</div>` : "");
+    const archivedNote = s.photosRemovedAt
+      ? `<div class="muted">Photos archived by teacher (${Number(s.photosRemovedCount) || 0} page${Number(s.photosRemovedCount) === 1 ? "" : "s"}) - saved in your ZIP download.</div>`
+      : "";
     // Pasted-code submissions (Code assignments): show the source highlighted,
     // the student's saved run output, and a Run button so the teacher can
     // re-run it here without leaving the review screen.
@@ -4608,6 +4716,7 @@ async function loadSubmissions(opts = {}) {
       ${quizBlock}
       ${quiz ? "" : codeBlock}
       ${quiz ? "" : linkBlock}
+      ${archivedNote}
       <div id="detail-${d.id}"></div>
       <div style="margin-top:0.5rem;">
         ${AI_CHECK_ENABLED ? `<button data-ai="${d.id}">Run AI Check</button>` : ""}

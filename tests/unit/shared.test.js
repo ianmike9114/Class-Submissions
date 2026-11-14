@@ -92,3 +92,56 @@ describe("isPastDue", () => {
     expect(isPastDue({ dueDate: "2026-03-10" })).toBe(true);
   });
 });
+
+import { inviteDocId, isNewerVersion, safeToReload, photosFreeable, photoSig } from "../../js/shared.js";
+
+describe("inviteDocId", () => {
+  it("is sectionId_lowercasedEmail", () => {
+    expect(inviteDocId("sec1", " Juan@Gmail.COM ")).toBe("sec1_juan@gmail.com");
+  });
+});
+
+describe("isNewerVersion", () => {
+  it("only true when latest is a larger number", () => {
+    expect(isNewerVersion(3, 4)).toBe(true);
+    expect(isNewerVersion(4, 4)).toBe(false);
+    expect(isNewerVersion(5, 4)).toBe(false);
+    expect(isNewerVersion(3, undefined)).toBe(false);
+    expect(isNewerVersion("3", "10")).toBe(true);
+  });
+});
+
+describe("safeToReload", () => {
+  it("blocks on photos, typed work or a quiz", () => {
+    expect(safeToReload({})).toBe(true);
+    expect(safeToReload({ pendingPhotoCount: 1 })).toBe(false);
+    expect(safeToReload({ hasTypedWork: true })).toBe(false);
+    expect(safeToReload({ quizActive: true })).toBe(false);
+  });
+});
+
+describe("photosFreeable", () => {
+  it("includes only published submissions that hold photos", () => {
+    const subs = [
+      { id: "a", status: "published", photoPages: ["xxxx", "yy"] },
+      { id: "b", status: "pending", photoPages: ["zzz"] },
+      { id: "c", status: "returned", photoPages: ["zzz"] },
+      { id: "d", status: "published", photoPages: [] },
+      { id: "e", status: "published", photoData: "old" },
+      { id: "f", status: "published" },
+    ];
+    expect(photosFreeable(subs)).toEqual([
+      { id: "a", pages: 2, bytes: 6 },
+      { id: "e", pages: 1, bytes: 3 },
+    ]);
+  });
+});
+
+describe("photoSig", () => {
+  it("changes when pages are added, removed or resized", () => {
+    expect(photoSig({ photoPages: ["aa", "bbb"] })).toBe("2:5");
+    expect(photoSig({ photoData: "xyz" })).toBe("1:3");
+    expect(photoSig({})).toBe("0:0");
+    expect(photoSig({ photoPages: ["aa"] })).not.toBe(photoSig({ photoPages: ["aa", "b"] }));
+  });
+});

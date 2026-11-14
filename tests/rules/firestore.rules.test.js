@@ -95,6 +95,14 @@ beforeEach(async () => {
       subjectId: "subjA",
       sectionName: "STEM",
     });
+    // Assignments (submission create checks the real owner) - one legacy
+    // assignment with no ownerEmail (pre multi-teacher, owned by the super admin)
+    // and a legacy section likewise.
+    await setDoc(doc(db, "assignments", "a1"), { ownerEmail: TEACHER_A, sectionId: "secA", title: "A1" });
+    await setDoc(doc(db, "assignments", "a2"), { ownerEmail: TEACHER_B, sectionId: "secB", title: "A2" });
+    await setDoc(doc(db, "assignments", "aLegacy"), { sectionId: "secLegacy", title: "Old" });
+    await setDoc(doc(db, "sections", "secB"), { ownerEmail: TEACHER_B, subjectId: "subjB", sectionName: "ABM" });
+    await setDoc(doc(db, "sections", "secLegacy"), { subjectId: "subjA", sectionName: "Old section" });
     await setDoc(doc(db, "settings", TEACHER_A), {
       ownerEmail: TEACHER_A,
       currentSchoolYear: "2026-2027",
@@ -236,14 +244,13 @@ describe("submissions: create cannot carry grading state", () => {
 
 describe("submissions: one doc per student per assignment (penalty-dodge guard)", () => {
   const base = { studentUID: "student9", ownerEmail: TEACHER_A, assignmentId: "a1", status: "pending" };
-  it("denies a random-id create", async () => {
+  it("denies a random id or another student's id once the student already has the real doc", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "submissions", "a1_student9"), { ...base, status: "returned", returnCount: 1 });
+    });
     const db = ctxFor("student9", "s9@x.com");
     await assertFails(setDoc(doc(db, "submissions", "randomId123"), base));
-  });
-  it("denies an id built for another student or assignment", async () => {
-    const db = ctxFor("student9", "s9@x.com");
     await assertFails(setDoc(doc(db, "submissions", "a1_student1"), base));
-    await assertFails(setDoc(doc(db, "submissions", "a2_student9"), base));
   });
   it("denies a create with no assignmentId", async () => {
     const db = ctxFor("student9", "s9@x.com");
@@ -259,6 +266,84 @@ describe("submissions: one doc per student per assignment (penalty-dodge guard)"
     await assertFails(setDoc(doc(db, "submissions", "a1_student9"), base));
     // Editing in place still works and the count is untouched.
     await assertSucceeds(updateDoc(doc(db, "submissions", "a1_student9"), { link: "https://x.y", status: "pending", submittedAt: 2 }));
+  });
+});
+
+// TEMPORARY stale-page transition (see the comment in firestore.rules): a page
+// loaded before #94 creates with addDoc (random id). That must work while no doc
+// exists at assignmentId_uid, and stop working the moment one does.
+describe("submissions: legacy random-id create (stale pages) only when no assignmentId_uid doc", () => {
+  const base = { studentUID: "student9", ownerEmail: TEACHER_A, assignmentId: "a1", status: "pending", link: "https://x.y", photoPages: [], submittedAt: 1 };
+  it("allows an old-style addDoc create when no doc exists at the deterministic id", async () => {
+    const db = ctxFor("student9", "s9@x.com");
+    await assertSucceeds(addDoc(collection(db, "submissions"), base));
+  });
+  it("denies a random-id create once the deterministic doc exists", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "submissions", "a1_student9"), base);
+    });
+    const db = ctxFor("student9", "s9@x.com");
+    await assertFails(addDoc(collection(db, "submissions"), base));
+  });
+  it("a random id does not bypass the uid check", async () => {
+    const db = ctxFor("student9", "s9@x.com");
+    await assertFails(addDoc(collection(db, "submissions"), { ...base, studentUID: "student1" }));
+  });
+});
+
+describe("submissions: create ownerEmail must be the assignment's real owner", () => {
+  const base = { studentUID: "student9", assignmentId: "a1", status: "pending", link: "https://x.y" };
+  it("denies a fake teacher email on the submission", async () => {
+    const db = ctxFor("student9", "s9@x.com");
+    await assertFails(setDoc(doc(db, "submissions", "a1_student9"), { ...base, ownerEmail: TEACHER_B }));
+    await assertFails(setDoc(doc(db, "submissions", "a1_student9"), { ...base, ownerEmail: "evil@x.com" }));
+  });
+  it("allows the real owner's email", async () => {
+    const db = ctxFor("student9", "s9@x.com");
+    await assertSucceeds(setDoc(doc(db, "submissions", "a1_student9"), { ...base, ownerEmail: TEACHER_A }));
+  });
+  it("a legacy assignment with no ownerEmail belongs to the super admin", async () => {
+    const db = ctxFor("student9", "s9@x.com");
+    await assertFails(setDoc(doc(db, "submissions", "aLegacy_student9"), { ...base, assignmentId: "aLegacy", ownerEmail: TEACHER_A }));
+    await assertSucceeds(setDoc(doc(db, "submissions", "aLegacy_student9"), { ...base, assignmentId: "aLegacy", ownerEmail: SUPER_ADMIN }));
+  });
+  it("denies a create for an assignment that does not exist", async () => {
+    const db = ctxFor("student9", "s9@x.com");
+    await assertFails(setDoc(doc(db, "submissions", "ghost_student9"), { ...base, assignmentId: "ghost", ownerEmail: TEACHER_A }));
+  });
+});
+
+describe("submissions: create field list and size checks", () => {
+  const base = { studentUID: "student9", ownerEmail: TEACHER_A, assignmentId: "a1", status: "pending" };
+  it("denies an extra field the client never writes", async () => {
+    const db = ctxFor("student9", "s9@x.com");
+    await assertFails(setDoc(doc(db, "submissions", "a1_student9"), { ...base, link: "x", isAdmin: true }));
+    await assertFails(setDoc(doc(db, "submissions", "a1_student9"), { ...base, link: "x", resubmitRequested: true }));
+  });
+  it("allows every field the file and quiz create paths write", async () => {
+    const db = ctxFor("student9", "s9@x.com");
+    await assertSucceeds(setDoc(doc(db, "submissions", "a1_student9"), {
+      ...base, studentName: "Juan", link: "", code: "c", codeOutput: "o", photoPages: ["data:image/webp;base64,AA"], submittedAt: 1,
+      quizAnswers: { q1: "a" }, quizServed: ["q1"], quizLog: { leftCount: 0 }, quizSubmittedAt: serverTimestamp(),
+    }));
+  });
+  it("denies a link over 2000 chars or a non-string link", async () => {
+    const db = ctxFor("student9", "s9@x.com");
+    await assertFails(setDoc(doc(db, "submissions", "a1_student9"), { ...base, link: "x".repeat(2000) }));
+    await assertFails(setDoc(doc(db, "submissions", "a1_student9"), { ...base, link: 5 }));
+    await assertSucceeds(setDoc(doc(db, "submissions", "a1_student9"), { ...base, link: "x".repeat(1999) }));
+  });
+  it("denies more than 15 photo pages or a non-list photoPages", async () => {
+    const db = ctxFor("student9", "s9@x.com");
+    await assertFails(setDoc(doc(db, "submissions", "a1_student9"), { ...base, photoPages: new Array(16).fill("p") }));
+    await assertFails(setDoc(doc(db, "submissions", "a1_student9"), { ...base, photoPages: "p" }));
+    await assertSucceeds(setDoc(doc(db, "submissions", "a1_student9"), { ...base, photoPages: new Array(15).fill("p") }));
+  });
+  it("student update still enforces the same size checks", async () => {
+    const db = ctxFor("student1", "s1@x.com");
+    await assertFails(updateDoc(doc(db, "submissions", "subA_stud1"), { link: "x".repeat(2000), status: "pending", submittedAt: 2 }));
+    await assertFails(updateDoc(doc(db, "submissions", "subA_stud1"), { photoPages: new Array(16).fill("p"), status: "pending", submittedAt: 2 }));
+    await assertSucceeds(updateDoc(doc(db, "submissions", "subA_stud1"), { link: "https://ok", status: "pending", submittedAt: 2 }));
   });
 });
 
@@ -335,34 +420,60 @@ describe("submissions: student edits are field-limited and status-gated", () => 
 });
 
 describe("enrollments: self-enroll + limited self-edit", () => {
-  it("student can self-enroll (own uid, ownerEmail present)", async () => {
+  const enr = (over = {}) => ({
+    studentUID: "student1", ownerEmail: TEACHER_A, sectionId: "secA", studentName: "Juan", seen: false, status: "pending", ...over,
+  });
+  it("student can self-enroll as pending (own uid, real section owner, id sectionId_uid)", async () => {
     const db = ctxFor("student1", "s1@x.com");
-    await assertSucceeds(
-      addDoc(collection(db, "enrollments"), {
-        studentUID: "student1",
-        ownerEmail: TEACHER_A,
-        sectionId: "secA",
-        studentName: "Juan",
-        seen: false,
-      })
-    );
+    await assertSucceeds(setDoc(doc(db, "enrollments", "secA_student1"), enr()));
+  });
+  it("denies a self-approved enrollment (status approved with no invite)", async () => {
+    const db = ctxFor("student1", "s1@x.com");
+    await assertFails(setDoc(doc(db, "enrollments", "secA_student1"), enr({ status: "approved" })));
+  });
+  it("denies a missing status (would count as approved everywhere)", async () => {
+    const db = ctxFor("student1", "s1@x.com");
+    const { status, ...noStatus } = enr();
+    await assertFails(setDoc(doc(db, "enrollments", "secA_student1"), noStatus));
+  });
+  it("denies a fake ownerEmail (must be the section's real owner)", async () => {
+    const db = ctxFor("student1", "s1@x.com");
+    await assertFails(setDoc(doc(db, "enrollments", "secA_student1"), enr({ ownerEmail: TEACHER_B })));
+  });
+  it("legacy section with no ownerEmail belongs to the super admin", async () => {
+    const db = ctxFor("student1", "s1@x.com");
+    await assertFails(setDoc(doc(db, "enrollments", "secLegacy_student1"), enr({ sectionId: "secLegacy", ownerEmail: TEACHER_A })));
+    await assertSucceeds(setDoc(doc(db, "enrollments", "secLegacy_student1"), enr({ sectionId: "secLegacy", ownerEmail: SUPER_ADMIN })));
+  });
+  it("denies a random id or an id for someone else's uid", async () => {
+    const db = ctxFor("student1", "s1@x.com");
+    await assertFails(addDoc(collection(db, "enrollments"), enr()));
+    await assertFails(setDoc(doc(db, "enrollments", "secA_student2"), enr()));
   });
   it("student cannot create an enrollment with manualScores", async () => {
     const db = ctxFor("student1", "s1@x.com");
-    await assertFails(
-      addDoc(collection(db, "enrollments"), {
-        studentUID: "student1", ownerEmail: TEACHER_A, sectionId: "secA", studentName: "Juan",
-        manualScores: { termExam: 100 },
-      })
-    );
+    await assertFails(setDoc(doc(db, "enrollments", "secA_student1"), enr({ manualScores: { termExam: 100 } })));
   });
-  it("student can create an approved enrollment (invite path)", async () => {
+  it("approved is allowed only when the teacher invited this exact email to this section", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "invites", "secA_s1@x.com"), {
+        studentEmail: "s1@x.com", sectionId: "secA", ownerEmail: TEACHER_A, studentName: "Juan",
+      });
+    });
     const db = ctxFor("student1", "s1@x.com");
-    await assertSucceeds(
-      addDoc(collection(db, "enrollments"), {
-        studentUID: "student1", ownerEmail: TEACHER_A, sectionId: "secA", studentName: "Juan", status: "approved",
-      })
-    );
+    await assertSucceeds(setDoc(doc(db, "enrollments", "secA_student1"), enr({ status: "approved" })));
+    // someone else's invite does not approve me
+    await assertFails(setDoc(doc(ctxFor("student2", "s2@x.com"), "enrollments", "secA_student2"), enr({ studentUID: "student2", status: "approved" })));
+    // an invite to a different section does not approve this one
+    await assertFails(setDoc(doc(db, "enrollments", "secLegacy_student1"), enr({ sectionId: "secLegacy", ownerEmail: SUPER_ADMIN, status: "approved" })));
+  });
+  it("an old random-id invite does not unlock approved (client falls back to pending)", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "invites", "randomInviteId"), { studentEmail: "s1@x.com", sectionId: "secA", ownerEmail: TEACHER_A });
+    });
+    const db = ctxFor("student1", "s1@x.com");
+    await assertFails(setDoc(doc(db, "enrollments", "secA_student1"), enr({ status: "approved" })));
+    await assertSucceeds(setDoc(doc(db, "enrollments", "secA_student1"), enr({ status: "pending" })));
   });
   it("student can flag leaveRequested but not change which section they're in", async () => {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {

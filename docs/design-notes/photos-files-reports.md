@@ -12,10 +12,10 @@ when needed. Read before editing this area; add new notes for this area here.
   file-upload feature. Capped at `MAX_PHOTOS` (15) pages per submission —
   not unlimited (shared 1MiB Firestore doc budget across however many
   pages added). `js/student.js`'s `compressImage()` keeps each photo under
-  `PER_PHOTO_MAX_LEN` (64,000 chars/photo, encoded **WebP** where the browser
+  `PER_PHOTO_MAX_LEN` (48,000 chars/photo, lowered from 64,000 in 2026-11 to cut stored size ~25%; encoded **WebP** where the browser
   can — `photoMime()` checks, iOS Safari falls back to JPEG — and the add
-  handler also enforces a 15×64k total so edited older submissions holding
-  100k JPEG pages still fit; so 15 photos stay under 1MiB cap
+  handler also enforces a 15×48k total; older submissions with bigger pages can still be
+  saved, just not grown; so 15 photos stay under 1MiB cap
   alongside rest of submission's fields) by **stepping the max dimension down**
   (1280 → 1024 → 800 → 640px), dropping JPEG quality to a 0.3 floor at each
   size, and accepting the first that fits. Earlier it tried only 1280px + the
@@ -97,3 +97,24 @@ when needed. Read before editing this area; add new notes for this area here.
   template — that one combines several activity dates into one
   submission; this in-app button stays single-activity, tied to one
   assignment's collage.
+
+- **Free up space (teacher, `js/teacher.js` `freeUpPhotoSpace()`).** Photos are base64 inside
+  `submissions` docs, so they are what fills the 1 GiB Spark quota. Each row of the header
+  "Photo ZIPs" panel and the per-assignment Photo submissions card has a **Free up space**
+  button next to ZIP. Hard limits: it stays disabled until that assignment's ZIP was
+  downloaded **in this session** (`zippedSigs`, never persisted); it touches **published**
+  submissions only (`photosFreeable()` in `js/shared.js`) — never pending or returned work;
+  right before each write the live doc is re-read and skipped unless it is still `published`
+  and its photos match the ZIP (`photoSig()`); the teacher must type the assignment name
+  (`confirmByTyping()`). It then sets `photoPages: []`, deletes `photoData`, stamps
+  `photosRemovedAt` / `photosRemovedCount`, deletes that submission's `submissionAttempts`
+  (they duplicate every photo), and calls `touchStudentSubs()`. Scores, feedback and links
+  stay; both cards show "Photos archived by teacher (n pages)". No `firestore.rules` change
+  (owner update/delete already allowed). The panel updates its list in memory — no extra
+  whole-`submissions` read.
+- **Stale-page guard.** `scripts/bump-version.mjs` writes `version.json` (`{ "v": N }`) and the
+  matching `const APP_VERSION` in `js/student.js`. On load and on `visibilitychange` the
+  student page fetches `version.json` (`no-store`; `sw.js` and `vercel.json` never cache it)
+  and reloads if newer — **never** while there are unsaved photos, typed code/link, or a quiz
+  on screen (then a toast asks them to refresh after submitting). A sessionStorage marker
+  prevents a reload loop.

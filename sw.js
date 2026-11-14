@@ -22,7 +22,7 @@
  * activate handler deletes every cache that isn't the current one.
  */
 
-const CACHE_NAME = "class-submissions-v45";
+const CACHE_NAME = "class-submissions-v46";
 
 self.addEventListener("install", () => {
   // Activate this worker as soon as it's installed, don't wait for old tabs
@@ -50,6 +50,9 @@ self.addEventListener("fetch", (event) => {
   if (req.method !== "GET") return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
+  // version.json is the stale-page check (js/student.js): never serve it from
+  // cache, or a stale page could never learn it is stale.
+  if (url.pathname.endsWith("/version.json")) return;
 
   event.respondWith(networkFirst(req, event));
 });
