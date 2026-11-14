@@ -56,3 +56,23 @@ when needed. Read before editing this area; add new notes for this area here.
   section/assignment cascade deletes). No `firestore.rules` change
   needed — delete rule on `submissions` already lets `canActAsOwner`
   delete regardless of `status`.
+
+- **Enrollment create is rule-checked (2026-11).** `enrollments/{id}` create requires id
+  `sectionId_uid`, `ownerEmail` equal to the section's real owner (`get(sections/..)`, legacy
+  sections with no `ownerEmail` default to the super admin, as the client does), and
+  `status` `"pending"` unless `exists(invites/{sectionId}_{lowercased email})` — only then
+  `"approved"`. So invites are now written with id `sectionId_email` (`inviteDocId()` in
+  `js/shared.js`; `js/teacher.js` invite form + `inviteStudentsToSection()`), and
+  `applyPendingInvites()` enrolls **before** deleting the invite. An old random-id invite
+  cannot prove itself, so it is enrolled as `"pending"` (teacher approves). Pages from before
+  2026-09-09 that write no `status` are rejected on purpose (a missing status counts as
+  approved everywhere). No `keys().hasOnly()` on enrollment create, so older field sets still
+  work. Student self-update also type/size-checks `studentName` and `doneMaterials`.
+- **Submission create is rule-checked (2026-11).** `ownerEmail` must equal the assignment's real
+  owner, the key set is limited to what the file and quiz create paths write (plus legacy
+  `photoData`), `link` < 2000 chars, `photoPages` a list of at most 15; the student update
+  rule has the same size checks. **TEMPORARY:** the id may be any id while no doc exists at
+  `assignmentId_uid` (so pages from before #94, which still `addDoc`, can submit); remove that
+  `|| !exists(...)` clause from the `submissions` create rule once stale pages are gone (about
+  2–3 weeks after deploy). `js/student.js` `createSubmission()` retries a refused create as the
+  allowed in-place update when a pending/returned doc already exists.

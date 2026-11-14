@@ -1,21 +1,21 @@
 import { db, ADMIN_EMAIL, isSuperAdmin } from "./firebase-config.js";
-import { normTerm, normYear, displayStudentName, esc, isPastDue } from "./shared.js?v=1";
-import { guardPage, signOutUser } from "./auth.js?v=8";
-import { isLmsApp, isAndroid, wantsApk, setScreenshotBlock, APP_APK_URL, APK_INSTALL_STEPS_HTML } from "./app-bridge.js?v=3";
-import { startApkDownload } from "./pwa-install.js?v=2";
+import { normTerm, normYear, displayStudentName, esc, isPastDue, isNewerVersion, safeToReload, inviteDocId } from "./shared.js?v=2";
+import { guardPage, signOutUser } from "./auth.js?v=9";
+import { isLmsApp, isAndroid, wantsApk, setScreenshotBlock, APP_APK_URL, APK_INSTALL_STEPS_HTML } from "./app-bridge.js?v=4";
+import { startApkDownload } from "./pwa-install.js?v=3";
 import {
   collection, addDoc, setDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where, arrayUnion, arrayRemove, serverTimestamp, documentId, onSnapshot,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { toEmbedUrl, toDownloadUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=4";
+import { toEmbedUrl, toDownloadUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=5";
 import { runJava } from "./runner.js";
 import { codeBlockHtml, highlightWithin } from "./highlight.js";
-import { seededShuffle, quizDeadlineMs, servedQuestions, QUIZ_BREACH_LIMIT, isSplitWindow, hasSecondScreen } from "./quiz.js?v=7";
-import { RETURN_PENALTY, maxAfterReturns, penaltyNote } from "./grading.js?v=1";
-import { toast, friendlyError } from "./ui-feedback.js?v=1";
+import { seededShuffle, quizDeadlineMs, servedQuestions, QUIZ_BREACH_LIMIT, isSplitWindow, hasSecondScreen } from "./quiz.js?v=8";
+import { RETURN_PENALTY, maxAfterReturns, penaltyNote } from "./grading.js?v=2";
+import { toast, friendlyError } from "./ui-feedback.js?v=2";
 import {
   readCache, writeCache, staleSectionIds, assignmentDelta, asDoc, chunk, readStore, writeStore, fitToBudget,
   SUB_PREFIX, SUB_CACHE_TTL_MS, TERM_PREFIX, TERM_CACHE_TTL_MS,
-} from "./assignment-cache.js?v=3";
+} from "./assignment-cache.js?v=4";
 
 let currentUser = null;
 function el(id) { return document.getElementById(id); }
@@ -168,13 +168,18 @@ async function applyPendingInvites() {
     ));
     if (already.empty) {
       // Teacher-initiated invite already carries the teacher's chosen name,
-      // so it's pre-approved - no second approval step.
+      // so it's pre-approved - no second approval step. firestore.rules only
+      // allows "approved" when the invite id is sectionId_email (checked via
+      // exists()), so an old random-id invite is enrolled as "pending" instead
+      // and the teacher approves it. The invite is deleted AFTER enroll() since
+      // the rule needs it to still exist at write time.
+      const approved = inviteDoc.id === inviteDocId(invite.sectionId, currentUser.email);
       await enroll(
         invite.sectionId,
         { subjectId: invite.subjectId, sectionName: invite.sectionName, ownerEmail: invite.ownerEmail },
         { name: invite.subjectName, ownerName: invite.teacherName },
         invite.studentName,
-        "approved"
+        approved ? "approved" : "pending"
       );
       enrolled = true;
     }
@@ -1529,6 +1534,10 @@ function renderSubmittedWork(s) {
     parts.push(`<div class="photo-thumbs">${photos.map((p, i) =>
       `<a href="${p}" target="_blank" rel="noopener" title="page ${i + 1}"><img src="${p}" /></a>`).join("")}</div>`);
   }
+  if (photos.length === 0 && s.photosRemovedAt) {
+    // The teacher saved the photos to a ZIP and freed database space (graded work only).
+    parts.push(`<div class="muted">Photos archived by teacher (${Number(s.photosRemovedCount) || 0} page${Number(s.photosRemovedCount) === 1 ? "" : "s"}).</div>`);
+  }
   if (parts.length === 0) return "";
   return `<div class="submitted-work"><div class="muted">Your submission</div>${parts.join("")}</div>`;
 }
@@ -1541,13 +1550,14 @@ const LINK_HINTS = {
 };
 
 // Multiple photos share one Firestore document's 1MiB cap, so each photo
-// gets a slice of it - MAX_PHOTOS * PER_PHOTO_MAX_LEN (15 * 64,000 =
-// 960,000 chars) stays under the 1,048,576-byte doc cap with ~88KB left
-// for the submission doc's other fields. Photos are WebP where the browser
-// can encode it (~30% smaller than JPEG at the same sharpness), so a 64k
-// WebP page looks about like the old 100k JPEG one.
+// gets a slice of it - MAX_PHOTOS * PER_PHOTO_MAX_LEN (15 * 48,000 =
+// 720,000 chars) stays well under the 1,048,576-byte doc cap. Lowered from
+// 64,000 (2026-11) to shrink stored submissions ~25% on the 1 GiB Spark quota;
+// older submissions with bigger pages still save, they just can't grow. Photos
+// are WebP where the browser can encode it (~30% smaller than JPEG at the same
+// sharpness). If dense handwriting becomes unreadable, raise this to 52000.
 const MAX_PHOTOS = 15;
-const PER_PHOTO_MAX_LEN = 64000;
+const PER_PHOTO_MAX_LEN = 48000;
 
 // iOS Safari can't ENCODE WebP - toDataURL("image/webp") silently returns a
 // PNG there - so check the actual output once and fall back to JPEG.
@@ -1780,6 +1790,42 @@ function submissionDocId(assignmentId) {
   return `${assignmentId}_${currentUser.uid}`;
 }
 
+// Creates the student's submission doc. If the create is refused
+// (permission-denied) the page is usually out of date about this assignment: a
+// doc already exists at the deterministic id (another tab/device, or a retry
+// after an earlier success the page never saw). Look at the real doc: still
+// pending/returned -> redo it as the field-limited in-place update the rules
+// allow (never lose the student's photos); anything else -> flag a stale state
+// so the caller refreshes the lists and tells the student what is true now.
+async function createSubmission(assignmentId, payload) {
+  const ref = doc(db, "submissions", submissionDocId(assignmentId));
+  try {
+    await setDoc(ref, payload);
+    return "created";
+  } catch (err) {
+    if (err?.code !== "permission-denied") throw err;
+    let existing = null;
+    try { existing = await getDoc(ref); } catch { throw err; }
+    if (!existing.exists()) throw err; // genuinely not allowed (e.g. fake owner) - show the friendly error
+    dirtySubSections.add(assignmentsById.get(assignmentId)?.sectionId || "*");
+    const cur = existing.data();
+    if (cur.studentUID === currentUser.uid && (cur.status === "pending" || cur.status === "returned")) {
+      await updateDoc(ref, {
+        link: payload.link,
+        code: payload.code,
+        codeOutput: payload.codeOutput,
+        photoPages: payload.photoPages,
+        status: "pending",
+        submittedAt: Date.now(),
+      });
+      return "updated";
+    }
+    const e = new Error("You already have a submission for this activity, so it was not changed. The page will refresh to show its current state.");
+    e.stateChanged = true;
+    throw e;
+  }
+}
+
 function wireSubmitForm(form) {
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -1829,7 +1875,7 @@ function wireSubmitForm(form) {
         // ownerEmail - those belong to the super admin (the one teacher
         // that existed then).
         const assignmentOwnerEmail = assignmentsById.get(assignmentId)?.ownerEmail || ADMIN_EMAIL;
-        await setDoc(doc(db, "submissions", submissionDocId(assignmentId)), {
+        await createSubmission(assignmentId, {
           assignmentId,
           studentUID: currentUser.uid,
           studentName: currentUser.displayName || currentUser.email,
@@ -1848,6 +1894,13 @@ function wireSubmitForm(form) {
       toast(submissionId ? "Saved — resubmitted for review." : "Submitted!");
       loadEverything();
     } catch (err) {
+      if (err && err.stateChanged) {
+        // The real state on the server differs from what this page showed.
+        // Photos stay in pendingPhotos; reload the lists so the card is accurate.
+        alert(err.message);
+        loadEverything();
+        return;
+      }
       alert((submissionId ? "Save failed: " : "Submit failed: ") + friendlyError(err));
       btn.disabled = false;
       btn.textContent = originalLabel;
@@ -2045,6 +2098,22 @@ document.addEventListener("click", async (e) => {
     btn.textContent = original;
   }
 });
+
+// Quiz answers are final, so unlike createSubmission() there is never an
+// update fallback: if the create is refused because a doc already exists, the
+// quiz was already handed in (stale page / second device) - report that as done.
+async function createQuizSubmission(assignmentId, payload) {
+  try {
+    await setDoc(doc(db, "submissions", submissionDocId(assignmentId)), payload);
+  } catch (err) {
+    if (err?.code !== "permission-denied") throw err;
+    let existing = null;
+    try { existing = await getDoc(doc(db, "submissions", submissionDocId(assignmentId))); } catch { throw err; }
+    if (!existing.exists()) throw err;
+    dirtySubSections.add(assignmentsById.get(assignmentId)?.sectionId || "*");
+    // Already submitted elsewhere: treat as success so answers are not re-sent.
+  }
+}
 
 function runQuiz(assignmentId, a, startedAtMs, resuming) {
   const seed = currentUser.uid + assignmentId;
@@ -2409,7 +2478,7 @@ function runQuiz(assignmentId, a, startedAtMs, resuming) {
     const ids = new Set(questions.map((x) => x.id));
     const quizAnswers = Object.fromEntries(Object.entries(st.answers).filter(([k, v]) => ids.has(k) && v !== "" && v !== undefined));
     try {
-      await setDoc(doc(db, "submissions", submissionDocId(assignmentId)), {
+      await createQuizSubmission(assignmentId, {
         assignmentId,
         studentUID: currentUser.uid,
         studentName: currentUser.displayName || currentUser.email,
@@ -2471,6 +2540,45 @@ function attachSubmitHandlers() {
 }
 
 el("sign-out").addEventListener("click", signOutUser);
+
+// ---------- stale-page guard ----------
+// A long-lived tab / home-screen PWA can keep running JS from before a deploy and
+// then fail against newer firestore.rules. scripts/bump-version.mjs writes
+// version.json ({ "v": N }) and rewrites APP_VERSION below to the same N; on load
+// and whenever the tab becomes visible we compare. If newer we reload - but NEVER
+// while the student has unsaved photos, typed code/link, or a quiz on screen
+// (then a toast asks them to refresh after submitting). A sessionStorage marker
+// stops a reload loop if a cached shell keeps serving the old version.
+const APP_VERSION = 2;
+let versionToastShown = false;
+
+function hasTypedWork() {
+  return [...document.querySelectorAll(".submit-form .submission-link, .submit-form .submission-code")]
+    .some((f) => f.value !== f.defaultValue);
+}
+
+async function checkForNewVersion() {
+  if (viewCtx) return;
+  try {
+    const r = await fetch(`version.json?t=${Date.now()}`, { cache: "no-store" });
+    if (!r.ok) return;
+    const { v } = await r.json();
+    if (!isNewerVersion(APP_VERSION, v)) return;
+    const pendingPhotoCount = [...pendingPhotos.values()].reduce((n, arr) => n + arr.length, 0);
+    const ok = safeToReload({ pendingPhotoCount, hasTypedWork: hasTypedWork(), quizActive: !!document.querySelector(".quiz-overlay") });
+    let alreadyTried = false;
+    try { alreadyTried = sessionStorage.getItem("lms.reloadedForVersion") === String(v); } catch { /* ignore */ }
+    if (ok && !alreadyTried) {
+      try { sessionStorage.setItem("lms.reloadedForVersion", String(v)); } catch { /* ignore */ }
+      location.reload();
+    } else if (!versionToastShown) {
+      versionToastShown = true;
+      toast("A new version is available - refresh this page after you submit.", 9000);
+    }
+  } catch { /* offline or no version.json - skip */ }
+}
+checkForNewVersion();
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkForNewVersion(); });
 
 // "Get the app" banner: Android browsers only (wantsApk), until dismissed on
 // this phone. localStorage is best-effort - without it the banner just shows.

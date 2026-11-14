@@ -140,13 +140,41 @@ service cloud.firestore {
       allow create: if isSignedIn()
                     && request.resource.data.studentUID == request.auth.uid
                     && request.resource.data.ownerEmail is string
+                    && request.resource.data.assignmentId is string
+                    // ownerEmail must be the REAL owner of the assignment, so a
+                    // student cannot stamp a fake teacher email on their own
+                    // submission. Assignments from before multi-teacher support
+                    // have no ownerEmail: default to the super admin, exactly as
+                    // the client does (js/student.js). One get().
+                    && request.resource.data.ownerEmail ==
+                         get(/databases/$(database)/documents/assignments/$(request.resource.data.assignmentId))
+                           .data.get('ownerEmail', "galutira.ianjoseph.f@gmail.com")
                     // One doc per student per assignment: a second create hits the
                     // same id (= update, which is field-limited), so a returned
                     // student can't dodge the returnCount penalty with a fresh doc.
-                    && request.resource.data.assignmentId is string
-                    && submissionId == request.resource.data.assignmentId + '_' + request.auth.uid
+                    // TEMPORARY (stale-page transition, added 2026-11-15): pages
+                    // loaded before #94 still create with a random id (addDoc).
+                    // Accept any id as long as no doc exists at the deterministic
+                    // id, so those pages can submit; a student who already has the
+                    // assignmentId_uid doc still cannot make a second one. Remove
+                    // the `|| !exists(...)` clause once stale pages have aged out
+                    // (about 2-3 weeks) and restore the strict id check.
+                    && (submissionId == request.resource.data.assignmentId + '_' + request.auth.uid
+                        || !exists(/databases/$(database)/documents/submissions/$(request.resource.data.assignmentId + '_' + request.auth.uid)))
                     && request.resource.data.status == "pending"
-                    && !request.resource.data.keys().hasAny(['finalGrade', 'returnCount', 'publishedAt', 'aiDraft']);
+                    && !request.resource.data.keys().hasAny(['finalGrade', 'returnCount', 'publishedAt', 'aiDraft'])
+                    // Only the fields the client's two create paths write (file
+                    // submit + quiz submit), plus legacy photoData from pages
+                    // that predate photoPages. Anything else is rejected.
+                    && request.resource.data.keys().hasOnly([
+                         'assignmentId', 'studentUID', 'studentName', 'ownerEmail', 'status',
+                         'link', 'code', 'codeOutput', 'photoPages', 'photoData', 'submittedAt',
+                         'quizAnswers', 'quizServed', 'quizLog', 'quizSubmittedAt'
+                       ])
+                    && (!('link' in request.resource.data)
+                        || (request.resource.data.link is string && request.resource.data.link.size() < 2000))
+                    && (!('photoPages' in request.resource.data)
+                        || (request.resource.data.photoPages is list && request.resource.data.photoPages.size() <= 15));
       // The owner branch is spelled out as a DIRECT
       // `resource.data.ownerEmail == request.auth.token.email` comparison
       // rather than via canActAsOwner(). Firestore's LIST/query analyzer only
@@ -181,7 +209,11 @@ service cloud.firestore {
                         && resource.data.studentUID == request.auth.uid
                         && (resource.data.status == "pending" || resource.data.status == "returned")
                         && request.resource.data.status == "pending"
-                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['link', 'code', 'codeOutput', 'photoPages', 'status', 'submittedAt']))
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['link', 'code', 'codeOutput', 'photoPages', 'status', 'submittedAt'])
+                        && (!('link' in request.resource.data)
+                            || (request.resource.data.link is string && request.resource.data.link.size() < 2000))
+                        && (!('photoPages' in request.resource.data)
+                            || (request.resource.data.photoPages is list && request.resource.data.photoPages.size() <= 15)))
                     || (isSignedIn()
                         && resource.data.studentUID == request.auth.uid
                         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['resubmitRequested']));
@@ -305,9 +337,27 @@ service cloud.firestore {
                       || isSuperAdmin()
                       || (isGrantedTeacher() && resource.data.ownerEmail == request.auth.token.email));
       // manualScores (teacher-typed exam scores) can never be set at create.
+      // The id must be sectionId_uid (what every client since 2026-08-05 writes),
+      // and ownerEmail must be the real owner of that section (legacy sections
+      // with no ownerEmail default to the super admin, as the client does) so a
+      // student cannot enroll into one teacher's section stamped as another's.
+      // Self-approval is closed: status must be "pending" unless the teacher
+      // invited this exact email to this section (invite id sectionId_email, see
+      // js/teacher.js). Old random-id invites cannot satisfy this, so the client
+      // enrolls those as "pending" instead (js/student.js applyPendingInvites).
+      // No hasOnly() list on purpose: older clients wrote a varying set of
+      // optional fields and a stale page must not be rejected.
       allow create: if isSignedIn()
                     && request.resource.data.studentUID == request.auth.uid
                     && request.resource.data.ownerEmail is string
+                    && request.resource.data.sectionId is string
+                    && enrollmentId == request.resource.data.sectionId + '_' + request.auth.uid
+                    && request.resource.data.ownerEmail ==
+                         get(/databases/$(database)/documents/sections/$(request.resource.data.sectionId))
+                           .data.get('ownerEmail', "galutira.ianjoseph.f@gmail.com")
+                    && (request.resource.data.get('status', '') == 'pending'
+                        || (request.resource.data.get('status', '') == 'approved'
+                            && exists(/databases/$(database)/documents/invites/$(request.resource.data.sectionId + '_' + request.auth.token.email.lower()))))
                     && !request.resource.data.keys().hasAny(['manualScores']);
       // Students may self-correct a garbled Google display name, and may
       // flag a request to leave the class (leaveRequested) - but may only
@@ -320,7 +370,11 @@ service cloud.firestore {
       allow update: if canActAsOwner(resource.data)
                     || (isSignedIn()
                         && resource.data.studentUID == request.auth.uid
-                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['studentName', 'leaveRequested', 'doneMaterials', 'subsVersion']));
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['studentName', 'leaveRequested', 'doneMaterials', 'subsVersion'])
+                        && (!('studentName' in request.resource.data)
+                            || (request.resource.data.studentName is string && request.resource.data.studentName.size() < 200))
+                        && (!('doneMaterials' in request.resource.data)
+                            || (request.resource.data.doneMaterials is list && request.resource.data.doneMaterials.size() < 1000)));
       allow delete: if canActAsOwner(resource.data);
     }
   }

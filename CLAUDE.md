@@ -149,6 +149,7 @@ not here, so they are not loaded into every session.
 | Photos, files and reports | `docs/design-notes/photos-files-reports.md` | links-only rule, photo capture and compression, Photo ZIPs, Open in Chrome, download button, accomplishment report and collage |
 | Access, enrollment and deletes | `docs/design-notes/access-enrollment-deletes.md` | multi-teacher isolation, cascade deletes, type-the-name confirm, remove enrollment, leave requests, delete a submission |
 | Terms, layout and notifications | `docs/design-notes/terms-layout-notifications.md` | current-term filter, organized layout, mobile breakpoint, new-joins bell, Email class (Gmail) |
+| Security | `docs/design-notes/security.md` | what the rules enforce, known residuals, Vercel headers + CSP report-only, Firebase console checklist (also for the graduate tracer) |
 
 **Sync rule:** a change that adds or alters a deliberate limitation or feature
 decision must update the matching `docs/design-notes/` file in the same

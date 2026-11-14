@@ -46,3 +46,53 @@ export function parseManualNumber(raw) {
 export function isPastDue(a) {
   return !!a.dueDate && Date.now() > new Date(a.dueDate + "T23:59:59+08:00").getTime();
 }
+
+// Invite doc id: "{sectionId}_{lowercased email}". firestore.rules' enrollments
+// create rule does exists(invites/<this id>) to decide whether a student may
+// enroll as "approved" (invited by the teacher) instead of "pending".
+export function inviteDocId(sectionId, email) {
+  return `${sectionId}_${String(email || "").trim().toLowerCase()}`;
+}
+
+// Stale-page guard: is the version served by version.json newer than the one
+// this page was loaded with? Both are positive integers (bump-version.mjs).
+export function isNewerVersion(loaded, latest) {
+  const a = Number(loaded);
+  const b = Number(latest);
+  return Number.isFinite(a) && Number.isFinite(b) && b > a;
+}
+
+// Is it safe to reload the page right now? Never while the student has photos
+// not yet submitted, typed code/link in a form, or a quiz on screen.
+export function safeToReload({ pendingPhotoCount = 0, hasTypedWork = false, quizActive = false } = {}) {
+  return !(quizActive || hasTypedWork || pendingPhotoCount > 0);
+}
+
+// The photos of a submission as the ZIP exports them: photoPages if any, else the
+// legacy single photoData.
+export function photoList(s) {
+  if (s && Array.isArray(s.photoPages) && s.photoPages.length) return s.photoPages;
+  return s && typeof s.photoData === "string" && s.photoData ? [s.photoData] : [];
+}
+
+// Cheap fingerprint of a submission's photos ("count:total chars"). "Free up
+// space" records it when a ZIP is downloaded and re-checks it against the live
+// doc right before deleting, so photos that changed after the ZIP are kept.
+export function photoSig(s) {
+  const list = photoList(s);
+  return `${list.length}:${list.reduce((n, p) => n + String(p).length, 0)}`;
+}
+
+// "Free up space": which submissions may have their photos removed. ONLY
+// published ones that still hold photos. Pending/returned work is never
+// included. Returns [{ id, pages, bytes }] (bytes = approx base64 chars).
+export function photosFreeable(subs) {
+  const out = [];
+  for (const s of subs || []) {
+    if (!s || s.status !== "published") continue;
+    const all = photoList(s);
+    if (!all.length) continue;
+    out.push({ id: s.id, pages: all.length, bytes: all.reduce((n, p) => n + String(p).length, 0) });
+  }
+  return out;
+}
