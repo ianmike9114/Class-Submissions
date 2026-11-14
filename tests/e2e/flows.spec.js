@@ -430,3 +430,99 @@ test("another teacher can't see the first teacher's subject", async ({ page }) =
   await page.waitForTimeout(2000);
   await expect(page.locator("#subjects-list")).not.toContainText("E2E Philosophy");
 });
+
+test("photo submission: ZIP download, then Free up space archives graded photos", async ({ page }) => {
+  const errors = trackPageErrors(page);
+  const openAll = (p) => p.evaluate(() => document.querySelectorAll("#course-outline details").forEach((d) => { d.open = true; }));
+
+  // Teacher creates a document-type assignment.
+  const tpage = await page.context().browser().newPage();
+  const terrors = trackPageErrors(tpage);
+  await blockProduction(tpage);
+  tpage.on("dialog", (d) => (d.type() === "prompt" ? d.accept("E2E Photos") : d.accept()));
+  await signIn(tpage, TEACHER, "Teacher One");
+  await tpage.waitForURL(/teacher\.html/);
+  await tpage.locator("#subjects-list [data-open]").first().click();
+  await tpage.locator("#sections-list [data-open]").first().click();
+  await tpage.locator("#view-section summary", { hasText: "Create" }).click();
+  await tpage.locator('[data-create-type="assignment"]').click();
+  await tpage.fill("#assignment-title", "E2E Photos");
+  await tpage.selectOption("#assignment-filetype", "document");
+  await tpage.fill("#assignment-total-points", "10");
+  await tpage.locator("#create-submit-btn").click();
+  await expect(tpage.locator("#assignments-list")).toContainText("E2E Photos");
+
+  // Student adds two real photos and submits.
+  await signIn(page, STUDENT, "Juan Dela Cruz");
+  await page.waitForURL(/student\.html/);
+  await page.locator('.outline-item[data-title="E2E Photos"]').first().waitFor({ state: "attached" });
+  await openAll(page);
+  await page.locator('.outline-item[data-title="E2E Photos"]').first().click();
+  const form = page.locator('.card[data-title="E2E Photos"] .submit-form').first();
+  const makePng = (color) => page.evaluate(async (color) => {
+    const c = document.createElement("canvas");
+    c.width = 240; c.height = 180;
+    const g = c.getContext("2d");
+    g.fillStyle = color; g.fillRect(0, 0, 240, 180);
+    g.fillStyle = "#fff"; g.font = "28px sans-serif"; g.fillText("E2E " + color, 20, 100);
+    const blob = await new Promise((r) => c.toBlob(r, "image/png"));
+    return Array.from(new Uint8Array(await blob.arrayBuffer()));
+  }, color);
+  const files = [];
+  for (const [i, color] of ["#c0392b", "#2980b9"].entries()) {
+    files.push({ name: `page${i + 1}.png`, mimeType: "image/png", buffer: Buffer.from(await makePng(color)) });
+  }
+  const input = form.locator('input[type=file][data-assignment]').first();
+  await input.setInputFiles(files[0]);
+  await expect(form.locator(".photo-thumb")).toHaveCount(1, { timeout: 20000 });
+  await input.setInputFiles(files[1]);
+  await expect(form.locator(".photo-thumb")).toHaveCount(2, { timeout: 20000 });
+  for (const src of await form.locator(".photo-thumb img").evaluateAll((imgs) => imgs.map((i) => i.src))) {
+    expect(src.length).toBeLessThanOrEqual(48000);
+  }
+  await form.locator("button[type=submit]").click();
+  await expect(page.locator('.outline-item[data-title="E2E Photos"]').first()).toContainText("Submitted", { timeout: 20000 });
+
+  // Teacher opens the assignment: Photo submissions card, Free up space disabled.
+  await tpage.locator("#go-home").click();
+  await tpage.locator("#subjects-list [data-open]").first().click();
+  await tpage.locator("#sections-list [data-open]").first().click();
+  await tpage.locator("#assignments-list .assign-row", { hasText: "E2E Photos" }).locator("[data-open]").click();
+  const details = tpage.locator("details", { has: tpage.locator("#download-all-photos") });
+  await expect(tpage.locator("summary", { hasText: "Photo submissions" })).toBeVisible({ timeout: 20000 });
+  await tpage.locator("summary", { hasText: "Photo submissions" }).click();
+  await expect(tpage.locator("#free-up-space")).toBeDisabled();
+
+  // Grade + publish.
+  await tpage.locator("[data-review]").first().click();
+  await tpage.locator('input[id^="score-"]').fill("8");
+  await tpage.locator("[data-publish]").click();
+  await expect(tpage.locator("#submissions-list")).toContainText(/published/i);
+
+  // Download the ZIP (JSZip comes from a CDN).
+  if (!(await tpage.locator("#download-all-photos").isVisible())) {
+    await tpage.locator("summary", { hasText: "Photo submissions" }).click();
+  }
+  const [download] = await Promise.all([
+    tpage.waitForEvent("download", { timeout: 30000 }),
+    tpage.locator("#download-all-photos").click(),
+  ]);
+  expect(download.suggestedFilename()).toContain("E2E Photos");
+  await expect(tpage.locator("#free-up-space")).toBeEnabled();
+
+  // Free up space (type the assignment title at the prompt).
+  await tpage.locator("#free-up-space").click();
+  await expect(tpage.locator("#submissions-list")).toContainText("Photos archived", { timeout: 20000 });
+  await expect(tpage.locator("#submissions-list")).toContainText(/8\s*\/\s*10|published/i);
+  await tpage.close();
+
+  // Student sees the archive note and the score.
+  await page.reload();
+  await page.locator('.outline-item[data-title="E2E Photos"]').first().waitFor({ state: "attached" });
+  await openAll(page);
+  await page.locator('.outline-item[data-title="E2E Photos"]').first().click();
+  await expect(page.locator('.card[data-title="E2E Photos"]').first()).toContainText("Photos archived by teacher (2 pages)");
+  await expect(page.locator("body")).toContainText("8 / 10");
+  expect(errors, errors.join(" | ")).toEqual([]);
+  expect(terrors, terrors.join(" | ")).toEqual([]);
+});
