@@ -19,3 +19,8 @@ android-app/android/
 android-app/assets/
 android-app/*.apk
 android-app/*.jks
+
+# lms-agent: admin keys and scratch output (never commit)
+*serviceAccount*.json
+*service-account*.json
+tools/lms-agent/out/

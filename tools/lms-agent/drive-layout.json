@@ -1,0 +1,19 @@
+{
+  "_NOTE": "Matches the teacher's real Drive tree (screenshots, 2026-11-15): My Drive / DepEd-AI-System / Term 2 - 2026-2027 / <class folder> / <one folder per item>. Placeholders are filled from CLI flags of the same name: --term --sy --class --folder.",
+  "remote": "gdrive",
+  "studentPath": "DepEd-AI-System/Term {term} - {sy}/{class}/{folder}",
+  "privatePath": "DepEd-AI-System-Private/Answer Keys/Term {term} - {sy}/{class}/{folder}",
+  "_privateNote": "Answer keys live OUTSIDE the DepEd-AI-System tree on purpose: a class folder shared with students would expose anything inside it.",
+  "classFolders": [
+    "Grade 10 - Orchid - CSS",
+    "Grade 12 - Aristotle -  E-Tech",
+    "Grade 12 - STEM - UCSP",
+    "Grade 12 - TVL ICT - Programming"
+  ],
+  "folderNameExamples": [
+    "October 16, 2026",
+    "TERM 2 - SUMMATIVE 1 - REVIEWER",
+    "September 29, 2026 - SICK LEAVE"
+  ],
+  "_folderRule": "--class must be one of classFolders exactly (ask the teacher before inventing a new one). --folder is the per-item folder: the date the module is for, written like 'November 16, 2026', optionally followed by ' - <LABEL>'."
+}

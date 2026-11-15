@@ -47,6 +47,14 @@ the key to `Content-Security-Policy`. Do not enforce before that. `version.json`
 - **Backups:** Spark has no scheduled backup — run a manual Firestore export monthly.
 - **Secrets:** none in the repo; the Gemini/Groq key stays in the teacher's browser only.
 
+## Local admin key (agent scripts)
+
+`tools/lms-agent/` uses a Firebase service-account key that **bypasses `firestore.rules`**. The
+teacher creates it in the Firebase Console, stores it outside every repo, and points env
+`LMS_ADMIN_KEY` at it; `.gitignore` blocks `*serviceAccount*.json` and `*service-account*.json`.
+Scripts lock to env `LMS_OWNER_EMAIL` in code (`assertOwned`, `ownerEmail` query filters). Never
+print or commit the key; revoke it in the Console if it leaks. See `agents.md`.
+
 ## Deploy order
 
 Push the client first, **then** `firebase deploy --only firestore:rules`. A rules change is not

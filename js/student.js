@@ -910,7 +910,7 @@ async function loadEverything() {
         row.innerHTML = `
           <strong>${a.title}</strong>
           <span class="status-${s.status}"> — ${statusLabel}</span>
-          ${s.status === "returned" && s.finalGrade?.feedback ? `<p class="muted">Teacher note: ${s.finalGrade.feedback}</p>` : ""}
+          ${s.status === "returned" && s.finalGrade?.feedback ? `<p class="muted">${s.finalGrade.feedback}</p>` : ""}
           ${oldGradeLine}
           ${s.status !== "published" && penaltyNote(a.totalPoints, s.returnCount)
             ? `<p class="status-returned" data-cap-note>Late resubmission: your max score is now ${maxAfterReturns(a.totalPoints, s.returnCount)} / ${a.totalPoints} (−${RETURN_PENALTY} each time it is returned for revision).</p>` : ""}
@@ -1518,6 +1518,31 @@ function renderResult(s, a) {
 // Reuses embedBlockFor() (same iframe-or-link fallback as the lesson
 // material); photos link out full-size, no remove control (that's the
 // separate editable submit form).
+// Tapping a photo used to open the raw data:image URL in a new tab, which
+// Chrome blocks (blank grey page). Show it in-page instead, same lightbox as
+// js/teacher.js openPhotoLightbox(). Event delegation: wired once, works for
+// every [data-photo-src] thumbnail rendered later.
+function openPhotoLightbox(src, label) {
+  const box = document.getElementById("photo-lightbox");
+  const img = document.getElementById("photo-lightbox-img");
+  if (!box || !img) return;
+  img.src = src;
+  img.alt = label || "";
+  box.classList.remove("hidden");
+}
+document.getElementById("photo-lightbox-close")?.addEventListener("click", () =>
+  document.getElementById("photo-lightbox").classList.add("hidden"));
+document.getElementById("photo-lightbox")?.addEventListener("click", (e) => {
+  if (e.target.id === "photo-lightbox") e.currentTarget.classList.add("hidden");
+});
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-photo-src]");
+  if (btn) openPhotoLightbox(btn.dataset.photoSrc, btn.title);
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") document.getElementById("photo-lightbox")?.classList.add("hidden");
+});
+
 function renderSubmittedWork(s) {
   const parts = [];
   if (s.code) {
@@ -1532,7 +1557,7 @@ function renderSubmittedWork(s) {
     : (s.photoData ? [s.photoData] : []); // legacy single-photo submissions
   if (photos.length > 0) {
     parts.push(`<div class="photo-thumbs">${photos.map((p, i) =>
-      `<a href="${p}" target="_blank" rel="noopener" title="page ${i + 1}"><img src="${p}" /></a>`).join("")}</div>`);
+      `<button type="button" class="photo-thumb-btn" data-photo-src="${esc(p)}" title="page ${i + 1}"><img src="${esc(p)}" alt="page ${i + 1}" /></button>`).join("")}</div>`);
   }
   if (photos.length === 0 && s.photosRemovedAt) {
     // The teacher saved the photos to a ZIP and freed database space (graded work only).
