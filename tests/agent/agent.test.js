@@ -58,6 +58,15 @@ describe("post-material", () => {
     expect(r.dryRun).toBe(true);
     expect((await db.collection("assignments").where("title", "==", "D").get()).size).toBe(0);
   });
+  it("posts a submittable assignment with the site's graded fields", async () => {
+    const r = await post.postMaterial({ section: "sec1", title: "Module 2", link: "https://drive.google.com/y", kind: "assignment", points: 50, component: "performance", due: "2026-11-20" });
+    const a = (await db.collection("assignments").doc(r.id).get()).data();
+    expect(a).toMatchObject({ type: "assignment", totalPoints: 50, component: "performance", dueDate: "2026-11-20", allowedFileTypes: "document", uploadFolderLink: "", rubricReferenceLink: "", ownerEmail: OWNER });
+  });
+  it("rejects an assignment without valid points", async () => {
+    await expect(post.postMaterial({ section: "sec1", title: "NP", link: "l", kind: "assignment" })).rejects.toThrow(/--points/);
+    await expect(post.postMaterial({ section: "sec1", title: "NP", link: "l", kind: "assignment", points: 10, due: "Nov 20" })).rejects.toThrow(/--due/);
+  });
 });
 
 describe("cap", () => {

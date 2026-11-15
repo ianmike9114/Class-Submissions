@@ -5,7 +5,10 @@ Two on-command Claude Code agents for the teacher, backed by dev-only Node scrip
 `firestore.rules` change.
 
 - **Module Publisher** (`lms-module-publisher` skill/agent): author a module, upload Module +
-  Worksheet to Google Drive, post a `type: "material"` assignment doc students see.
+  Worksheet to Google Drive, post an assignment doc students see. Default `type: "assignment"` (Submit button,
+  same graded fields as the site: `totalPoints`, `component`, `dueDate`, `allowedFileTypes`,
+  `uploadFolderLink`, `rubricReferenceLink`); `--kind material` for read-only posts (decided
+  2026-11-16 after the live test: a material has no Submit button).
 - **Auto-Grader** (`lms-auto-grader` skill/agent): read the pending submissions of one
   assignment (Docs/PDF links and in-app photos), score them, publish grade + feedback.
 

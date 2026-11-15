@@ -24,7 +24,8 @@ Without a key, scripts talk only to the emulator when `FIRESTORE_EMULATOR_HOST` 
 
 ```
 node tools/lms-agent/lms-list.mjs [--section <sectionId>]
-node tools/lms-agent/post-material.mjs --section <id> --title "Module 1" --link "<url>" [--lesson "..."] [--instructions "..."] [--allow-download] [--protect-file] [--dry-run]
+node tools/lms-agent/post-material.mjs --section <id> --title "Module 1" --link "<url>" [--kind assignment|material] [--points 50] [--component written|performance] [--due 2026-11-20] [--file-types document|image|code|video] [--rubric-link "<url>"] [--lesson "..."] [--instructions "..."] [--allow-download] [--protect-file] [--dry-run]
+#   --kind material (default for back-compat) has no Submit button; --kind assignment needs --points.
 node tools/lms-agent/subs-pull.mjs --assignment <id> --out tools/lms-agent/out/<id>
 node tools/lms-agent/grade-publish.mjs --assignment <id> --grades tools/lms-agent/out/<id>/grades.json [--dry-run] [--min-confidence 0.7]
 node tools/lms-agent/grade-undo.mjs --audit tools/lms-agent/out/<id>/audit-<timestamp>.jsonl [--dry-run]

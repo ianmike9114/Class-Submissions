@@ -1,11 +1,11 @@
 ---
 name: lms-module-publisher
-description: Send a generated learning module to a class on the Class Submissions LMS - author the module, upload it to Google Drive, and post it as a material. Use for "send module on <topic> to <section>", "post this module", "publish module to my class", "upload module and worksheet".
+description: Send a generated learning module to a class on the Class Submissions LMS - author the module, upload it to Google Drive, and post it as a submittable assignment (or a material on request). Use for "send module on <topic> to <section>", "post this module", "publish module to my class", "upload module and worksheet".
 ---
 
 # LMS Module Publisher
 
-Authors a module, uploads it to Drive, and posts it as a **material** on the LMS. Scripts live in `tools/lms-agent/` (see its `README.md`). Run all commands from the repo root `D:\Desktop\DepEd-Student-LMS`.
+Authors a module, uploads it to Drive, and posts it on the LMS as a submittable **assignment** by default (a **material** only when asked). Scripts live in `tools/lms-agent/` (see its `README.md`). Run all commands from the repo root `D:\Desktop\DepEd-Student-LMS`.
 
 ## Hard rules
 
@@ -26,11 +26,11 @@ Authors a module, uploads it to Drive, and posts it as a **material** on the LMS
 5. Upload (dry run first, then real). Term, school year, class folder and item folder come from the request and `drive-layout.json`; ask if missing.
    `node tools/lms-agent/drive-upload.mjs --file "<module.docx>" --kind module --term <n> --sy "<2026-2027>" --class "<class folder>" --folder "<Month D, YYYY>" --dry-run`
    Then the same without `--dry-run`. Repeat with `--kind worksheet` and `--kind answer-key`. Keep the printed share links for module and worksheet. The answer key prints no link, which is correct.
-6. Show the teacher a short confirmation block: title, Module link, Worksheet link, target subject + section name, and "Answer key stored privately, not posted". Then WAIT for an explicit "send".
-7. After "send", post. One material per file the students need (usually the Module; add the Worksheet as a second material if asked):
-   `node tools/lms-agent/post-material.mjs --section <sectionId> --title "<title>" --link "<module link>" --lesson "<topic>"`
-   Add `--allow-download` or `--protect-file` only if the teacher asked.
-8. Report: the new doc id, section, and the link. Remind the teacher it is visible to students now and he can delete it from the Materials list if needed.
+6. Show the teacher a short confirmation block: title, Module link, Worksheet link, target subject + section name, post type, total points, component, due date, and "Answer key stored privately, not posted". Then WAIT for an explicit "send".
+7. After "send", post. **Default is a submittable assignment** (students get a Submit button; a material has none). Use `--kind material` only when the teacher says "material" / "read only" / "no submission".
+   `node tools/lms-agent/post-material.mjs --kind assignment --section <sectionId> --title "<title>" --link "<module link>" --lesson "<topic>" --instructions "<what to submit>" --points <total> --component written|performance --due <YYYY-MM-DD> --file-types document|image|code|video`
+   Ask for points and due date if the teacher did not give them (no guessing). `--file-types` default `document`; use `image` for photo work. Add `--allow-download` or `--protect-file` only if the teacher asked. Run once with `--dry-run` first and show the payload.
+8. Report: the new doc id, section, and the link. Remind the teacher it is visible to students now and can be deleted from the teacher page if needed.
 
 ## If something fails
 
