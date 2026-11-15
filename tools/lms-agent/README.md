@@ -32,7 +32,9 @@ node tools/lms-agent/grade-undo.mjs --audit tools/lms-agent/out/<id>/audit-<time
 node tools/lms-agent/drive-upload.mjs --file module.docx --kind module|worksheet|answer-key --term 2 --sy 2026-2027 --class "Grade 10 - Orchid - CSS" --folder "November 16, 2026" [--dry-run]
 ```
 
-`grades.json` is an array of `{ "submissionId", "score", "feedback", "confidence", "skipReason"? }`.
+`grades.json` is an array of `{ "submissionId", "action": "publish"|"return"|"skip", "score"?, "feedback", "confidence", "reason"? }`
+(`action` defaults to `publish`; old `skipReason` still means skip). `return` = sent back for revision with **no**
+`returnCount` increment (no -10 penalty), archived under "Previous attempts"; undo reverts it.
 
 Answer keys (`--kind answer-key`) always go to `privatePath` and no share link is ever created.
 

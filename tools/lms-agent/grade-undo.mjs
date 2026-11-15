@@ -16,6 +16,18 @@ export async function undoRun({ audit, dryRun = false }) {
         if (!snap.exists) return { skip: "submission no longer exists" };
         const s = snap.data();
         assertOwned(s, `submission ${e.submissionId}`);
+        if (e.action === "return") {
+          const untouched = s.status === "returned" && s.returnedAt === e.new.returnedAt && same(s.finalGrade, e.new.finalGrade);
+          if (!untouched) return { skip: "edited since the run (student resubmitted or teacher changed it)" };
+          if (!dryRun) {
+            tx.update(ref, {
+              finalGrade: e.previous.finalGrade ?? FieldValue.delete(),
+              status: e.previous.status,
+              returnedAt: e.previous.returnedAt ?? FieldValue.delete(),
+            });
+          }
+          return { ok: true };
+        }
         const unchanged = s.status === e.new.status && s.publishedAt === e.new.publishedAt && same(s.finalGrade, e.new.finalGrade);
         if (!unchanged) return { skip: "edited since the run (teacher or student changed it)" };
         if (!dryRun) {
@@ -29,6 +41,12 @@ export async function undoRun({ audit, dryRun = false }) {
       });
       if (out.skip) { summary.skipped.push({ submissionId: e.submissionId, reason: out.skip }); continue; }
       summary.restored.push({ submissionId: e.submissionId });
+      if (!dryRun && e.action === "return" && e.attemptId) {
+        // Delete only the archive doc this run created (owner-checked first).
+        const attRef = db.collection("submissionAttempts").doc(e.attemptId);
+        const att = await attRef.get();
+        if (att.exists && att.data().submissionId === e.submissionId) { assertOwned(att.data(), `attempt ${e.attemptId}`); await attRef.delete(); }
+      }
       if (!dryRun) await touchStudentSubs(e.studentUID, e.sectionId).catch((x) => summary.errors.push({ submissionId: e.submissionId, reason: `marker: ${x.message}` }));
     } catch (x) { summary.errors.push({ submissionId: e.submissionId, reason: x.message }); }
   }

@@ -175,6 +175,52 @@ describe("grade-publish + undo", () => {
     expect(s1.publishedAt).toBeUndefined();
     expect((await db.collection("submissions").doc("s2").get()).data().status).toBe("published");
   });
+
+  const ret = (id, over = {}) => ({ submissionId: id, action: "return", reason: "answers only", feedback: "Please write each question with your answer.", confidence: 0.9, ...over });
+
+  it("return: no returnCount penalty, no score, archives an attempt, bumps marker", async () => {
+    await sub("r1", { photoPages: ["data:image/webp;base64,AAA"] });
+    const r = await publish.publishGrades({ assignment: "as1", grades: [ret("r1")], auditDir: tmp() });
+    expect(r.returned).toHaveLength(1);
+    const s = (await db.collection("submissions").doc("r1").get()).data();
+    expect(s.status).toBe("returned");
+    expect(s.finalGrade).toEqual({ feedback: "Please write each question with your answer." });
+    expect(s.returnCount).toBeUndefined();
+    expect(typeof s.returnedAt).toBe("number");
+    const atts = await db.collection("submissionAttempts").where("submissionId", "==", "r1").get();
+    expect(atts.size).toBe(1);
+    expect(atts.docs[0].data()).toMatchObject({ score: null, ownerEmail: OWNER, photoPages: ["data:image/webp;base64,AAA"] });
+    expect(typeof (await db.collection("enrollments").doc("en1").get()).data().subsVersion).toBe("number");
+  });
+
+  it("action skip writes nothing; return dry-run writes nothing; unknown action errors", async () => {
+    await sub("k1"); await sub("k2"); await sub("k3");
+    const dir = tmp();
+    const r = await publish.publishGrades({ assignment: "as1", dryRun: true, auditDir: dir, grades: [
+      { submissionId: "k1", action: "skip", reason: "blurry photo" }, ret("k2"), { submissionId: "k3", action: "zap" },
+    ] });
+    expect(r.skipped.map((x) => x.submissionId)).toEqual(["k1"]);
+    expect(r.returned.map((x) => x.submissionId)).toEqual(["k2"]);
+    expect(r.errors.map((x) => x.submissionId)).toEqual(["k3"]);
+    for (const id of ["k1", "k2", "k3"]) expect((await db.collection("submissions").doc(id).get()).data().status).toBe("pending");
+    expect((await db.collection("submissionAttempts").get()).size).toBe(0);
+    expect(readdirSync(dir)).toHaveLength(0);
+  });
+
+  it("undo of a return restores pending and deletes the attempt; skips if student resubmitted", async () => {
+    await sub("u1"); await sub("u2", { studentUID: "stu2" });
+    const r = await publish.publishGrades({ assignment: "as1", grades: [ret("u1"), ret("u2")], auditDir: tmp() });
+    await db.collection("submissions").doc("u2").update({ status: "pending", submittedAt: Date.now() }); // student resubmitted
+    const u = await undo.undoRun({ audit: r.auditFile });
+    expect(u.restored.map((x) => x.submissionId)).toEqual(["u1"]);
+    expect(u.skipped.map((x) => x.submissionId)).toEqual(["u2"]);
+    const s = (await db.collection("submissions").doc("u1").get()).data();
+    expect(s.status).toBe("pending");
+    expect(s.finalGrade).toBeUndefined();
+    expect(s.returnedAt).toBeUndefined();
+    expect((await db.collection("submissionAttempts").where("submissionId", "==", "u1").get()).size).toBe(0);
+    expect((await db.collection("submissionAttempts").where("submissionId", "==", "u2").get()).size).toBe(1);
+  });
 });
 
 describe("drive-upload", () => {

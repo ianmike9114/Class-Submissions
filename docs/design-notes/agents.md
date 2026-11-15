@@ -11,6 +11,13 @@ Two on-command Claude Code agents for the teacher, backed by dev-only Node scrip
   2026-11-16 after the live test: a material has no Submit button).
 - **Auto-Grader** (`lms-auto-grader` skill/agent): read the pending submissions of one
   assignment (Docs/PDF links and in-app photos), score them, publish grade + feedback.
+  **Teacher's completion rule (decided 2026-11-16):** most work is handwritten worksheet photos and is
+  not marked item by item. Questions + answers copied and complete = `publish` at max (`cap`);
+  answers only or missing parts = `return` with a note on what to fix; unreadable/off-task = skip.
+  An agent `return` writes `status:"returned"`, `returnedAt`, `finalGrade:{feedback}` (no score) and
+  archives a `submissionAttempts` doc like the site, but does **not** increment `returnCount`, so
+  there is no -10 penalty (teacher's choice; the site's own Return button still applies it).
+  Feedback is English, short, in the teacher's voice (see the skill).
 
 Skills live in `.claude/Skills/`; agent definitions in `D:/Claude/agents` and
 `C:/Users/ianmike212/.claude/agents` (keep both copies identical).
