@@ -27,6 +27,18 @@ describe("extractDriveFileId", () => {
     expect(extractDriveFileId("https://example.com/foo")).toBeNull();
   });
 
+  it("pulls the id from open?id= and uc?...id= links", () => {
+    expect(extractDriveFileId("https://drive.google.com/open?id=1AbC_d-9")).toBe("1AbC_d-9");
+    expect(extractDriveFileId("https://drive.google.com/uc?export=download&id=1AbC_d-9")).toBe("1AbC_d-9");
+    expect(extractDriveFileId("https://drive.google.com/uc?id=1AbC_d-9&export=view")).toBe("1AbC_d-9");
+  });
+
+  it("returns null for folder links and embeds open?id= as a preview", () => {
+    expect(extractDriveFileId("https://drive.google.com/drive/folders/FOLD1")).toBeNull();
+    expect(toEmbedUrl("https://drive.google.com/drive/folders/FOLD1")).toContain("embeddedfolderview?id=FOLD1");
+    expect(toEmbedUrl("https://drive.google.com/open?id=1AbC_d-9")).toBe("https://drive.google.com/file/d/1AbC_d-9/preview");
+  });
+
   it("returns null (no throw) for null/undefined input", () => {
     expect(extractDriveFileId(null)).toBeNull();
     expect(extractDriveFileId(undefined)).toBeNull();

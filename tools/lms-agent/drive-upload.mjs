@@ -22,6 +22,13 @@ export function loadLayout(path = join(dirname(fileURLToPath(import.meta.url)), 
   return JSON.parse(readFileSync(path, "utf8"));
 }
 
+// `rclone link` returns https://drive.google.com/open?id=<id>, which the site
+// can't preview. Rewrite to the /file/d/<id>/view form it embeds; leave anything else as is.
+export function normalizeDriveLink(link) {
+  const m = String(link).match(/^https:\/\/drive\.google\.com\/(?:open|uc)\?(?:[^#]*&)?id=([\w-]+)/);
+  return m ? `https://drive.google.com/file/d/${m[1]}/view` : link;
+}
+
 export async function uploadToDrive({ file, kind, dryRun = false, exec = run, layout = loadLayout(), ...vars }) {
   if (!KINDS.includes(kind)) throw new Error(`--kind must be one of ${KINDS.join(", ")}.`);
   if (!file || file === true) throw new Error("--file is required.");
@@ -43,7 +50,7 @@ export async function uploadToDrive({ file, kind, dryRun = false, exec = run, la
   await exec("rclone", ["copy", file, destDir]);
   if (!isKey) {
     const { stdout } = await exec("rclone", ["link", destFile]);
-    result.link = String(stdout).trim();
+    result.link = normalizeDriveLink(String(stdout).trim());
   }
   return result;
 }

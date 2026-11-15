@@ -14,7 +14,7 @@ import {
   balanceAnswerPositions, answerPatternWarning,
 } from "./quiz.js?v=8";
 import { getEmailConfig, saveEmailConfig, notifySection } from "./notify.js";
-import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=5";
+import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=6";
 import { loadWorkbook, readExamScores, pickBestSheet } from "./class-record.js?v=2";
 import { runJava } from "./runner.js";
 import { setScreenshotBlock } from "./app-bridge.js?v=4";
