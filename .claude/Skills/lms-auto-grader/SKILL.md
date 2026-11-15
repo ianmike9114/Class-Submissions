@@ -26,16 +26,15 @@ Most work is a **handwritten worksheet photo**. He does NOT mark items right or 
 
 ## Feedback voice (student-facing, English)
 
-Sound like Sir Ian talking to his student: warm, direct, short.
-- 2-3 sentences. Use the student's first name. Plain English, no jargon.
-- Name one specific thing from THEIR pages (a part, an item, neat handwriting, a correct format they wrote).
-- For a return: say exactly what to fix and that full points are still possible.
-- Never harsh, never sarcastic, never mention AI, scripts, photos being "processed", or confidence.
+It must read like the teacher checked it himself: plain, practical, short. (Decided 2026-11-16 after the live test.)
+- 1-2 short sentences of plain text. **No greeting, no student name, no "great job" openers, no emoji.**
+- Say what is complete or exactly what to fix (part / item / page). Nothing else.
+- Never harsh, never mention AI, scripts, photos being "processed", or confidence.
 
 Examples:
-- publish: "Great job, Lemuel! You copied every question in Parts I to IV and your answers are complete. Keep it up."
-- return (answers only): "Hi Lemuel, I can see your answers, but the questions are missing. Please write each question with its answer, then resubmit so I can give you full points."
-- return (incomplete): "Nice work on Parts I and II, Ana. Part III items 4 and 5 and all of Part IV are still missing. Finish those and resubmit for full points."
+- publish: "Complete. All questions and answers written."
+- return (answers only): "Page 2: Part I and the Multimedia Format Quiz have answers only. Write each question with its answer, then resubmit."
+- return (incomplete): "Part III items 4-5 and Part IV are missing. Finish them, then resubmit."
 
 ## Hard rules
 

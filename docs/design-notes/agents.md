@@ -17,7 +17,10 @@ Two on-command Claude Code agents for the teacher, backed by dev-only Node scrip
   An agent `return` writes `status:"returned"`, `returnedAt`, `finalGrade:{feedback}` (no score) and
   archives a `submissionAttempts` doc like the site, but does **not** increment `returnCount`, so
   there is no -10 penalty (teacher's choice; the site's own Return button still applies it).
-  Feedback is English, short, in the teacher's voice (see the skill).
+  Feedback is English, plain and practical (no greeting, no student name), so it reads as the
+  teacher's own check. The student page shows a returned note as plain text (the "Teacher note:"
+  label was dropped, `js/student.js`), and photo thumbnails open in an in-page lightbox on both
+  pages (a `data:` URL opened in a new tab shows blank in Chrome).
 
 Skills live in `.claude/Skills/`; agent definitions in `D:/Claude/agents` and
 `C:/Users/ianmike212/.claude/agents` (keep both copies identical).

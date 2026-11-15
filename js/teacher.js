@@ -5039,7 +5039,7 @@ async function renderPreviousAttempts(submissionId, assignmentId) {
       const embedUrl = attLink ? toEmbedUrl(attLink) : null;
       const attPages = (att.photoPages || []).filter(isImageDataUrl);
       const work = attPages.length > 0
-        ? `<div class="photo-thumbs">${attPages.map((p, n) => `<a href="${escAttr(p)}" target="_blank" rel="noopener"><img src="${escAttr(p)}" /></a>`).join("")}</div>`
+        ? `<div class="photo-thumbs">${attPages.map((p, n) => `<button type="button" class="photo-thumb-btn" data-photo-src="${escAttr(p)}" title="previous attempt - page ${n + 1}"><img src="${escAttr(p)}" /></button>`).join("")}</div>`
         : att.code
           ? codeBlockHtml(att.code, "java") + (att.codeOutput ? `<div class="muted">Saved output</div><pre class="code-output">${escAttr(att.codeOutput)}</pre>` : "")
           : att.link
