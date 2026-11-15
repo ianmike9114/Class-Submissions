@@ -9,6 +9,7 @@
     "test:watch": "vitest",
     "test:rules": "firebase emulators:exec --only firestore --project demo-lms-rules \"vitest run --config vitest.rules.config.js\"",
     "emu": "firebase emulators:start --only firestore,auth",
+    "test:agent": "node tools/lms-agent/run-agent-tests.mjs",
     "e2e": "playwright test",
     "bump": "node scripts/bump-version.mjs",
     "e2e:flows": "firebase emulators:exec --only auth,firestore --project demo-lms-e2e \"playwright test -c playwright.flows.config.js\"",
@@ -19,6 +20,7 @@
     "@firebase/rules-unit-testing": "^5.0.2",
     "@playwright/test": "^1.48.0",
     "firebase": "^12.19.0",
+    "firebase-admin": "^14.5.1",
     "firebase-tools": "^13.0.0",
     "vitest": "^2.1.0"
   }
