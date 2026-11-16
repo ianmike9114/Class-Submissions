@@ -89,3 +89,15 @@ when needed. Read before editing this area; add new notes for this area here.
   `window.open` — the submit click's user activation has expired after the
   `addDoc`/enrollment awaits, so a scripted open would be pop-up blocked.
   Nothing is sent by the app; teacher presses Send. No rules change.
+
+## "Needs your attention" box (student dashboard)
+
+`renderNeedsResubmission()` (`#needs-resubmission`, top of `student.html`) is one
+pinned red box with three groups in order: **Returned** (teacher note + Resubmit,
+which opens the edit form), **Missing** (past due, no submission), **To do** (open,
+not submitted, soonest due first). Status comes from `itemStatus()`/`isPastDue()`,
+the same logic as the outline chips, so box and sidebar agree. It is fed the
+non-quiz, current-term map, so materials, quizzes and hidden-term sections are
+excluded. 5 per group, then "Show all (N)"; hidden when empty. Zero extra reads.
+**Up next** (`renderUpNext()`) now lists only unread materials, so no assignment
+shows in two adjacent boxes. Styles `.attn-*` in `css/style.css` (stacks at 640px).

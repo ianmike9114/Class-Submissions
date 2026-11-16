@@ -1,9 +1,15 @@
 // Extracts the file ID from a Drive file link, or null if it isn't one.
 // Shared by toEmbedUrl() (iframe preview) and js/gemini.js (fetching the
 // actual image bytes for vision input on "image" assignments).
+// Matches /file/d/<id>, /open?id=<id> (what `rclone link` returns) and
+// /uc?...id=<id>. Folder links return null so they reach the folder branch.
 export function extractDriveFileId(link) {
-  const match = link?.match(/drive\.google\.com\/file\/d\/([^/]+)/);
-  return match ? match[1] : null;
+  if (typeof link !== "string" || !/drive\.google\.com\//.test(link)) return null;
+  if (/drive\.google\.com\/drive\//.test(link)) return null;
+  const file = link.match(/drive\.google\.com\/file\/d\/([^/?#]+)/);
+  if (file) return file[1];
+  const q = link.match(/drive\.google\.com\/(?:open|uc)\?(?:[^#]*&)?id=([\w-]+)/);
+  return q ? q[1] : null;
 }
 
 // Best-effort: turn a submission link into an iframe-able preview URL.

@@ -76,6 +76,13 @@ the run wrote; docs edited since are skipped and reported. It re-touches the stu
 The Answer Key is uploaded to the private Drive path only. `drive-upload.mjs` never calls
 `rclone link` for `--kind answer-key` (enforced in code and tested). It is never posted to the LMS.
 
+## Link format
+
+`rclone link` returns `https://drive.google.com/open?id=<id>`, which the site could not
+preview. `drive-upload.mjs` now rewrites it (`normalizeDriveLink()`) to
+`https://drive.google.com/file/d/<id>/view`. `js/embed.js` `extractDriveFileId()` also
+accepts `open?id=` and `uc?...id=`, so links posted earlier embed too (no migration).
+
 ## Drive layout
 
 `tools/lms-agent/drive-layout.json` mirrors the teacher's real Drive tree:

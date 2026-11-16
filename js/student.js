@@ -6,7 +6,7 @@ import { startApkDownload } from "./pwa-install.js?v=3";
 import {
   collection, addDoc, setDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where, arrayUnion, arrayRemove, serverTimestamp, documentId, onSnapshot,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { toEmbedUrl, toDownloadUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=5";
+import { toEmbedUrl, toDownloadUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=6";
 import { runJava } from "./runner.js";
 import { codeBlockHtml, highlightWithin } from "./highlight.js";
 import { seededShuffle, quizDeadlineMs, servedQuestions, QUIZ_BREACH_LIMIT, isSplitWindow, hasSecondScreen } from "./quiz.js?v=8";
@@ -1227,26 +1227,25 @@ function renderOutline(assignmentsBySubject, subDocsByAssignment, topicOrderBySu
 function renderUpNext(assignmentsBySubject, subDocsByAssignment, doneMaterialIds) {
   const box = el("assignment-empty");
   if (!box) return;
-  const todo = [];
+  // Unsubmitted open assignments now live in the "Needs your attention" box at
+  // the top, so Up next lists only unread materials (no item shown twice).
   const toRead = [];
   for (const [subjectName, aDocs] of assignmentsBySubject) {
     for (const d of aDocs) {
       const a = d.data();
-      if (a.type === "material") { if (!doneMaterialIds.has(d.id)) toRead.push({ d, a, subjectName }); continue; }
-      if (!subDocsByAssignment.get(d.id) && !isPastDue(a)) todo.push({ d, a, subjectName });
+      if (a.type === "material" && !doneMaterialIds.has(d.id)) toRead.push({ d, a, subjectName });
     }
   }
-  todo.sort((x, y) => (x.a.dueDate || "9999").localeCompare(y.a.dueDate || "9999"));
-  const rows = [...todo, ...toRead].slice(0, 8);
+  const rows = toRead.slice(0, 8);
   if (!rows.length) {
     box.className = "muted";
-    box.innerHTML = "You're all caught up. Pick anything from the course outline to review it.";
+    box.innerHTML = "Nothing left to read. Pick anything from the course outline to review it; open work is listed in the box above.";
     return;
   }
   box.className = "card up-next";
   box.innerHTML = `
     <h3 style="margin-top:0;">Up next</h3>
-    <p class="muted" style="margin-top:0;">Your open work, soonest due first. Or pick anything from the course outline.</p>
+    <p class="muted" style="margin-top:0;">Materials to read. Or pick anything from the course outline.</p>
     <div class="up-next-list">
       ${rows.map(({ d, a, subjectName }) => {
         const st = itemStatus(a, null, false);
@@ -1265,52 +1264,88 @@ function renderUpNext(assignmentsBySubject, subDocsByAssignment, doneMaterialIds
     b.addEventListener("click", () => openAssignment(b.dataset.upnextJump)));
 }
 
-// Pinned "Needs resubmission" callout at the very top of the dashboard.
-// Returned work is easy to miss when it sits inline in a collapsed outline -
-// students saw "submitted" and assumed they were done. This pulls every
-// returned assignment OUT into its own red-bordered block with the teacher's
-// note and a single "Resubmit" button that opens the assignment and its edit
-// form in one tap. Built entirely from data loadEverything() already fetched -
-// no extra Firestore reads. Hidden when there's nothing to resubmit.
+// Pinned "Needs your attention" box at the very top of the dashboard: every
+// item that needs student action, in three groups - Returned (teacher sent it
+// back; Resubmit), Missing (past due, nothing submitted) and To do (open, not
+// submitted, soonest due first). Statuses come from itemStatus()/isPastDue(),
+// the same logic as the outline sidebar, so the two always agree. Materials and
+// quizzes are excluded (callers pass the non-quiz, current-term map). Built
+// entirely from data loadEverything() already fetched - no extra reads. Hidden
+// when all groups are empty. Each group shows 5, then "Show all (N)".
+const ATTN_LIMIT = 5;
+const attnExpanded = new Set();
 function renderNeedsResubmission(assignmentsBySubject, subDocsByAssignment) {
   const box = el("needs-resubmission");
   if (!box) return;
-  const returned = [];
+  const groups = { returned: [], missing: [], todo: [] };
   for (const [subjectName, aDocs] of assignmentsBySubject) {
     for (const aDoc of aDocs) {
+      const a = aDoc.data();
+      if (a.type === "material") continue;
       const sub = subDocsByAssignment.get(aDoc.id);
-      if (sub && sub.data().status === "returned") {
-        returned.push({ assignmentId: aDoc.id, title: aDoc.data().title, subjectName, note: sub.data().finalGrade?.feedback || "" });
-      }
+      const st = itemStatus(a, sub, false);
+      const row = { id: aDoc.id, title: a.title, subjectName, due: a.dueDate || "", note: sub?.data().finalGrade?.feedback || "" };
+      if (st.key === "returned") groups.returned.push(row);
+      else if (st.key === "missing") groups.missing.push(row);
+      else if (!sub && (st.key === "todo" || st.key === "soon")) groups.todo.push(row);
     }
   }
-  if (returned.length === 0) {
-    box.classList.add("hidden");
+  const byDue = (x, y) => (x.due || "9999").localeCompare(y.due || "9999");
+  groups.missing.sort(byDue);
+  groups.todo.sort(byDue);
+  const total = groups.returned.length + groups.missing.length + groups.todo.length;
+  if (total === 0) {
+    box.className = "hidden";
     box.innerHTML = "";
     return;
   }
-  box.classList.remove("hidden");
-  box.className = "card";
+  const META = {
+    returned: { label: "Returned", chip: "returned", btn: "Resubmit", blurb: "Your teacher sent these back for changes. They are <strong>not done yet</strong> - fix and resubmit." },
+    missing: { label: "Missing", chip: "missing", btn: "Open", blurb: "Past the due date with nothing submitted. Open to see if late work is still accepted." },
+    todo: { label: "To do", chip: "todo", btn: "Open", blurb: "Open work, soonest due first." },
+  };
+  const card = (key, r) => `
+    <div class="card attn-card">
+      <div class="attn-main">
+        <strong>${esc(r.title)}</strong> <span class="muted">${esc(r.subjectName)}${r.due ? ` &middot; due ${esc(shortDate(r.due))}` : ""}</span>
+        ${r.note ? `<p class="muted" style="margin:0.3rem 0 0;">Teacher note: ${esc(r.note)}</p>` : ""}
+      </div>
+      <span class="chip chip-${META[key].chip}">${META[key].label}</span>
+      <button type="button" data-attn-jump="${esc(r.id)}" data-attn-kind="${key}">${META[key].btn}</button>
+    </div>`;
+  const section = (key) => {
+    const rows = groups[key];
+    if (!rows.length) return "";
+    const open = attnExpanded.has(key);
+    const shown = open ? rows : rows.slice(0, ATTN_LIMIT);
+    return `<div class="attn-group">
+      <h3 class="attn-group-title">${META[key].label} <span class="status-returned">${rows.length}</span></h3>
+      <p class="muted" style="margin:0 0 0.5rem;">${META[key].blurb}</p>
+      ${shown.map((r) => card(key, r)).join("")}
+      ${rows.length > ATTN_LIMIT ? `<button type="button" class="secondary" data-attn-toggle="${key}">${open ? "Show fewer" : `Show all (${rows.length})`}</button>` : ""}
+    </div>`;
+  };
+  box.className = "card attn-box";
   box.style.borderColor = "#b91c1c";
   box.innerHTML = `
-    <h2 style="margin-top:0;">Needs resubmission <span class="status-returned">${returned.length}</span></h2>
-    <p class="muted">Your teacher sent these back for changes. They are <strong>not done yet</strong> — fix them and resubmit.</p>
-    ${returned.map((r) => `
-      <div class="card" style="border-color:#b91c1c; margin-bottom:0.6rem;">
-        <strong>${esc(r.title)}</strong> <span class="muted">${esc(r.subjectName)}</span>
-        ${r.note ? `<p class="muted">Teacher note: ${esc(r.note)}</p>` : ""}
-        <div style="margin-top:0.5rem;">
-          <button type="button" data-resubmit-jump="${r.assignmentId}">Resubmit</button>
-        </div>
-      </div>`).join("")}`;
-  box.querySelectorAll("[data-resubmit-jump]").forEach((b) =>
+    <h2 style="margin-top:0;">Needs your attention <span class="status-returned">${total}</span></h2>
+    ${section("returned")}${section("missing")}${section("todo")}`;
+  box.querySelectorAll("[data-attn-toggle]").forEach((b) =>
     b.addEventListener("click", () => {
-      const id = b.dataset.resubmitJump;
+      const k = b.dataset.attnToggle;
+      if (attnExpanded.has(k)) attnExpanded.delete(k); else attnExpanded.add(k);
+      renderNeedsResubmission(assignmentsBySubject, subDocsByAssignment);
+    }));
+  box.querySelectorAll("[data-attn-jump]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const id = b.dataset.attnJump;
       openAssignment(id);
-      // Open the card's edit form straight away so the student lands on the
-      // fields to change, not just the read-only card.
-      const card = el("assignments-list").querySelector(`[data-assignment-id="${id}"]`);
-      card?.querySelector("[data-edit-submission]")?.click();
+      if (b.dataset.attnKind === "returned") {
+        // Open the card's edit form straight away so the student lands on the
+        // fields to change, not just the read-only card.
+        const c = el("assignments-list").querySelector(`[data-assignment-id="${id}"]`);
+        c?.querySelector("[data-edit-submission]")?.click();
+      }
     }));
 }
 
@@ -2574,7 +2609,7 @@ el("sign-out").addEventListener("click", signOutUser);
 // while the student has unsaved photos, typed code/link, or a quiz on screen
 // (then a toast asks them to refresh after submitting). A sessionStorage marker
 // stops a reload loop if a cached shell keeps serving the old version.
-const APP_VERSION = 2;
+const APP_VERSION = 3;
 let versionToastShown = false;
 
 function hasTypedWork() {

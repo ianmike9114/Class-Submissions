@@ -242,6 +242,13 @@ describe("drive-upload", () => {
     expect(m.calls.find((c) => c[1] === "copy")[3]).toBe("gdrive:S/ICT/G11/Q1/W2");
     expect(m.calls.some((c) => c[1] === "link")).toBe(true);
   });
+  it("rewrites rclone open?id= links to /file/d/<id>/view", async () => {
+    const exec = async (cmd, args) => ({ stdout: args[0] === "link" ? "https://drive.google.com/open?id=1AbC_d-9\n" : "" });
+    const r = await upload.uploadToDrive({ ...base, kind: "module", exec });
+    expect(r.link).toBe("https://drive.google.com/file/d/1AbC_d-9/view");
+    expect(upload.normalizeDriveLink("https://drive.google.com/file/d/X/view")).toBe("https://drive.google.com/file/d/X/view");
+    expect(upload.normalizeDriveLink("https://link")).toBe("https://link");
+  });
   it("dry-run runs nothing; bad kind rejected", async () => {
     const m = mk();
     await upload.uploadToDrive({ ...base, kind: "worksheet", dryRun: true, exec: m.exec });

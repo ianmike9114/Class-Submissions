@@ -1045,6 +1045,13 @@ details.outline-lesson > summary.outline-lesson-head {
 }
 .outline-item-meta { font-size: 0.8rem; color: #6b7280; }
 
+/* Needs your attention: pinned box (Returned / Missing / To do). */
+.attn-group + .attn-group { margin-top: 1rem; }
+.attn-group-title { margin: 0 0 0.2rem; font-size: 1rem; }
+.attn-card { display: flex; align-items: center; gap: 0.6rem; border-color: #b91c1c; margin-bottom: 0.5rem; }
+.attn-main { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.attn-card .chip, .attn-card button { flex: none; }
+
 /* Up next: fills the empty detail panel. */
 .up-next-list { display: flex; flex-direction: column; gap: 0.4rem; }
 .up-next-row {
@@ -1115,6 +1122,9 @@ details.assign-group[open] > summary.assign-group-head {
   .outline-item { min-height: 44px; }
   details.menu > summary { width: 44px; height: 44px; }
   .menu-panel button { min-height: 44px; }
+  .attn-card { flex-wrap: wrap; }
+  .attn-main { flex-basis: 100%; }
+  .attn-card button { width: 100%; }
   .up-next-row { flex-wrap: wrap; }
   .up-next-row button { width: 100%; }
   .assign-row { grid-template-columns: 1fr; padding: 0.8rem 1rem; }
