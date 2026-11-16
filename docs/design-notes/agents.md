@@ -105,3 +105,10 @@ block, because the renderer defaults to Term 1 / Week 1 / Module 1. Unit test: `
 ## Tests
 
 `npm run test:agent` runs the scripts against the Firestore emulator (never live).
+
+## Check all and calibration
+
+"Check all" runs `tools/lms-agent/pending.mjs` (read-only; selects only `assignmentId`/`sectionId` so photo-heavy
+submission docs are never downloaded; skips quizzes/materials), then grades each assignment in turn and shows one
+combined review table. Nothing is published until ian says OK. His corrections are appended (no student names) to
+`.claude/Skills/lms-auto-grader/references/calibration.md`, which every run reads first. Unit test: `tests/unit/pending.test.js`.
