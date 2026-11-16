@@ -12,9 +12,12 @@ Two on-command Claude Code agents for the teacher, backed by dev-only Node scrip
 - **Auto-Grader** (`lms-auto-grader` skill/agent): read the pending submissions of one
   assignment (Docs/PDF links and in-app photos), score them, publish grade + feedback.
   **Teacher's completion rule (decided 2026-11-16):** most work is handwritten worksheet photos and is
-  not marked item by item. Questions + answers copied and complete = `publish` at max (`cap`);
-  answers only or missing parts = `return` with a note on what to fix; unreadable/off-task = skip.
-  An agent `return` writes `status:"returned"`, `returnedAt`, `finalGrade:{feedback}` (no score) and
+  not marked item by item. Count the items attempted (answers only, without copied questions, counts
+  as done). About 80% or more done = `publish` at max (`cap`); below 80% but a real attempt = `publish`
+  a partial score (share done x `cap`, rounded up) with a short note naming what is missing, no return;
+  blank/unreadable/wrong file/off-task = skip with a reason, never 0. `return` is no longer the default
+  for incomplete work, only on request for a specific run (rule changed same day, replacing the earlier
+  "questions + answers copied = max, else return"). An agent `return` writes `status:"returned"`, `returnedAt`, `finalGrade:{feedback}` (no score) and
   archives a `submissionAttempts` doc like the site, but does **not** increment `returnCount`, so
   there is no -10 penalty (teacher's choice; the site's own Return button still applies it).
   Feedback is English, plain and practical (no greeting, no student name), so it reads as the
