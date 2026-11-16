@@ -106,7 +106,7 @@ if (isMain(import.meta.url)) {
   try {
     if (!a.assignment || !a.grades) throw new Error("--assignment and --grades are required.");
     const gradesPath = resolve(a.grades);
-    const grades = JSON.parse(readFileSync(gradesPath, "utf8"));
+    const grades = JSON.parse(readFileSync(gradesPath, "utf8").replace(/^\uFEFF/, "")); // PowerShell writes a BOM
     if (!Array.isArray(grades)) throw new Error("grades.json must be an array.");
     const dry = !!a["dry-run"];
     const r = await publishGrades({
