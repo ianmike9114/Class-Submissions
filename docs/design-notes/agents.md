@@ -94,6 +94,14 @@ date, e.g. `October 16, 2026`). `--class` must match its `classFolders` list exa
 cannot create a stray folder. Answer keys go to a separate `DepEd-AI-System-Private/` tree, outside
 any folder a class might be shared into. `rclone config` (Google sign-in) is done by the teacher, not by Claude.
 
+## Term and week
+
+`tools/lms-agent/school-calendar.json` holds the school year, each term's start date and break ranges;
+ian edits it by hand (Term 1 and Term 3 starts are `null` until filled in). `node tools/lms-agent/week-of.mjs
+--date YYYY-MM-DD` prints `{"term","week","sy"}` (Monday-based weeks from term start, full break weeks not
+counted; errors instead of guessing). The publisher puts these into the module's `meta` and the confirmation
+block, because the renderer defaults to Term 1 / Week 1 / Module 1. Unit test: `tests/unit/week-of.test.js`.
+
 ## Tests
 
 `npm run test:agent` runs the scripts against the Firestore emulator (never live).

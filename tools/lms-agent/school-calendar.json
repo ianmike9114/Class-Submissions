@@ -1,0 +1,12 @@
+{
+  "_NOTE": "Edit by hand. Fill in the Term 1 and Term 3 start dates (YYYY-MM-DD) and any break ranges. Term 2 is pre-filled. Break weeks do not count toward the week number.",
+  "schoolYear": "2026-2027",
+  "terms": [
+    { "term": 1, "start": null },
+    { "term": 2, "start": "2026-09-21" },
+    { "term": 3, "start": null }
+  ],
+  "breaks": [
+    { "from": null, "to": null, "label": "Christmas break (fill in, e.g. 2026-12-21 to 2027-01-03)" }
+  ]
+}
