@@ -6,7 +6,7 @@ import { startApkDownload } from "./pwa-install.js?v=3";
 import {
   collection, addDoc, setDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where, arrayUnion, arrayRemove, serverTimestamp, documentId, onSnapshot,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { toEmbedUrl, toDownloadUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=6";
+import { toEmbedUrl, toDownloadUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=7";
 import { runJava } from "./runner.js";
 import { codeBlockHtml, highlightWithin } from "./highlight.js";
 import { seededShuffle, quizDeadlineMs, servedQuestions, QUIZ_BREACH_LIMIT, isSplitWindow, hasSecondScreen } from "./quiz.js?v=8";

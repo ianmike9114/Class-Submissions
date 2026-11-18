@@ -62,6 +62,20 @@ export function toDownloadUrl(link) {
   return null;
 }
 
+// Print-ready view of a module file. Browsers block cross-origin printing, so
+// we open Drive's viewer (has a print icon, renders .docx as PDF) or the Docs
+// PDF export; the teacher presses the printer icon / Ctrl+P there.
+export function toPrintUrl(link) {
+  if (!link) return null;
+
+  const driveId = extractDriveFileId(link);
+  if (driveId) return `https://drive.google.com/file/d/${driveId}/view`;
+
+  if (/docs\.google\.com\/(document|presentation|spreadsheets)\/d\//.test(link)) return toDownloadUrl(link);
+
+  return null;
+}
+
 // Scan a free-text string for the first URL that toEmbedUrl() can embed.
 // Teachers routinely paste a Drive/Docs/Slides/YouTube link straight into
 // an assignment's instructions text (not the dedicated "Instructions file"

@@ -53,6 +53,12 @@ when needed. Read before editing this area; add new notes for this area here.
   (so older modules show it too). Straight from Google, no Storage; in the
   Android app the link opens in the phone's browser, which downloads it. No
   rules change.
+- **Print button on module files (teacher).** Teacher assignment rows show
+  "🖨 Print" via `js/embed.js` `toPrintUrl()`; it opens the Drive viewer
+  (`/view`) or the Docs PDF export in a new tab, because browsers block
+  cross-origin printing of a Drive file (no `window.print` on Drive). Teacher
+  clicks the printer icon / Ctrl+P and picks copies there. File must be shared
+  "Anyone with the link". For printing modules for students without phones.
 - **Protect file (`assignment.protectFile`, missing = off).** Teacher checkbox
   in add/edit forms. `materialBlock()` then: Android browser -> app gate
   (`renderGetAppGate("module")`); everyone else -> `embedBlockFor(..., {bare:

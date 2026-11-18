@@ -14,7 +14,7 @@ import {
   balanceAnswerPositions, answerPatternWarning,
 } from "./quiz.js?v=8";
 import { getEmailConfig, saveEmailConfig, notifySection } from "./notify.js";
-import { toEmbedUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=6";
+import { toEmbedUrl, toPrintUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=7";
 import { loadWorkbook, readExamScores, pickBestSheet } from "./class-record.js?v=2";
 import { runJava } from "./runner.js";
 import { setScreenshotBlock } from "./app-bridge.js?v=4";
@@ -3194,8 +3194,10 @@ async function loadAssignments() {
     const a = d.data();
     const isMaterial = a.type === "material";
     const isQuiz = !isMaterial && a.allowedFileTypes === "quiz";
+    const printUrl = toPrintUrl(a.instructionsLink);
     const links = [
       a.instructionsLink ? `<a class="chip chip-link" href="${escAttr(a.instructionsLink)}" target="_blank" rel="noopener">${isMaterial ? "Material file" : "Instructions file"}</a>` : "",
+      printUrl ? `<a class="chip chip-link" href="${escAttr(printUrl)}" target="_blank" rel="noopener" title="Opens a print-ready view. Click the printer icon or press Ctrl+P.">&#128424; Print</a>` : "",
       !isMaterial && a.uploadFolderLink ? `<a class="chip chip-link" href="${escAttr(a.uploadFolderLink)}" target="_blank" rel="noopener">Upload folder</a>` : "",
     ].join("");
     const meta = isMaterial
