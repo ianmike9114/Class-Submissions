@@ -110,5 +110,6 @@ block, because the renderer defaults to Term 1 / Week 1 / Module 1. Unit test: `
 
 "Check all" runs `tools/lms-agent/pending.mjs` (read-only; selects only `assignmentId`/`sectionId` so photo-heavy
 submission docs are never downloaded; skips quizzes/materials), then grades each assignment in turn and shows one
-combined review table. Nothing is published until ian says OK. His corrections are appended (no student names) to
+combined review table. `--section "<name or id>"` (case-insensitive name, or exact id) limits the list to one class
+("check STEM 12"); no flag lists everything. Nothing is published until ian says OK. His corrections are appended (no student names) to
 `.claude/Skills/lms-auto-grader/references/calibration.md`, which every run reads first. Unit test: `tests/unit/pending.test.js`.
