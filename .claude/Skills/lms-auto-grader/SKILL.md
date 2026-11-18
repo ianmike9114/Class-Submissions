@@ -1,6 +1,6 @@
 ---
 name: lms-auto-grader
-description: Check pending student submissions of one LMS assignment (or "check all" pending) (handwritten worksheet photos, Google Docs/PDF links) with the teacher's completion rule, then publish max points (about 80% or more done) or a partial score (less), with feedback in his voice. Use for "check <assignment>", "check all", "check every pending", "grade the submissions", "auto-grade this activity", "check my students' work".
+description: Check pending student submissions of one LMS assignment ("check all" pending, or "check <section>") (handwritten worksheet photos, Google Docs/PDF links) with the teacher's completion rule, then publish max points (about 80% or more done) or a partial score (less), with feedback in his voice. Use for "check <assignment>", "check all", "check <section>" / "grade STEM 12", "check every pending", "grade the submissions", "auto-grade this activity", "check my students' work".
 ---
 
 # LMS Auto-Grader
@@ -42,6 +42,9 @@ Before ANY run (single assignment or check all), read `references/calibration.md
 ## Check all mode
 
 Trigger: "check all" / "check every pending". Quality first, no scheduling.
+
+**Check <section> variant** ("check STEM 12", "grade STEM 12"): same steps, limited to one section. Step 2 becomes `node tools/lms-agent/pending.mjs --section "<name or id>"`; one combined review table; publish nothing until ian says OK.
+
 1. Read `references/calibration.md`. Check env (step 1 under Steps).
 2. `node tools/lms-agent/pending.mjs` (add `--json` to parse). Quizzes and materials are skipped by the script. 0 pending: report and stop.
 3. For each assignment IN TURN (never mixing two assignments' work): pull, read photos, write `grades.json`, run the `--dry-run` (Steps 3-7).

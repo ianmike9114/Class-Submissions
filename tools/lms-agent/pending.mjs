@@ -1,5 +1,5 @@
 // Read-only: count the owner's pending submissions per assignment (for "check all").
-//   node tools/lms-agent/pending.mjs [--json]
+//   node tools/lms-agent/pending.mjs [--json] [--section "<name or id>"]
 // Only assignmentId/sectionId are selected; full submission docs carry base64 photos and are never downloaded.
 // admin.mjs is imported lazily so importing groupPending in a test never touches Firebase or env.
 import { isMain, parseArgs } from "./cli.mjs";
@@ -14,6 +14,13 @@ export function groupPending(rows) {
     m.set(r.assignmentId, g);
   }
   return [...m.values()].sort((a, b) => b.pending - a.pending || a.assignmentId.localeCompare(b.assignmentId));
+}
+
+// Keep rows whose section matches `q` (case-insensitive name, or exact id). No q = all rows.
+export function filterBySection(rows, q) {
+  const k = typeof q === "string" ? q.trim().toLowerCase() : "";
+  if (!k) return rows;
+  return rows.filter((r) => r.sectionId === q.trim() || String(r.section || "").toLowerCase() === k);
 }
 
 export async function listPending() {
@@ -45,11 +52,11 @@ export async function listPending() {
 
 if (isMain(import.meta.url)) {
   const args = parseArgs();
-  const rows = await listPending();
+  const rows = filterBySection(await listPending(), args.section);
   if (args.json) {
     console.log(JSON.stringify(rows, null, 2));
   } else if (!rows.length) {
-    console.log("No pending submissions.");
+    console.log(args.section ? `No pending submissions in section "${args.section}".` : "No pending submissions.");
   } else {
     console.log(["pending", "cap", "section", "title", "assignmentId"].join("\t"));
     for (const r of rows) console.log([r.pending, r.totalPoints ?? "-", r.section, r.title, r.assignmentId].join("\t"));
