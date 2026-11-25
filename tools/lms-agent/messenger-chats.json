@@ -1,0 +1,12 @@
+{
+  "_NOTE": "One Messenger group chat per LMS section. Used by the lms-module-publisher skill (step 8) to send the class announcement. Key = LMS sectionId from lms-list.mjs. 'name' must match the chat header exactly; 'threadUrl' is the chat's permanent link (copy it from the Brave address bar while the chat is open). A section not listed here gets NO Messenger send: ask ian for its chat.",
+  "browser": "IANMIKE212",
+  "_browserNote": "Name of the connected Claude-in-Chrome browser (ian's Brave, signed in to Facebook). Pick it with list_connected_browsers + select_browser.",
+  "chats": {
+    "O88PsPN5AmMhyp2BZRow": {
+      "section": "Grade 12 - UCSP · STEM 12",
+      "name": "Grade 12 UCSP 12 STEM - Term 2",
+      "threadUrl": "https://www.facebook.com/messages/t/1121678037476985"
+    }
+  }
+}
