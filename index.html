@@ -21,11 +21,17 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
-  <noscript><link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap" rel="stylesheet"></noscript>
-  <link rel="stylesheet" href="css/style.css?v=61" />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
+  <script>
+    // shadcn theme: apply saved light/dark choice (else device setting) before first paint.
+    (function () { var t = null; try { t = localStorage.getItem("theme"); } catch (e) {}
+      if (t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches) document.documentElement.classList.add("dark"); })();
+  </script>
+  <script src="js/theme.js?v=1" defer></script>
+  <link rel="stylesheet" href="css/style.css?v=63" />
   <link rel="manifest" href="/manifest.webmanifest" />
-  <meta name="theme-color" content="#002045" />
+  <meta name="theme-color" content="#ffffff" />
   <link rel="apple-touch-icon" href="/icons/icon-192.png" />
 </head>
 <body>
@@ -118,7 +124,7 @@
         <button type="button" id="email-confirm-btn" style="margin-top:0.5rem;">Finish signing in</button>
       </div>
 
-      <div id="error" class="hidden" style="text-align:left; border:1px solid #b91c1c; border-radius:6px; padding:0.75rem; margin-top:1rem; color:#b91c1c;"></div>
+      <div id="error" class="hidden" style="text-align:left; border:1px solid var(--destructive); border-radius:var(--radius-md); padding:0.75rem; margin-top:1rem; color:var(--destructive);"></div>
     </div>
   </main>
 

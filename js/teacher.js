@@ -1589,7 +1589,7 @@ function renderTermFilterHint(filterByTerm, termSetting, termCount, hiddenByTerm
   const hint = el("term-filter-hint");
   if (!hint) return;
   if (filterByTerm && termSetting) {
-    hint.style.cssText = "margin:0.5rem 0 0; color:#0a6b2e;";
+    hint.style.cssText = "margin:0.5rem 0 0; color:var(--success-text);";
     hint.textContent = hiddenByTerm > 0
       ? `✓ Students see only SY ${termSetting.currentSchoolYear} · Term ${termSetting.currentTerm}. ${hiddenByTerm} other-term class${hiddenByTerm > 1 ? "es are" : " is"} hidden from them.`
       : `✓ Students see only SY ${termSetting.currentSchoolYear} · Term ${termSetting.currentTerm}. No other-term classes to hide.`;
@@ -1621,9 +1621,9 @@ function renderTermPreview(filterByTerm, hiddenNames, visibleNames, noTermNames 
     : `<span class="muted"> none</span>`;
   box.innerHTML = `
     <div style="margin-top:0.6rem; font-size:0.85rem;">
-      <div><strong style="color:#0a6b2e;">Visible to students (${visibleNames.length}):</strong>${nameList(visibleNames)}</div>
-      <div style="margin-top:0.4rem;"><strong style="color:#b91c1c;">Hidden from students (${hiddenNames.length}):</strong>${nameList(hiddenNames)}</div>
-      ${noTermNames.length ? `<div style="margin-top:0.4rem;"><strong style="color:#8a5a00;">No term set — hidden from students (${noTermNames.length}):</strong>${nameList(noTermNames)}</div>` : ""}
+      <div><strong style="color:var(--success-text);">Visible to students (${visibleNames.length}):</strong>${nameList(visibleNames)}</div>
+      <div style="margin-top:0.4rem;"><strong style="color:var(--destructive);">Hidden from students (${hiddenNames.length}):</strong>${nameList(hiddenNames)}</div>
+      ${noTermNames.length ? `<div style="margin-top:0.4rem;"><strong style="color:var(--warning-text);">No term set — hidden from students (${noTermNames.length}):</strong>${nameList(noTermNames)}</div>` : ""}
       <p class="muted" style="margin:0.4rem 0 0;">Wrong bucket? Open the class and use <strong>Edit Year/Term</strong> to set its real school year &amp; term.</p>
     </div>`;
 }

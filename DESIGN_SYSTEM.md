@@ -1,34 +1,58 @@
 # Design System — read this before touching CSS/markup
 
-One file, `css/style.css` (125 lines, no framework, no build step). Read
-this doc instead of re-reading that file from scratch each session —
-it's short enough to just paste patterns from below.
+One file, `css/style.css` (no framework, no build step). Read this doc
+instead of re-reading that file from scratch each session.
 
-## Tokens (`:root` in `css/style.css`)
+## Look: shadcn/ui (adopted 2026-11-25)
 
-"Academic Clarity" palette — deep navy primary, Source Serif 4 headlines,
-Atkinson Hyperlegible Next body (loaded via Google Fonts `<link>` in each
-HTML file's `<head>`, before the stylesheet link).
+The app uses the shadcn/ui look (ui.shadcn.com) in plain CSS: neutral
+greys, near-black primary, Geist font, thin borders, rounded cards, and a
+**light + dark mode**. The global skill `shadcn-ui-expert` has the full
+rules; its `assets/shadcn-lite.css` is the reference for any new component.
+The old "Academic Clarity" navy/serif design is retired; don't bring back
+navy bars or Source Serif.
+
+## Tokens (`:root` and `.dark` at the top of `css/style.css`)
+
+Re-theme by editing ONLY those two blocks. Every rule reads tokens; never
+write a hex colour in a component rule or an inline `style=""` (use
+`var(--destructive)`, `var(--success-text)`, `var(--warning-text)`,
+`var(--muted-foreground)` ...). Fixed colours allowed only where noted:
+QR code box (must stay white to scan), `.code-output` terminal pane, and
+the github-dark highlight.js colours.
 
 ```
---blue:        #002045   (header bg, primary button, links/headers)
---green:       #146c2e   (status-published)
---amber:       #92400e   (status-pending)
---gray-bg:     #f7fafc   (page bg, table header cells)
---gray-border: #e2e8f0   (all borders)
---text:        #111c2c
-
---font-headline: 'Source Serif 4', Georgia, serif       (h1-h4, strong, summary)
---font-body:      'Atkinson Hyperlegible Next', system-ui, ...  (body text)
-
---radius-sm: 4px   (buttons, inputs, small elements)
---radius-lg: 8px   (cards/containers)
---shadow-hover: 0 4px 12px rgba(17,28,44,0.05)   (.card:hover only)
+--background / --foreground       page
+--card / --popover (+ -foreground) surfaces
+--primary / --primary-foreground   main buttons, links (near-black; near-white in dark)
+--secondary, --muted, --accent     soft greys (hover = --accent)
+--muted-foreground                 hints, .muted text
+--destructive (+ -foreground, -soft)   delete, errors, missing
+--success (+ -foreground, -text, -soft) published / done
+--warning (+ -foreground, -text, -soft) pending / soon
+--violet-text / --violet-soft      material chip
+--border, --input, --ring          borders, inputs, focus
+--sidebar, --sidebar-border        teacher sidebar
+--radius (0.625rem), --radius-md (controls), --radius-xl (cards)
+--shadow-xs (cards, inputs), --shadow-lg (dropdowns, drawer)
 ```
+Legacy names still work and point at tokens: `--blue`→primary,
+`--green`→success-text, `--amber`→warning-text, `--gray-bg`→muted,
+`--gray-border`→border, `--text`→foreground. Prefer the new names.
+
+## Dark mode
+
+`.dark` on `<html>`. Each page's `<head>` has a tiny inline script that
+applies the saved choice (`localStorage.theme`) or the device setting
+before first paint, then `js/theme.js` wires every `[data-theme-toggle]`
+button (teacher topbar, student header). Any new colour you add needs a
+value in BOTH `:root` and `.dark`. Check new UI in both modes.
 
 ## Layout shell
 
-- `header` — blue bar, flex space-between, white text.
+- Teacher: fixed light `.sidebar` (230px, off-canvas drawer under 640px) +
+  sticky `.topbar` (blurred background, bottom border).
+- Student: sticky `body.student-page > header` in the same style.
 - `main` — `max-width: 900px`, centered, `1.5rem auto` margin.
 - Views are `<section id="view-*">` siblings inside `main`, toggled by
   `js/teacher.js`'s `show(viewId)` (adds/removes `.hidden` on a hardcoded
@@ -42,13 +66,10 @@ HTML file's `<head>`, before the stylesheet link).
 ```html
 <div class="card">...</div>
 ```
-White bg, `1px solid var(--gray-border)`, `var(--radius-lg)` (8px) radius,
-`1rem 1.25rem` padding, `1rem` bottom margin. The default container for
-every list row and form block in this app. Buttons/inputs/small elements
-use the tighter `var(--radius-sm)` (4px) instead — containers get the
-bigger radius, interactive controls get the smaller one. Cards get a
-subtle `box-shadow` on `:hover` (`--shadow-hover`) to signal interactivity
-without heavy drop shadows.
+`var(--card)` bg, `1px solid var(--border)`, `var(--radius-xl)` radius,
+`1.25rem 1.5rem` padding, `--shadow-xs`, `1rem` bottom margin. The default
+container for every list row and form block. Controls use the smaller
+`--radius-md`. No hover shadow (shadcn cards are flat).
 
 ## QR code (per-section join)
 
@@ -94,17 +115,19 @@ map for the data/navigation functions behind it.
 ```
 Used for Add Subject, Add Section's siblings (Section Settings), Add
 assignment. `details.card summary { cursor:pointer }` and the marker is
-tinted blue — no extra CSS needed, just use this exact structure.
+tinted with --primary — no extra CSS needed, just use this exact structure.
 
 ## Buttons
 
 ```html
-<button>Primary (blue)</button>
-<button class="secondary">Secondary (gray) — Open/Back/Cancel-type actions</button>
-<button class="danger">Danger (red) — Delete only</button>
+<button>Primary (solid near-black) — the one main action</button>
+<button class="secondary">Secondary (outline) — Open/Back/Cancel-type actions</button>
+<button class="danger">Danger (red text) — Delete only</button>
+<button class="danger icon">x</button>   <!-- solid red circle, inline delete -->
 ```
-`disabled` state is automatic (gray, `not-allowed` cursor) — no class
-needed, just set the `disabled` attribute/property.
+`disabled` state is automatic (50% opacity, `not-allowed` cursor) — no
+class needed. Plain primary buttons get the hover darken; classed buttons
+(chips, choice cards, menu rows) set their own hover.
 
 ## Forms
 
@@ -114,8 +137,8 @@ needed, just set the `disabled` attribute/property.
 ```
 `label`/`input`/`select`/`textarea` are styled globally by tag — **don't
 add classes to individual form fields**, they inherit full-width, border,
-radius, spacing automatically. `label` is bold + small (0.85rem) and
-always sits directly above its field with no wrapper needed.
+radius, spacing, focus ring automatically. `label` is medium weight,
+0.875rem, and sits directly above its field with no wrapper needed.
 
 ## Status text
 
@@ -124,8 +147,10 @@ always sits directly above its field with no wrapper needed.
 <span class="status-ai-drafted">ai-drafted</span>   <!-- legacy, AI check hidden -->
 <span class="status-published">published</span>
 ```
-Colored (amber/blue/green) text + bold, full-round pill with a matching
-light background tint (`display:inline-block`, `border-radius:9999px`).
+shadcn Badges: pending = solid warning (yellow), published = solid
+success (green), returned = red outline, ai-drafted = grey secondary.
+Small (0.75rem, medium weight), `--radius-md` corners. Chips (`.chip-*`,
+student side) follow the same mapping.
 Pattern used inline as
 `` `<span class="status-${s.status}"> — ${s.status}</span>` ``.
 
@@ -158,8 +183,8 @@ placeholders, timestamps.
   <tbody><tr><td>...</td></tr></tbody>
 </table>
 ```
-White bg, bordered cells, sticky header row (gray bg). The Records grid
-specifically has a **second header row** styled blue/white/centered for
+Card bg, bordered cells, sticky header row (muted bg). The Records grid
+specifically has a **second header row** styled primary/primary-foreground/centered for
 its Written Work / Performance Task group headers (`thead tr:first-child
 th`) — only add a second header row if you actually need grouped columns
 like that, it's a special case, not the default table header look.

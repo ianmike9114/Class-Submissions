@@ -1,35 +1,119 @@
+/* ==========================================================================
+   Theme: shadcn/ui look (adopted 2026-11-25). Tokens = shadcn "neutral"
+   (OKLCH) + a few LMS extras (status tints). Edit ONLY these two blocks to
+   re-theme; every rule below reads tokens. Dark mode = .dark on <html>
+   (set by the inline head script + js/theme.js toggle).
+   ========================================================================== */
 :root {
-  --blue: #002045;
-  --green: #146c2e;
-  --amber: #92400e;
-  --gray-bg: #f7fafc;
-  --gray-border: #e2e8f0;
-  --text: #111c2c;
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.5 0 0);   /* stock 0.556; darkened for 4.5:1 on --muted */
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+  --destructive-soft: oklch(0.96 0.03 25);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.55 0 0);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --success: oklch(0.52 0.14 150);
+  --success-foreground: oklch(0.985 0 0);
+  --success-text: oklch(0.45 0.13 150);
+  --success-soft: oklch(0.95 0.05 150);
+  --warning: oklch(0.84 0.16 84);
+  --warning-foreground: oklch(0.28 0.07 46);
+  --warning-text: oklch(0.47 0.12 60);
+  --warning-soft: oklch(0.96 0.06 90);
+  --violet-text: oklch(0.45 0.18 300);
+  --violet-soft: oklch(0.95 0.04 300);
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-xl: calc(var(--radius) * 1.4);
+  color-scheme: light;
 
-  --font-headline: 'Source Serif 4', Georgia, serif;
-  --font-body: 'Atkinson Hyperlegible Next', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-
-  --radius-sm: 4px;
-  --radius-lg: 8px;
-  --shadow-hover: 0 4px 12px rgba(17, 28, 44, 0.05);
+  /* Legacy names used across this file, now pointing at the tokens above. */
+  --blue: var(--primary);
+  --green: var(--success-text);
+  --amber: var(--warning-text);
+  --gray-bg: var(--muted);
+  --gray-border: var(--border);
+  --text: var(--foreground);
+  --font-headline: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-body: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --radius-sm: var(--radius-md);
+  --radius-lg: var(--radius);
+  --shadow-hover: var(--shadow-lg);
 }
 
-* { box-sizing: border-box; }
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.145 0 0);
+  --destructive-soft: oklch(0.3 0.08 25);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --success: oklch(0.70 0.15 150);
+  --success-foreground: oklch(0.15 0.03 150);
+  --success-text: oklch(0.80 0.15 150);
+  --success-soft: oklch(0.30 0.06 150);
+  --warning: oklch(0.80 0.15 84);
+  --warning-foreground: oklch(0.22 0.05 60);
+  --warning-text: oklch(0.86 0.14 84);
+  --warning-soft: oklch(0.32 0.06 70);
+  --violet-text: oklch(0.82 0.11 300);
+  --violet-soft: oklch(0.30 0.08 300);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; border-color: var(--border); }
 
 body {
   font-family: var(--font-body);
-  background: var(--gray-bg);
+  background: var(--background);
   color: var(--text);
   margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
 h1, h2, h3, h4, strong, summary { font-family: var(--font-headline); }
+h1, h2, h3, h4 { font-weight: 600; letter-spacing: -0.015em; }
+a { color: var(--primary); text-underline-offset: 3px; }
+:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 
-/* App shell: fixed navy sidebar on the left, scrolling content on the right.
-   Replaced the old single crowded blue <header> - primary nav now lives in
-   the sidebar, and the top bar carries only the page title, search, and the
-   notification/photos bells. The 640px block turns the sidebar into an
-   off-canvas drawer toggled by the topbar hamburger. */
+/* App shell: fixed sidebar on the left, scrolling content on the right.
+   The 640px block turns the sidebar into an off-canvas drawer toggled by
+   the topbar hamburger. */
 .app-shell { display: flex; min-height: 100vh; }
 
 .sidebar {
@@ -38,8 +122,9 @@ h1, h2, h3, h4, strong, summary { font-family: var(--font-headline); }
   left: 0;
   bottom: 0;
   width: 230px;
-  background: var(--blue);
-  color: #eaf1ff;
+  background: var(--sidebar);
+  color: var(--foreground);
+  border-right: 1px solid var(--sidebar-border);
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -53,51 +138,53 @@ h1, h2, h3, h4, strong, summary { font-family: var(--font-headline); }
   gap: 0.5rem;
   flex-wrap: wrap;
   padding: 0.25rem 0.5rem 0.75rem;
-  border-bottom: 1px solid #1d3a63;
+  border-bottom: 1px solid var(--sidebar-border);
   margin-bottom: 0.5rem;
 }
 .brand-mark {
   font-family: var(--font-headline);
-  font-weight: 700;
-  font-size: 1.05rem;
-  color: #fff;
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--foreground);
   line-height: 1.15;
 }
-.sidebar-nav { display: flex; flex-direction: column; gap: 0.25rem; }
+.sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
 .sidebar-nav button {
   width: 100%;
   text-align: left;
   background: none;
-  color: #dbe4ff;
-  border-radius: var(--radius-sm);
-  padding: 0.55rem 0.7rem;
-  font-size: 0.95rem;
+  color: var(--foreground);
+  border-color: transparent;
+  box-shadow: none;
+  border-radius: var(--radius-md);
+  padding: 0.5rem 0.7rem;
+  font-size: 0.9rem;
+  font-weight: 400;
 }
-.sidebar-nav button:hover { background: #1d3a63; color: #fff; }
+.sidebar-nav button:hover { background: var(--accent); color: var(--accent-foreground); }
 .view-as-bar {
   position: sticky;
   top: 0;
   z-index: 50;
-  background: #002045;
-  color: #fff;
+  background: var(--primary);
+  color: var(--primary-foreground);
   padding: 0.6rem 1rem;
   font-size: 0.9rem;
-  border-bottom: 3px solid var(--amber, #f6b73c);
+  border-bottom: 3px solid var(--warning);
   text-align: center;
 }
 .view-as-bar .view-as-back {
   margin-left: 0.5rem;
   padding: 0.3rem 0.75rem;
   min-height: 0;
-  background: #fff;
-  color: #002045;
+  background: var(--primary-foreground);
+  color: var(--primary);
   font-size: 0.85rem;
 }
 .sidebar-nav button.active {
-  background: #1d3a63;
-  color: #fff;
-  font-weight: 700;
-  box-shadow: inset 3px 0 0 var(--amber, #f6b73c);
+  background: var(--accent);
+  color: var(--accent-foreground);
+  font-weight: 500;
 }
 .sidebar-foot {
   margin-top: auto;
@@ -105,7 +192,7 @@ h1, h2, h3, h4, strong, summary { font-family: var(--font-headline); }
   flex-direction: column;
   gap: 0.5rem;
   padding-top: 0.75rem;
-  border-top: 1px solid #1d3a63;
+  border-top: 1px solid var(--sidebar-border);
 }
 .sidebar-foot #view-as-picker { width: 100%; margin: 0; }
 .sidebar-account { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
@@ -117,7 +204,7 @@ h1, h2, h3, h4, strong, summary { font-family: var(--font-headline); }
   margin-left: 230px;
 }
 
-/* Slim top bar: title + flexible search + the two bells. Sticky so it stays
+/* Slim top bar: title + flexible search + the bells. Sticky so it stays
    put while the content scrolls. */
 .topbar {
   position: sticky;
@@ -127,14 +214,16 @@ h1, h2, h3, h4, strong, summary { font-family: var(--font-headline); }
   align-items: center;
   gap: 0.75rem;
   flex-wrap: wrap;
-  padding: 0.75rem 1.25rem;
-  background: #fff;
+  padding: 0.6rem 1.25rem;
+  background: color-mix(in oklch, var(--background) 92%, transparent);
+  backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--gray-border);
 }
-.topbar h1 { font-size: 1.15rem; margin: 0; }
+.topbar h1 { font-size: 1rem; margin: 0; }
 .topbar-actions { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; }
 /* Hamburger: hidden on desktop, shown in the 640px block. */
-.topbar-menu { display: none; background: none; color: var(--text); font-size: 1.25rem; padding: 0.35rem 0.6rem; }
+.topbar-menu { display: none; background: none; color: var(--text); border-color: transparent; box-shadow: none; font-size: 1.25rem; padding: 0.35rem 0.6rem; }
+.topbar-menu:hover { background: var(--accent); }
 
 /* Dim overlay behind the mobile drawer; only visible when body.sidebar-open. */
 .sidebar-scrim { display: none; }
@@ -159,21 +248,21 @@ h1, h2, h3, h4, strong, summary { font-family: var(--font-headline); }
   width: 2rem;
   height: 2rem;
   border-radius: 50%;
-  background: #1d3a63;
-  color: #dbe4ff;
-  font-weight: 700;
-  font-size: 0.9rem;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-weight: 600;
+  font-size: 0.85rem;
   cursor: default;
   overflow: hidden;
 }
 .hdr-avatar.has-photo { background: none; }
 .hdr-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
-/* Real display name next to the avatar (image-1 style). Truncates rather than
-   pushing the header wider. */
+/* Real display name next to the avatar. Truncates rather than pushing the
+   header wider. */
 .hdr-account {
-  color: #dbe4ff;
-  font-size: 0.9rem;
-  font-weight: 600;
+  color: var(--foreground);
+  font-size: 0.875rem;
+  font-weight: 500;
   white-space: nowrap;
   max-width: 11rem;
   overflow: hidden;
@@ -187,28 +276,45 @@ main {
 }
 
 .card {
-  background: white;
+  background: var(--card);
+  color: var(--card-foreground);
   border: 1px solid var(--gray-border);
-  border-radius: var(--radius-lg);
-  padding: 1rem 1.25rem;
+  border-radius: var(--radius-xl);
+  padding: 1.25rem 1.5rem;
   margin-bottom: 1rem;
-  transition: box-shadow 0.15s ease;
+  box-shadow: var(--shadow-xs);
 }
-.card:hover { box-shadow: var(--shadow-hover); }
 
+/* Buttons (shadcn): default = primary, .secondary = outline, .danger = red
+   text (destructive ghost), .danger.icon = solid red circle. */
 button {
-  background: var(--blue);
-  color: white;
-  border: none;
-  border-radius: var(--radius-sm);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
   padding: 0.5rem 1rem;
   cursor: pointer;
-  font-size: 0.95rem;
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+  transition: background-color .15s, color .15s, border-color .15s, box-shadow .15s;
 }
+/* Hover only for plain primary buttons, so classed buttons that set their own
+   background (chips, choice cards, menu rows) never turn dark on hover. */
+button:where(:not([class]), [class=""]):hover { background: color-mix(in oklch, var(--primary) 90%, transparent); }
 
-button.secondary { background: #6b7280; }
-button.danger { background: #b91c1c; }
-button:disabled { background: #9ca3af; cursor: not-allowed; }
+button.secondary {
+  background: var(--background);
+  color: var(--foreground);
+  border-color: var(--input);
+  box-shadow: var(--shadow-xs);
+}
+button.secondary:hover { background: var(--accent); color: var(--accent-foreground); }
+.dark button.secondary { background: color-mix(in oklch, var(--input) 30%, transparent); }
+button.danger { background: transparent; color: var(--destructive); }
+button.danger:hover { background: color-mix(in oklch, var(--destructive) 10%, transparent); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* Compact size variant of .danger, for delete controls sitting inline in a
    dense row/card where a full-size text button is an easy accidental tap
@@ -224,34 +330,51 @@ button.danger.icon {
   border-radius: 50%;
   font-size: 0.85rem;
   line-height: 1;
+  background: var(--destructive);
+  color: var(--destructive-foreground);
 }
 
 input, select, textarea {
   width: 100%;
-  padding: 0.5rem;
-  border: 1px solid var(--gray-border);
-  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
   margin-bottom: 0.6rem;
-  font-size: 0.95rem;
+  font-family: inherit;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  background: transparent;
+  color: var(--foreground);
+  box-shadow: var(--shadow-xs);
+  transition: border-color .15s, box-shadow .15s;
 }
+.dark :is(input, select, textarea) { background: color-mix(in oklch, var(--input) 30%, transparent); }
+select option { background: var(--popover); color: var(--popover-foreground); }
+::placeholder { color: var(--muted-foreground); }
 input:focus, select:focus, textarea:focus {
-  outline: 2px solid var(--blue);
-  outline-offset: 1px;
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 60%, transparent);
 }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); box-shadow: none; }
 
-label { font-weight: 600; font-size: 0.85rem; display: block; margin-bottom: 0.2rem; }
+label { font-weight: 500; font-size: 0.875rem; display: block; margin-bottom: 0.35rem; }
 
+/* Status badges (shadcn Badge): pending = warning, published = success,
+   returned = outline red, ai-drafted = secondary. */
 .status-pending, .status-ai-drafted, .status-published, .status-returned {
   display: inline-block;
-  padding: 0.15rem 0.6rem;
-  border-radius: 9999px;
-  font-weight: 600;
-  font-size: 0.8rem;
+  padding: 0.125rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  font-weight: 500;
+  font-size: 0.75rem;
+  line-height: 1.33;
 }
-.status-pending    { color: var(--amber); background: #fef3c7; }
-.status-ai-drafted { color: var(--blue);  background: #dbe4ef; }
-.status-published  { color: var(--green); background: #dcfce7; }
-.status-returned   { color: #b91c1c;      background: #fee2e2; }
+.status-pending    { color: var(--warning-foreground); background: var(--warning); }
+.status-ai-drafted { color: var(--secondary-foreground); background: var(--secondary); }
+.status-published  { color: var(--success-foreground); background: var(--success); }
+.status-returned   { color: var(--destructive); background: transparent; border-color: color-mix(in oklch, var(--destructive) 40%, transparent); }
 /* Clickable status badge (pendingBadge()/leaveBadge()) - looks like the chip,
    acts like a link to the pending work. Resets the global button styling. */
 button.badge-link {
@@ -277,23 +400,23 @@ button.badge-link:hover { text-decoration: underline; filter: brightness(0.96); 
 
 .progress-track {
   height: 8px;
-  background: var(--gray-border);
+  background: var(--muted);
   border-radius: 9999px;
   overflow: hidden;
   margin: 0.3rem 0 0.15rem;
 }
 .progress-fill {
   height: 100%;
-  background: var(--green);
+  background: var(--primary);
   border-radius: 9999px;
 }
 
 .qr-code {
   display: inline-block;
   padding: 0.75rem;
-  background: white;
+  background: #fff;            /* QR stays black-on-white in dark mode so phones can scan it */
   border: 1px solid var(--gray-border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   margin: 0.5rem 0;
 }
 
@@ -301,39 +424,37 @@ button.badge-link:hover { text-decoration: underline; filter: brightness(0.96); 
   position: absolute;
   top: -6px;
   right: -6px;
-  background: #b91c1c;
-  color: white;
+  background: var(--destructive);
+  color: var(--destructive-foreground);
   border-radius: 9999px;
   font-size: 0.7rem;
-  font-weight: 700;
+  font-weight: 600;
   padding: 0.05rem 0.35rem;
   line-height: 1.3;
 }
 
 /* position:fixed + top/left set per-open by js/teacher.js's positionDropdown()
    from the trigger's rect, so the panel is always clamped inside the viewport
-   no matter where the flex header wraps the trigger to. Replaced a CSS-only
-   `absolute; right:0` that grew leftward off-screen once the header wrapped,
-   plus a mobile-only `fixed` override that left a wrapped-but-wide dead zone. */
+   no matter where the flex header wraps the trigger to. */
 .notif-dropdown {
   position: fixed;
-  background: white;
+  background: var(--popover);
+  color: var(--popover-foreground);
   border: 1px solid var(--gray-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-hover);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
   min-width: 260px;
   max-width: calc(100vw - 16px);
   max-height: 320px;
   overflow-y: auto;
   z-index: 20;
-  padding: 0.5rem 0;
+  padding: 0.25rem;
 }
 .notif-dropdown .notif-group-label {
-  padding: 0.4rem 0.75rem 0.2rem;
-  font-weight: 700;
-  font-size: 0.8rem;
-  color: #6b7280;
-  text-transform: uppercase;
+  padding: 0.4rem 0.5rem 0.2rem;
+  font-weight: 500;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
 }
 .notif-dropdown button.notif-item {
   display: block;
@@ -342,13 +463,15 @@ button.badge-link:hover { text-decoration: underline; filter: brightness(0.96); 
   background: none;
   color: var(--text);
   border: none;
-  border-radius: 0;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.9rem;
+  border-radius: calc(var(--radius) * 0.6);
+  box-shadow: none;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 400;
   white-space: normal;
   word-break: break-word;
 }
-.notif-dropdown button.notif-item:hover { background: var(--gray-bg); }
+.notif-dropdown button.notif-item:hover { background: var(--accent); }
 
 /* Admin read-only "view as student" preview: hide the join-a-class action
    (irrelevant when previewing an existing student). Other write controls stay
@@ -356,7 +479,12 @@ button.badge-link:hover { text-decoration: underline; filter: brightness(0.96); 
 body.view-as-readonly #join-card { display: none; }
 
 .hidden { display: none !important; }
-.muted { color: #6b7280; font-size: 0.85rem; }
+.muted { color: var(--muted-foreground); font-size: 0.85rem; }
+
+/* Dark-mode toggle (js/theme.js): shows the moon in light mode, sun in dark. */
+.theme-toggle .theme-icon-sun { display: none; }
+.dark .theme-toggle .theme-icon-sun { display: inline; }
+.dark .theme-toggle .theme-icon-moon { display: none; }
 
 .submission-preview {
   width: 100%;
@@ -404,6 +532,16 @@ textarea.submission-code {
   line-height: 1.45;
 }
 .code-block code { font-family: inherit; white-space: pre; }
+/* highlight.js loads its light "github" theme; let the block's own background
+   show, and swap in github-dark token colours when the page is in dark mode. */
+.code-block .hljs { background: transparent; padding: 0; }
+.dark .code-block .hljs { color: #e6edf3; }
+.dark .code-block :is(.hljs-keyword, .hljs-doctag, .hljs-template-tag, .hljs-template-variable, .hljs-type, .hljs-variable.language_) { color: #ff7b72; }
+.dark .code-block :is(.hljs-title, .hljs-title.class_, .hljs-title.function_) { color: #d2a8ff; }
+.dark .code-block :is(.hljs-attr, .hljs-attribute, .hljs-literal, .hljs-meta, .hljs-number, .hljs-operator, .hljs-variable) { color: #79c0ff; }
+.dark .code-block :is(.hljs-string, .hljs-regexp, .hljs-meta .hljs-string) { color: #a5d6ff; }
+.dark .code-block :is(.hljs-built_in, .hljs-symbol) { color: #ffa657; }
+.dark .code-block :is(.hljs-comment, .hljs-code, .hljs-formula) { color: #8b949e; }
 
 /* Program output pane (Run result / saved output). */
 .code-output {
@@ -457,9 +595,9 @@ textarea.submission-code {
   min-height: 36px;
   display: inline-flex;
   align-items: center;
-  background: #fff;
+  background: var(--card);
 }
-.material-viewer-head a.material-download:hover { background: var(--blue); color: #fff; }
+.material-viewer-head a.material-download:hover { background: var(--blue); color: var(--primary-foreground); }
 .material-viewer-head a {
   color: var(--blue);
   font-weight: 600;
@@ -537,8 +675,8 @@ button.photo-thumb-btn {
   position: absolute;
   top: 1rem;
   right: 1rem;
-  background: rgba(255, 255, 255, 0.9);
-  color: #111;
+  background: var(--background);
+  color: var(--foreground);
   border-radius: 50%;
   width: 2.25rem;
   height: 2.25rem;
@@ -559,7 +697,7 @@ button.photo-thumb-btn {
   max-width: 100%;
   width: 100%;
   border-collapse: collapse;
-  background: white;
+  background: var(--card);
   font-size: 0.9rem;
 }
 .records-grid th, .records-grid td {
@@ -575,7 +713,7 @@ button.photo-thumb-btn {
 }
 .records-grid thead tr:first-child th {
   background: var(--blue);
-  color: white;
+  color: var(--primary-foreground);
   text-align: center;
   top: -1px;
 }
@@ -591,7 +729,7 @@ details.card summary::marker { color: var(--blue); }
 
 /* Pick-type-first create flow: two large choice cards (Assignment vs
    Material). Flex-wrap stacks them to one column on narrow screens - no
-   media query needed. Overrides the global navy button styling. */
+   media query needed. Overrides the global primary button styling. */
 .type-choice { display: flex; gap: 0.75rem; flex-wrap: wrap; }
 .type-choice-btn {
   flex: 1 1 200px;
@@ -610,7 +748,7 @@ details.card summary::marker { color: var(--blue); }
 .type-choice-btn:hover { border-color: var(--blue); box-shadow: var(--shadow-hover); }
 .type-choice-icon { font-size: 1.5rem; line-height: 1; }
 .type-choice-title { font-family: var(--font-headline); font-weight: 700; font-size: 1.05rem; }
-.type-choice-sub { font-size: 0.8rem; color: #6b7280; }
+.type-choice-sub { font-size: 0.8rem; color: var(--muted-foreground); }
 
 /* Managed-topics panel: one reorderable row per topic. */
 .topic-row {
@@ -697,7 +835,7 @@ details.card summary::marker { color: var(--blue); }
   align-self: flex-start;
   max-height: calc(100vh - 2rem);
   overflow-y: auto;
-  background: #fff;
+  background: var(--card);
   border: 1px solid var(--gray-border);
   border-radius: var(--radius-lg);
   padding: 0.75rem 1rem;
@@ -806,10 +944,9 @@ details.card summary::marker { color: var(--blue); }
   .sidebar {
     transform: translateX(-100%);
     transition: transform 0.2s ease;
-    box-shadow: 0 0 24px rgba(0, 0, 0, 0.3);
     width: 260px;
   }
-  body.sidebar-open .sidebar { transform: none; }
+  body.sidebar-open .sidebar { transform: none; box-shadow: var(--shadow-lg); }
   .app-main { margin-left: 0; }
   .topbar-menu { display: inline-flex; align-items: center; }
   body.sidebar-open .sidebar-scrim {
@@ -887,22 +1024,22 @@ details.card summary::marker { color: var(--blue); }
   align-items: center;
   gap: 0.2rem;
   padding: 0.1rem 0.5rem;
-  border-radius: 9999px;
-  font-size: 0.8rem;
-  font-weight: 600;
+  border-radius: var(--radius-md);
+  font-size: 0.75rem;
+  font-weight: 500;
   line-height: 1.5;
   white-space: nowrap;
-  background: #eef2f7;
+  background: var(--secondary);
   color: var(--text);
 }
-.chip-done      { color: var(--green); background: #dcfce7; }
-.chip-submitted { color: var(--blue);  background: #dbe4ef; }
-.chip-todo      { color: var(--blue);  background: #eef2f7; }
-.chip-soon      { color: var(--amber); background: #fef3c7; }
+.chip-done      { color: var(--success-foreground); background: var(--success); }
+.chip-submitted { color: var(--secondary-foreground); background: var(--secondary); border: 1px solid var(--border); }
+.chip-todo      { color: var(--foreground); background: transparent; border: 1px solid var(--border); }
+.chip-soon      { color: var(--warning-foreground); background: var(--warning); }
 .chip-missing,
-.chip-returned  { color: #b91c1c;      background: #fee2e2; }
-.chip-material  { color: #5b21b6;      background: #ede9fe; }
-.chip-link      { color: var(--blue);  background: #fff; border: 1px solid var(--gray-border); text-decoration: none; font-weight: 500; }
+.chip-returned  { color: var(--destructive-foreground); background: var(--destructive); }
+.chip-material  { color: var(--violet-text);      background: var(--violet-soft); }
+.chip-link      { color: var(--blue);  background: var(--card); border: 1px solid var(--gray-border); text-decoration: none; font-weight: 500; }
 .chip-link:hover { border-color: var(--blue); }
 
 /* "⋯" overflow menu - pure <details>, page JS closes it on outside click. */
@@ -916,7 +1053,7 @@ details.menu > summary {
   place-items: center;
   border-radius: var(--radius-sm);
   border: 1px solid var(--gray-border);
-  background: #fff;
+  background: var(--card);
   color: var(--text);
   font-size: 1.1rem;
   line-height: 1;
@@ -931,7 +1068,7 @@ details.menu > summary:hover { border-color: var(--blue); }
   top: calc(100% + 4px);
   z-index: 20;
   min-width: 12rem;
-  background: #fff;
+  background: var(--card);
   border: 1px solid var(--gray-border);
   border-radius: var(--radius-lg);
   box-shadow: 0 8px 24px rgba(17, 28, 44, 0.12);
@@ -948,8 +1085,8 @@ details.menu > summary:hover { border-color: var(--blue); }
   font-size: 0.9rem;
 }
 .menu-panel button:hover { background: var(--gray-bg); }
-.menu-panel button.menu-danger { color: #b91c1c; }
-.menu-panel button.menu-danger:hover { background: #fee2e2; }
+.menu-panel button.menu-danger { color: var(--destructive); }
+.menu-panel button.menu-danger:hover { background: var(--destructive-soft); }
 
 /* ---- Student page ---- */
 body.student-page main { max-width: 1180px; }
@@ -976,7 +1113,7 @@ details.outline-subject {
   border: 1px solid var(--gray-border);
   border-radius: var(--radius-lg);
   margin-bottom: 0.6rem;
-  background: #fff;
+  background: var(--card);
 }
 details.outline-subject > summary {
   list-style: none;
@@ -1013,7 +1150,7 @@ details.outline-lesson > summary.outline-lesson-head {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  color: #4b5563;
+  color: var(--muted-foreground);
   border-bottom: 1px solid var(--gray-border);
 }
 
@@ -1027,7 +1164,7 @@ details.outline-lesson > summary.outline-lesson-head {
 }
 .outline-item:hover { background: var(--gray-bg); text-decoration: none; }
 .outline-item.active {
-  background: #eef2f7;
+  background: var(--accent);
   border-left: 3px solid var(--blue);
   padding-left: calc(0.35rem - 3px);
   margin-left: 0;
@@ -1043,12 +1180,12 @@ details.outline-lesson > summary.outline-lesson-head {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.outline-item-meta { font-size: 0.8rem; color: #6b7280; }
+.outline-item-meta { font-size: 0.8rem; color: var(--muted-foreground); }
 
 /* Needs your attention: pinned box (Returned / Missing / To do). */
 .attn-group + .attn-group { margin-top: 1rem; }
 .attn-group-title { margin: 0 0 0.2rem; font-size: 1rem; }
-.attn-card { display: flex; align-items: center; gap: 0.6rem; border-color: #b91c1c; margin-bottom: 0.5rem; }
+.attn-card { display: flex; align-items: center; gap: 0.6rem; border-color: var(--destructive); margin-bottom: 0.5rem; }
 .attn-main { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .attn-card .chip, .attn-card button { flex: none; }
 
@@ -1137,8 +1274,8 @@ details.assign-group[open] > summary.assign-group-head {
    The student page kept a plain <header> after the teacher page moved to the
    sidebar/topbar shell, and lost its desktop styling with it: the title sat
    flush-left with no bar, and the name (.hdr-account, light text meant for a
-   navy background) was near-invisible. Restore a sticky navy bar matching the
-   teacher sidebar; scoped to body.student-page so .topbar is untouched. */
+   navy background) was near-invisible. Sticky bar in the shadcn style
+   (matches the teacher topbar); scoped to body.student-page so .topbar is untouched. */
 body.student-page > header {
   position: sticky;
   top: 0;
@@ -1148,25 +1285,19 @@ body.student-page > header {
   justify-content: space-between;
   gap: 0.75rem;
   padding: 0.6rem max(1rem, calc((100% - 1180px) / 2 + 1rem));
-  background: var(--blue);
-  color: #fff;
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08);
+  background: color-mix(in oklch, var(--background) 92%, transparent);
+  backdrop-filter: blur(8px);
+  color: var(--foreground);
+  border-bottom: 1px solid var(--border);
 }
-body.student-page > header h1 { margin: 0; font-size: 1.25rem; color: #fff; }
+body.student-page > header h1 { margin: 0; font-size: 1.05rem; color: var(--foreground); }
 body.student-page > header > div {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   min-width: 0;
 }
-body.student-page > header .status-ai-drafted { background: rgba(255, 255, 255, 0.15); color: #fff; }
-body.student-page > header button.secondary {
-  background: transparent;
-  color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.45);
-  padding: 0.4rem 0.8rem;
-}
-body.student-page > header button.secondary:hover { background: rgba(255, 255, 255, 0.12); }
+body.student-page > header button.secondary { padding: 0.4rem 0.8rem; }
 
 @media (max-width: 640px) {
   /* Phone: title on its own row, avatar/name/actions wrap below it. The
@@ -1179,7 +1310,7 @@ body.student-page > header button.secondary:hover { background: rgba(255, 255, 2
 
 /* Activities overview -> Student scores matrix (js/teacher.js
    renderActivityScores). Every cell opens that activity; header titles are
-   plain-looking buttons so the blue header stays readable. */
+   plain-looking buttons so the header row stays readable. */
 .scores-matrix .score-cell { cursor: pointer; text-align: center; }
 .scores-matrix .score-cell:hover { background: var(--gray-bg); }
 .scores-matrix thead th { text-align: center; }
@@ -1197,8 +1328,8 @@ body.student-page > header button.secondary:hover { background: rgba(255, 255, 2
 }
 .scores-matrix button.link-button:hover { text-decoration: underline; }
 /* Keep the student name visible while scrolling across many activities. */
-.scores-matrix tbody td:nth-child(2) { position: sticky; left: var(--sm-col1, 0px); background: white; z-index: 1; }
-.scores-matrix tbody td:nth-child(1) { position: sticky; left: 0; background: white; z-index: 1; }
+.scores-matrix tbody td:nth-child(2) { position: sticky; left: var(--sm-col1, 0px); background: var(--card); z-index: 1; }
+.scores-matrix tbody td:nth-child(1) { position: sticky; left: 0; background: var(--card); z-index: 1; }
 .scores-matrix tbody tr.gender-group td { position: static; }
 /* The table is its own scroll box (.records-grid is display:block), so cap its
    height: header rows + the # / Student columns stay pinned while scrolling.
@@ -1225,7 +1356,7 @@ body.student-page > header button.secondary:hover { background: rgba(255, 255, 2
   display: inline-block;
 }
 .scores-matrix .manual-max-label { display: block; font-weight: normal; font-size: 0.8rem; }
-.scores-matrix input.manual-score.dirty { background: #fef9c3; border-color: var(--amber); }
+.scores-matrix input.manual-score.dirty { background: var(--warning-soft); border-color: var(--amber); }
 .manual-save-bar {
   position: sticky;
   bottom: 0;
@@ -1235,11 +1366,11 @@ body.student-page > header button.secondary:hover { background: rgba(255, 255, 2
   align-items: center;
   gap: 0.75rem;
   padding: 0.6rem 0;
-  background: white;
+  background: var(--card);
   border-top: 1px solid var(--gray-border);
 }
 .scores-matrix input.manual-score.saved { border-color: var(--green); outline: 2px solid var(--green); }
-.scores-matrix input.manual-score.save-error { border-color: #c0392b; outline: 2px solid #c0392b; }
+.scores-matrix input.manual-score.save-error { border-color: var(--destructive); outline: 2px solid var(--destructive); }
 @media (max-width: 640px) {
   .scores-matrix input.manual-score { min-height: 44px; }
 }
@@ -1262,7 +1393,7 @@ body.student-page > header button.secondary:hover { background: rgba(255, 255, 2
 .get-app-banner a.button,
 .quiz-intro a.button {
   background: var(--blue);
-  color: white;
+  color: var(--primary-foreground);
   border-radius: var(--radius-sm);
   padding: 0.5rem 1rem;
   text-decoration: none;
@@ -1280,7 +1411,7 @@ body.student-page > header button.secondary:hover { background: rgba(255, 255, 2
 .exam-import-controls label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; }
 .exam-import-controls select,
 .exam-import-controls input { width: auto; max-width: 100%; }
-.exam-import tr.import-problem td { background: #fff7ed; }
+.exam-import tr.import-problem td { background: var(--warning-soft); }
 
 /* ---------- Quiz (Quiz assignments) ---------- */
 /* Teacher builder */
@@ -1296,7 +1427,7 @@ body.student-page > header button.secondary:hover { background: rgba(255, 255, 2
 .qb-check input { width: auto; margin: 0; }
 .qb-items { padding-left: 0; list-style: none; margin: 0.75rem 0; }
 .qb-item textarea { font-family: inherit; }
-.qb-item { border: 1px solid var(--gray-border); border-radius: var(--radius-sm); padding: 0.6rem 0.75rem; margin-bottom: 0.6rem; background: white; }
+.qb-item { border: 1px solid var(--gray-border); border-radius: var(--radius-sm); padding: 0.6rem 0.75rem; margin-bottom: 0.6rem; background: var(--card); }
 .qb-item-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem; }
 .qb-item-head select { width: auto; margin: 0; flex: 1; max-width: 220px; }
 .qb-item-head .qb-del { margin-left: auto; padding: 0.25rem 0.6rem; }
@@ -1309,11 +1440,11 @@ body.student-page > header button.secondary:hover { background: rgba(255, 255, 2
 /* Teacher review */
 .quiz-result { margin: 0.5rem 0; padding: 0.5rem 0.75rem; background: var(--gray-bg); border-radius: var(--radius-sm); }
 .quiz-flags { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.35rem 0; }
-.quiz-flags span { background: #fff7ed; color: var(--amber); border-radius: 9999px; padding: 0.1rem 0.6rem; font-size: 0.85rem; font-weight: 600; }
+.quiz-flags span { background: var(--warning-soft); color: var(--amber); border-radius: 9999px; padding: 0.1rem 0.6rem; font-size: 0.85rem; font-weight: 600; }
 .quiz-answers { padding-left: 1.2rem; }
 .quiz-answers li { margin: 0.35rem 0; }
 .quiz-ok .quiz-mark { color: var(--green); font-weight: 700; }
-.quiz-wrong .quiz-mark { color: #b91c1c; font-weight: 700; }
+.quiz-wrong .quiz-mark { color: var(--destructive); font-weight: 700; }
 .quiz-unfinished { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.35rem; }
 
 /* Student intro card */
@@ -1359,7 +1490,7 @@ body.quiz-open { overflow: hidden; }
   padding: 0.2rem 0.6rem;
   border-radius: 999px;
   background: var(--blue);
-  color: #fff;
+  color: var(--primary-foreground);
   font-size: 0.75rem;
   white-space: nowrap;
   opacity: 0.35;
@@ -1393,7 +1524,7 @@ body.quiz-open { overflow: hidden; }
   position: fixed;
   inset: 0;
   z-index: 3;
-  background: #b91c1c;
+  background: var(--destructive);
   pointer-events: none;
   animation: quiz-breach-blink 0.9s steps(1, end);
 }
@@ -1437,11 +1568,11 @@ body.quiz-open { overflow: hidden; }
 .quiz-top { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
 .quiz-title { font-family: var(--font-headline); font-weight: 700; color: var(--blue); }
 .quiz-clock { font-weight: 700; font-variant-numeric: tabular-nums; font-size: 1.1rem; white-space: nowrap; }
-.quiz-clock-low { color: #b91c1c; }
-.quiz-progress-text { font-size: 0.9rem; color: #4b5563; }
+.quiz-clock-low { color: var(--destructive); }
+.quiz-progress-text { font-size: 0.9rem; color: var(--muted-foreground); }
 .quiz-bar { height: 6px; background: var(--gray-border); border-radius: 9999px; overflow: hidden; }
 .quiz-bar-fill { height: 100%; width: 100%; background: var(--blue); transition: width 0.25s linear; }
-.quiz-q { font-size: 1.2rem; line-height: 1.45; font-weight: 600; background: white; border: 1px solid var(--gray-border); border-radius: var(--radius-lg); padding: 1rem; }
+.quiz-q { font-size: 1.2rem; line-height: 1.45; font-weight: 600; background: var(--card); border: 1px solid var(--gray-border); border-radius: var(--radius-lg); padding: 1rem; }
 .quiz-answers-area { display: flex; flex-direction: column; gap: 0.6rem; margin-top: 0.75rem; }
 .quiz-choice {
   display: flex;
@@ -1450,21 +1581,21 @@ body.quiz-open { overflow: hidden; }
   width: 100%;
   min-height: 56px;
   text-align: left;
-  background: white;
+  background: var(--card);
   color: var(--text);
   border: 2px solid var(--gray-border);
   border-radius: var(--radius-lg);
   padding: 0.6rem 0.9rem;
   font-size: 1.05rem;
 }
-.quiz-choice[aria-pressed="true"] { border-color: var(--blue); background: #e8eef7; font-weight: 600; }
+.quiz-choice[aria-pressed="true"] { border-color: var(--blue); background: var(--accent); font-weight: 600; }
 .quiz-letter { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 2rem; height: 2rem; border-radius: 9999px; background: var(--gray-bg); border: 1px solid var(--gray-border); font-weight: 700; }
-.quiz-choice[aria-pressed="true"] .quiz-letter { background: var(--blue); color: white; border-color: var(--blue); }
+.quiz-choice[aria-pressed="true"] .quiz-letter { background: var(--blue); color: var(--primary-foreground); border-color: var(--blue); }
 .quiz-tf { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
 .quiz-tf .quiz-choice { justify-content: center; font-weight: 600; min-height: 64px; }
 .quiz-id-input { font-size: 1.15rem; min-height: 52px; }
 .quiz-next { min-height: 52px; font-size: 1.05rem; margin-top: auto; }
-.quiz-warn { background: #fff7ed; color: var(--amber); border-radius: var(--radius-sm); padding: 0.5rem 0.75rem; font-weight: 600; margin: 0; }
+.quiz-warn { background: var(--warning-soft); color: var(--amber); border-radius: var(--radius-sm); padding: 0.5rem 0.75rem; font-weight: 600; margin: 0; }
 /* Focus left the window (another app/snipping tool): hide the question. */
 .quiz-blurred .quiz-body { filter: blur(10px); }
 @media print {
@@ -1479,7 +1610,7 @@ body.quiz-open { overflow: hidden; }
 .tab-bar { display: flex; gap: 0.25rem; border-bottom: 2px solid var(--gray-border); margin: 1.5rem 0 1rem; }
 .tab-btn {
   background: none;
-  color: #4b5563;
+  color: var(--muted-foreground);
   border-radius: var(--radius-sm) var(--radius-sm) 0 0;
   border-bottom: 3px solid transparent;
   margin-bottom: -2px;
@@ -1493,7 +1624,7 @@ body.quiz-open { overflow: hidden; }
   gap: 0.4rem;
 }
 .tab-btn[aria-selected="true"] { color: var(--blue); border-bottom-color: var(--blue); }
-.tab-count { background: #b91c1c; color: white; border-radius: 9999px; font-size: 0.75rem; min-width: 1.25rem; padding: 0.05rem 0.4rem; text-align: center; font-family: var(--font-body); }
+.tab-count { background: var(--destructive); color: var(--destructive-foreground); border-radius: 9999px; font-size: 0.75rem; min-width: 1.25rem; padding: 0.05rem 0.4rem; text-align: center; font-family: var(--font-body); }
 #quizzes-list > .card { margin-bottom: 1rem; }
 .quiz-nudge { display: block; width: 100%; text-align: left; margin-bottom: 0.75rem; min-height: 44px; }
 .quiz-new-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-top: 0.5rem; }
@@ -1511,7 +1642,7 @@ body.quiz-open { overflow: hidden; }
   padding: 0.6rem 0.9rem;
   border: 1px solid var(--blue);
   border-radius: var(--radius-lg);
-  background: #fff;
+  background: var(--card);
 }
 .get-app-banner span { flex: 1 1 14rem; }
 .get-app-banner a.button, .get-app-banner button { width: auto; min-height: 44px; margin: 0; display: inline-flex; align-items: center; }
@@ -1545,7 +1676,7 @@ body.quiz-open { overflow: hidden; }
 }
 .toast {
   background: var(--blue);
-  color: #fff;
+  color: var(--primary-foreground);
   padding: 0.6rem 1rem;
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-hover);

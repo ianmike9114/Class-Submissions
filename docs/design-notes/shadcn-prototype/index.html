@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LMS look: current vs shadcn</title>
+  <style>
+    body { margin: 0; font: 14px/1.4 system-ui, sans-serif; background: #e5e5e5; }
+    .bar { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; padding: .6rem 1rem; background: #111; color: #fff; }
+    .bar button { padding: .35rem .8rem; border: 1px solid #555; border-radius: 6px; background: #222; color: #fff; cursor: pointer; }
+    .bar button[aria-pressed="true"] { background: #fff; color: #111; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 8px; height: calc(100vh - 52px); box-sizing: border-box; }
+    .grid.one { grid-template-columns: 1fr; }
+    figure { margin: 0; display: flex; flex-direction: column; min-height: 0; }
+    figcaption { padding: .3rem .2rem; font-weight: 600; }
+    iframe { flex: 1; width: 100%; border: 1px solid #bbb; background: #fff; }
+    .phone iframe { width: 375px; margin: 0 auto; }
+    .hide { display: none; }
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <strong>Assignment review screen</strong>
+    <button aria-pressed="true" data-mode="both">Side by side</button>
+    <button aria-pressed="false" data-mode="current">Current only</button>
+    <button aria-pressed="false" data-mode="shadcn">shadcn only</button>
+    <button aria-pressed="false" id="phone">Phone width</button>
+    <span style="opacity:.7">Sample data. Dark mode: use the half-circle button inside the shadcn page.</span>
+  </div>
+  <div class="grid" id="grid">
+    <figure id="f-current"><figcaption>Current (Academic Clarity)</figcaption><iframe src="current.html" title="Current look"></iframe></figure>
+    <figure id="f-shadcn"><figcaption>shadcn look (shadcn-lite.css, stock neutral theme)</figcaption><iframe src="shadcn.html" title="shadcn look"></iframe></figure>
+  </div>
+  <script>
+    var grid = document.getElementById('grid');
+    document.querySelectorAll('[data-mode]').forEach(function (b) {
+      b.onclick = function () {
+        document.querySelectorAll('[data-mode]').forEach(function (x) { x.setAttribute('aria-pressed', x === b); });
+        var m = b.dataset.mode;
+        document.getElementById('f-current').classList.toggle('hide', m === 'shadcn');
+        document.getElementById('f-shadcn').classList.toggle('hide', m === 'current');
+        grid.classList.toggle('one', m !== 'both');
+      };
+    });
+    document.getElementById('phone').onclick = function () {
+      var on = grid.classList.toggle('phone');
+      this.setAttribute('aria-pressed', on);
+    };
+  </script>
+</body>
+</html>

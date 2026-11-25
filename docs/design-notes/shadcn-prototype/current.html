@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Current look - Assignment review (prototype)</title>
+  <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../../../css/style.css" />
+</head>
+<body>
+  <!-- Same markup and classes the live teacher.html / teacher.js render. Sample data only. -->
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand">
+        <span class="brand-mark">Class Submissions</span>
+        <span class="status-published">teacher</span>
+      </div>
+      <nav class="sidebar-nav">
+        <button>&#8962; Home</button>
+        <button>Student Lists</button>
+        <button>&#128221; Quizzes</button>
+        <button>&#128187; Code Examples</button>
+        <button>&#9881; Settings</button>
+      </nav>
+      <div class="sidebar-foot">
+        <button class="secondary">Sign out</button>
+      </div>
+    </aside>
+
+    <div class="app-main">
+      <header class="topbar">
+        <button class="topbar-menu" aria-label="Menu">&#9776;</button>
+        <h1>Teacher Dashboard</h1>
+        <div class="hdr-search">
+          <input placeholder="Search subjects, sections, assignments, students..." />
+        </div>
+        <div class="topbar-actions">
+          <button class="secondary" aria-label="Refresh">&#8635;</button>
+          <button class="secondary" aria-label="Notifications">&#128276;</button>
+        </div>
+      </header>
+
+      <main>
+        <section id="view-assignment">
+          <button class="secondary">&larr; Back</button>
+          <h2>Quiz 1: Java Loops</h2>
+
+          <details class="card">
+            <summary><strong>Edit assignment</strong></summary>
+          </details>
+
+          <div class="card">
+            <strong>Scores</strong>
+            <p class="muted">ICT 11 - Section Rizal &middot; Due Nov 30 &middot; 20 pts &middot; 3 of 4 submitted</p>
+          </div>
+
+          <label>Filter</label>
+          <select>
+            <option>All</option><option>Pending</option><option>Returned for revision</option><option>Published</option>
+          </select>
+
+          <div class="card">
+            <strong>Dela Cruz, Juan</strong>
+            <button type="button" class="secondary" style="margin-left:0.4rem;">Edit name</button>
+            <span class="status-pending"> &mdash; pending</span>
+            <div class="muted"><a href="#">https://docs.google.com/document/d/sample-1</a></div>
+            <div style="margin-top:0.5rem;">
+              <button class="secondary">Review / Grade</button>
+              <button class="danger">Delete</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <strong>Santos, Maria</strong>
+            <button type="button" class="secondary" style="margin-left:0.4rem;">Edit name</button>
+            <span class="status-published"> &mdash; published</span>
+            <div class="muted"><a href="#">https://gist.github.com/sample-2</a></div>
+            <div style="margin-top:0.5rem;">
+              <button class="secondary">Review / Grade</button>
+              <button class="danger">Delete</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <strong>Reyes, Paolo</strong>
+            <button type="button" class="secondary" style="margin-left:0.4rem;">Edit name</button>
+            <span class="status-returned"> &mdash; returned</span>
+            <span class="status-pending">redo requested</span>
+            <div class="muted"><a href="#">https://drive.google.com/file/d/sample-3</a></div>
+            <div style="margin-top:0.5rem;">
+              <button>Allow redo</button>
+              <button class="secondary">Review / Grade</button>
+              <button class="danger">Delete</button>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+</body>
+</html>
