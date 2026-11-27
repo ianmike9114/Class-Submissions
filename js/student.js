@@ -2647,7 +2647,7 @@ el("sign-out").addEventListener("click", signOutUser);
 // while the student has unsaved photos, typed code/link, or a quiz on screen
 // (then a toast asks them to refresh after submitting). A sessionStorage marker
 // stops a reload loop if a cached shell keeps serving the old version.
-const APP_VERSION = 5;
+const APP_VERSION = 6;
 let versionToastShown = false;
 
 function hasTypedWork() {
