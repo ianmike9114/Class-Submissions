@@ -526,3 +526,62 @@ test("photo submission: ZIP download, then Free up space archives graded photos"
   expect(errors, errors.join(" | ")).toEqual([]);
   expect(terrors, terrors.join(" | ")).toEqual([]);
 });
+
+test("code lab: C# run, web preview and project submit on a phone", async ({ page, browser }) => {
+  const errors = trackPageErrors(page);
+  await signIn(page, TEACHER, "Teacher One");
+  await page.waitForURL(/teacher\.html/);
+  await page.locator("#subjects-list [data-open]").first().click();
+  await page.locator("#sections-list [data-open]").first().click();
+
+  const addAssignment = async (title, filetype, lang, starter) => {
+    await page.locator("#view-section summary", { hasText: "Create" }).click();
+    await page.locator('[data-create-type="assignment"]').click();
+    await page.fill("#assignment-title", title);
+    await page.fill("#assignment-total-points", "10");
+    await page.selectOption("#assignment-filetype", filetype);
+    if (lang) {
+      await page.selectOption("#assignment-codelang", lang);
+      await page.fill("#assignment-starter", starter);
+    }
+    await page.locator("#create-submit-btn").click();
+    await expect(page.locator("#assignments-list")).toContainText(title);
+  };
+  await addAssignment("E2E CSharp", "code", "csharp",
+    'using System;\nclass Program { static void Main() { Console.WriteLine("Hi " + Console.ReadLine()); } }');
+  await addAssignment("E2E Web", "code", "web", "<h1 id='t'>Hello</h1><script>console.log('ready')</script>");
+  await addAssignment("E2E Project", "project");
+
+  const phone = await browser.newContext({ viewport: { width: 375, height: 812 } });
+  const sp = await phone.newPage();
+  await blockProduction(sp);
+  // Wandbox is external: stub it so the test is offline and deterministic.
+  await sp.route("https://wandbox.org/**", (r) => r.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({ status: "0", program_output: "Hi Ana\n" }),
+  }));
+  await signIn(sp, STUDENT, "Juan Student");
+  await sp.waitForURL(/student\.html/);
+  await sp.evaluate(() => document.querySelectorAll("#course-outline details").forEach((d) => { d.open = true; }));
+
+  const cs = sp.locator(".submit-form", { has: sp.locator(".submission-code") }).filter({ hasText: "C#" }).first();
+  await expect(cs.locator(".submission-code")).toHaveValue(/class Program/);
+  await cs.locator(".submission-stdin").fill("Ana");
+  await cs.locator(".submission-run").click();
+  await expect(cs.locator(".code-output")).toHaveText("Hi Ana");
+  await cs.locator('button[type="submit"]').click();
+
+  const web = sp.locator(".submit-form").filter({ hasText: "Web page" }).first();
+  await web.locator(".submission-run").click();
+  const frame = web.frameLocator("iframe.web-preview");
+  await expect(frame.locator("#t")).toHaveText("Hello");
+  await expect(web.locator(".web-console")).toContainText("ready");
+
+  const proj = sp.locator(".submit-form").filter({ has: sp.locator(".submission-demo") }).first();
+  await proj.locator(".submission-link").fill("https://github.com/juan/mvc-app");
+  await proj.locator(".submission-demo").fill("https://youtu.be/dQw4w9WgXcQ");
+  await proj.locator('button[type="submit"]').click();
+  await expect(sp.locator("body")).toContainText("Submitted");
+  await phone.close();
+  expect(errors, errors.join(" | ")).toEqual([]);
+});

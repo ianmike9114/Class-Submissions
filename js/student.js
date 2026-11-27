@@ -7,8 +7,10 @@ import {
   collection, addDoc, setDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where, arrayUnion, arrayRemove, serverTimestamp, documentId, onSnapshot,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { toEmbedUrl, toDownloadUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=7";
-import { runJava } from "./runner.js";
-import { codeBlockHtml, highlightWithin } from "./highlight.js";
+import { runCode } from "./runner.js?v=1";
+import { codeBlockHtml, highlightWithin } from "./highlight.js?v=1";
+import { CODE_LANGS, langOf } from "./code-langs.js?v=1";
+import { mountPreview } from "./webpreview.js?v=1";
 import { seededShuffle, quizDeadlineMs, servedQuestions, QUIZ_BREACH_LIMIT, isSplitWindow, hasSecondScreen } from "./quiz.js?v=8";
 import { RETURN_PENALTY, maxAfterReturns, penaltyNote } from "./grading.js?v=2";
 import { toast, friendlyError } from "./ui-feedback.js?v=2";
@@ -868,7 +870,7 @@ async function loadEverything() {
             ? `<p class="status-pending" style="display:inline-block; margin-top:0.5rem;">Closed — deadline passed (was due ${a.dueDate})</p>`
             : a.allowedFileTypes === "quiz"
             ? renderQuizIntro(aDoc.id, a)
-            : renderSubmitForm(aDoc.id, a.allowedFileTypes)}`;
+            : renderSubmitForm(aDoc.id, a)}`;
       } else {
         const s = subDoc.data();
         const isQuiz = a.allowedFileTypes === "quiz";
@@ -915,7 +917,7 @@ async function loadEverything() {
           ${s.status !== "published" && penaltyNote(a.totalPoints, s.returnCount)
             ? `<p class="status-returned" data-cap-note>Late resubmission: your max score is now ${maxAfterReturns(a.totalPoints, s.returnCount)} / ${a.totalPoints} (−${RETURN_PENALTY} each time it is returned for revision).</p>` : ""}
           ${materialBlock(a)}
-          ${renderSubmittedWork(s)}
+          ${renderSubmittedWork(s, a)}
           ${actionsBlock}`;
       }
       if (isQuizAssignment(a)) {
@@ -1030,11 +1032,12 @@ async function loadEverything() {
             // so editing/re-saving one doesn't silently drop that photo.
             const existingPhotos = s.photoPages || (s.photoData ? [s.photoData] : []);
             pendingPhotos.set(aDoc.id, [...existingPhotos]);
-            editContainer.innerHTML = renderSubmitForm(aDoc.id, a.allowedFileTypes, {
+            editContainer.innerHTML = renderSubmitForm(aDoc.id, a, {
               id: subDoc.id,
               link: s.link || "",
               photoPages: existingPhotos,
               code: s.code || "",
+              demoLink: s.demoLink || "",
             });
             editContainer.dataset.open = "true";
             editBtn.disabled = true;
@@ -1578,15 +1581,16 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") document.getElementById("photo-lightbox")?.classList.add("hidden");
 });
 
-function renderSubmittedWork(s) {
+function renderSubmittedWork(s, a = null) {
   const parts = [];
   if (s.code) {
-    parts.push(codeBlockHtml(s.code, "java"));
+    parts.push(codeBlockHtml(s.code, CODE_LANGS[langOf(a)].hl));
     if (s.codeOutput) {
       parts.push(`<div class="muted">Output when you last ran it</div><pre class="code-output">${esc(s.codeOutput)}</pre>`);
     }
   }
   if (s.link) parts.push(embedBlockFor(s.link, { label: "Open your submission" }));
+  if (s.demoLink) parts.push(embedBlockFor(s.demoLink, { label: "Open your demo video" }));
   const photos = (s.photoPages && s.photoPages.length > 0)
     ? s.photoPages
     : (s.photoData ? [s.photoData] : []); // legacy single-photo submissions
@@ -1607,6 +1611,7 @@ const LINK_HINTS = {
   code: "Optional: paste a GitHub Gist or Google Doc link instead of (or as well as) the code box above",
   image: "Paste a Drive or Google Slides link, shared as \"anyone with the link can view\"",
   video: "Paste a YouTube link (unlisted is fine)",
+  project: "GitHub repo or Drive folder shared as \"anyone with the link can view\". Add screenshots below if you like.",
 };
 
 // Multiple photos share one Firestore document's 1MiB cap, so each photo
@@ -1634,29 +1639,43 @@ function photoMime() {
   return photoMimeCache;
 }
 
-function renderSubmitForm(assignmentId, type, prefill = null) {
-  const photoBlock = (type === "image" || type === "document") ? `
+function renderSubmitForm(assignmentId, assignment, prefill = null) {
+  const type = assignment?.allowedFileTypes;
+  const lang = langOf(assignment);
+  const info = CODE_LANGS[lang];
+  const photoBlock = (type === "image" || type === "document" || type === "project") ? `
       <label>Or take/upload photos (up to ${MAX_PHOTOS} pages - select several at once in order, or add one at a time)</label>
       <input type="file" accept="image/*" multiple class="submission-photo" data-assignment="${assignmentId}" />
       <div class="photo-thumbs" data-thumbs="${assignmentId}"></div>
       <p class="muted">Each photo is compressed and saved directly - skip the link above if you use this. For full-quality photos, check if your teacher gave a shared folder link in the Instructions above - upload there instead and paste that file's link.</p>` : "";
   // For "code" assignments the primary path is pasting the source straight
   // into the app (saved as text - no Storage), with a Run button that
-  // executes it via the free public Piston runner (js/runner.js). The link
-  // field below stays as an optional alternative (Gist/Doc).
-  const codeValue = prefill?.code ? esc(prefill.code) : "";
-  const codePlaceholder = "public class Main {&#10;  public static void main(String[] args) {&#10;    System.out.println(&quot;Hello&quot;);&#10;  }&#10;}";
+  // executes it via the free public Wandbox runner (js/runner.js), or a
+  // sandboxed Preview for web pages. The link field below stays as an
+  // optional alternative (Gist/Doc).
+  const codeValue = esc(prefill?.code || (prefill ? "" : assignment?.starterCode || ""));
   const codeBlock = (type === "code") ? `
-      <label>Your Java code</label>
-      <textarea class="submission-code" data-assignment="${assignmentId}" rows="12" spellcheck="false" placeholder="${codePlaceholder}">${codeValue}</textarea>
-      <input type="file" accept=".java,.txt,text/plain" class="submission-code-file" data-assignment="${assignmentId}" />
-      <p class="muted">Type/paste your code above, or pick a .java file. Keep your public class named <strong>Main</strong> so it runs.</p>
+      <label>Your ${esc(info.label)} code</label>
+      <textarea class="submission-code" data-assignment="${assignmentId}" data-lang="${lang}" rows="12" spellcheck="false" placeholder="${esc(info.placeholder)}">${codeValue}</textarea>
+      <input type="file" accept="${info.accept}" class="submission-code-file" data-assignment="${assignmentId}" />
+      <p class="muted">${esc(info.hint)}</p>
+      ${info.mode === "run" ? `
+      <label>Program input (optional - what you would type when the program asks, one answer per line)</label>
+      <textarea class="submission-stdin code-stdin" rows="2" spellcheck="false"></textarea>` : ""}
       <div class="code-run">
-        <button type="button" class="secondary submission-run" data-assignment="${assignmentId}">&#9654; Run</button>
-        <span class="muted run-note">Runs on a free public code runner (wandbox.org) - your code is sent there to execute.</span>
+        <button type="button" class="secondary submission-run" data-assignment="${assignmentId}" data-lang="${lang}">${info.mode === "preview" ? "&#128065; Preview" : "&#9654; Run"}</button>
+        <span class="muted run-note">${info.mode === "preview"
+          ? "Your page shows below, only on this device."
+          : "Runs on a free public code runner (wandbox.org) - your code is sent there to execute."}</span>
       </div>
-      <pre class="code-output hidden" data-output="${assignmentId}"></pre>` : "";
-  // prefill: { id, link, photoPages, code } - present only when editing an
+      <pre class="code-output hidden" data-output="${assignmentId}"></pre>
+      <div class="hidden" data-preview="${assignmentId}"></div>` : "";
+  const demoValue = prefill?.demoLink ? ` value="${String(prefill.demoLink).replace(/"/g, "&quot;")}"` : "";
+  const demoBlock = (type === "project") ? `
+      <label>Demo video link (YouTube unlisted or Drive, "anyone with the link")</label>
+      <input type="url" class="submission-demo" placeholder="https://youtu.be/..."${demoValue} />
+      <p class="muted">Record your screen while you show your project working, 1-3 minutes.</p>` : "";
+  // prefill: { id, link, photoPages, code, demoLink } - present only when editing an
   // existing submission in place, never on the normal blank first-submit form.
   const submissionAttr = prefill ? ` data-submission="${prefill.id}"` : "";
   const linkValue = prefill?.link ? ` value="${String(prefill.link).replace(/"/g, "&quot;")}"` : "";
@@ -1664,9 +1683,10 @@ function renderSubmitForm(assignmentId, type, prefill = null) {
   return `
     <form class="submit-form" data-assignment="${assignmentId}"${submissionAttr}>
       ${codeBlock}
-      <label>${type === "code" ? "Or a submission link (optional)" : "Submission link"}</label>
+      <label>${type === "code" ? "Or a submission link (optional)" : type === "project" ? "Project link (GitHub repo or shared Drive folder)" : "Submission link"}</label>
       <input type="url" class="submission-link" placeholder="https://..."${linkValue} />
       <p class="muted">${LINK_HINTS[type] || "Paste a shareable link"}</p>
+      ${demoBlock}
       ${photoBlock}
       <button type="submit">${prefill ? "Save changes" : "Submit"}</button>${cancelBtn}
     </form>`;
@@ -1875,6 +1895,7 @@ async function createSubmission(assignmentId, payload) {
         code: payload.code,
         codeOutput: payload.codeOutput,
         photoPages: payload.photoPages,
+        ...(payload.demoLink !== undefined ? { demoLink: payload.demoLink } : {}),
         status: "pending",
         submittedAt: Date.now(),
       });
@@ -1908,8 +1929,11 @@ function wireSubmitForm(form) {
     const code = codeEl ? codeEl.value.trim() : "";
     const codeOutput = code ? (pendingCodeOutput.get(assignmentId) || "") : "";
     const photoPages = pendingPhotos.get(assignmentId) || [];
+    const demoEl = form.querySelector(".submission-demo");
+    const demoLink = demoEl ? demoEl.value.trim() : "";
+    const extra = demoEl ? { demoLink } : {}; // only project forms carry demoLink
 
-    if (!link && !code && photoPages.length === 0) {
+    if (!link && !code && !demoLink && photoPages.length === 0) {
       alert(codeEl ? "Paste your code, add a link, or take a photo first." : "Add a link or take a photo first.");
       return;
     }
@@ -1927,6 +1951,7 @@ function wireSubmitForm(form) {
           code,
           codeOutput,
           photoPages,
+          ...extra,
           status: "pending",
           submittedAt: Date.now(),
         });
@@ -1943,6 +1968,7 @@ function wireSubmitForm(form) {
           code,
           codeOutput,
           photoPages,
+          ...extra,
           status: "pending",
           submittedAt: Date.now(),
           ownerEmail: assignmentOwnerEmail,
@@ -1996,13 +2022,19 @@ function wireRunButton(btn) {
     const textarea = form && form.querySelector(".submission-code");
     const outPane = form && form.querySelector(`[data-output="${assignmentId}"]`);
     if (!textarea || !outPane) return;
+    const lang = btn.dataset.lang || "java";
+    if (CODE_LANGS[lang].mode === "preview") {
+      mountPreview(form.querySelector(`[data-preview="${assignmentId}"]`), textarea.value);
+      return;
+    }
     const original = btn.textContent;
     btn.disabled = true;
     btn.textContent = "Running...";
     outPane.classList.remove("hidden");
     outPane.textContent = "Running your code...";
     try {
-      const { output } = await runJava(textarea.value);
+      const stdin = form.querySelector(".submission-stdin")?.value || "";
+      const { output } = await runCode(lang, textarea.value, stdin ? stdin.replace(/\s*$/, "\n") : "");
       outPane.textContent = output;
       pendingCodeOutput.set(assignmentId, output);
     } catch (err) {
