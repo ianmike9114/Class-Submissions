@@ -536,8 +536,9 @@ test("code lab: C# run, web preview and project submit on a phone", async ({ pag
 
   const addAssignment = async (title, filetype, lang, starter, instructions) => {
     await page.locator("#email-class-prompt [data-close]").click({ timeout: 1000 }).catch(() => {});
-    const summary = page.locator("#view-section summary", { hasText: "Create" });
-    if (!(await page.locator("#view-section details", { has: summary }).first().evaluate((d) => d.open))) await summary.click();
+    const createBox = page.locator("#view-section details:has(> summary:has-text('Create'))");
+    const summary = createBox.locator("> summary");
+    if (!(await createBox.evaluate((d) => d.open))) await summary.click();
     await page.locator('[data-create-type="assignment"]').click();
     await page.fill("#assignment-title", title);
     await page.fill("#assignment-total-points", "10");
@@ -578,6 +579,12 @@ test("code lab: C# run, web preview and project submit on a phone", async ({ pag
   await openItem("E2E CSharp");
   const cs = sp.locator(".submit-form", { has: sp.locator(".submission-code") }).filter({ hasText: "C#" }).first();
   await expect(cs.locator(".submission-code")).toHaveValue(/class Program/);
+  // Submitting the untouched starter is refused with a friendly alert.
+  let starterAlert = "";
+  sp.once("dialog", (d) => { starterAlert = d.message(); d.accept(); });
+  await cs.locator('button[type="submit"]').click();
+  await expect.poll(() => starterAlert).toContain("change the starter");
+  await cs.locator(".submission-code").fill('using System;\nclass Program { static void Main() { Console.WriteLine("Hi " + Console.ReadLine() + "!"); } }');
   await cs.locator(".submission-stdin").fill("Ana");
   await cs.locator(".submission-run").click();
   await expect(cs.locator(".code-output")).toHaveText("Hi Ana");
