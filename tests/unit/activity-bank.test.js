@@ -20,6 +20,12 @@ describe("dotnet activity bank data", () => {
       else expect(e.codeLang).toBeUndefined();
     }
   });
+  it("code entries have starter code; PTs are 50-pt performance projects", () => {
+    for (const e of bank.filter((x) => x.type === "code")) expect(e.starterCode?.trim(), e.id).toBeTruthy();
+    for (const e of bank.filter((x) => x.id.includes("-pt"))) {
+      expect(e.points, e.id).toBe(50); expect(e.component, e.id).toBe("performance"); expect(e.type, e.id).toBe("project");
+    }
+  });
   it("C# starter code never uses top-level statements (mono)", () => {
     for (const e of bank.filter((x) => x.codeLang === "csharp" && x.starterCode)) {
       expect(e.starterCode, e.id).toMatch(/static void Main/);

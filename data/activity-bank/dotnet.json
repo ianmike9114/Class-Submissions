@@ -64,7 +64,7 @@
     "title": "Schedule Maker: Web Table Designer",
     "type": "code",
     "codeLang": "web",
-    "instructions": "Build your class schedule as a table.\n1. Add a <table> with a <caption> that says \"Grade 12 Class Schedule\".\n2. Make a header row with <th>: Time, Monday, Tuesday, Wednesday, Thursday, Friday.\n3. Fill at least 4 rows of time slots with your real subjects.\n4. Use colspan or rowspan once, for example, for a recess or lunch break.\n5. Add a border and cellpadding so the table is easy to read.\n6. Tap Preview, then Submit.",
+    "instructions": "Build your class schedule as a table.\n1. Add a <table> with a <caption> that says \"Grade 12 Class Schedule\".\n2. Make a header row with <th>: Time, Monday, Tuesday, Wednesday, Thursday, Friday.\n3. Fill at least 4 rows of time slots with your real subjects.\n4. Use colspan or rowspan once, for example, for a recess or lunch break.\n5. The starter already has a border and padding. Change them: add a header background color and text-align: center on the cells.\n6. Tap Preview, then Submit.",
     "starterCode": "<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>Class Schedule</title>\n  <style>\n    table { border-collapse: collapse; }\n    th, td { border: 1px solid #333; padding: 6px; }\n  </style>\n</head>\n<body>\n  <table>\n    <!-- TODO: caption, header row, 4+ rows, one colspan or rowspan -->\n  </table>\n</body>\n</html>",
     "points": 10,
     "component": "written"
@@ -78,7 +78,7 @@
     "title": "Link Quest: Connect the Web",
     "type": "code",
     "codeLang": "web",
-    "instructions": "Link the parts of a web page together.\n1. Make a small menu at the top with 3 links: About, Hobbies, Contact.\n2. Give each section below an id, for example <section id=\"about\">. Point each link to it with href=\"#about\".\n3. Add a \"Back to top\" link at the bottom of each section.\n4. Add one outside link with target=\"_blank\" (for example, the DepEd website).\n5. Add a mailto: link for your email.\n6. Tap Preview, then Submit.",
+    "instructions": "Link the parts of a web page together.\n1. Make a small menu at the top with 3 links: About, Hobbies, Contact.\n2. Give each section below an id, for example <section id=\"about\">. Point each link to it with href=\"#about\".\n3. Add a \"Back to top\" link at the bottom of each section.\n4. Add one outside link with target=\"_blank\" (for example, the DepEd website).\n5. Add a mailto: link for your email.\n6. Preview is a safe sandbox, so the target=\"_blank\" link and the mailto: link will not open there. Check those two by reading your code.\n7. Tap Preview, then Submit.",
     "starterCode": "<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>Link Quest</title>\n</head>\n<body>\n  <nav><!-- TODO: 3 links to sections --></nav>\n  <!-- TODO: sections with ids, back to top, external link, mailto -->\n</body>\n</html>",
     "points": 10,
     "component": "written"
@@ -92,8 +92,8 @@
     "title": "Split Screen Web Builder",
     "type": "code",
     "codeLang": "web",
-    "instructions": "Show two pages on one screen with an iframe.\n1. Note: the old <frameset> tag no longer works in modern browsers. We use <iframe> instead.\n2. Make a menu with 3 links. Each link has target=\"viewer\".\n3. Add an <iframe name=\"viewer\" width=\"100%\" height=\"300\"> under the menu.\n4. Use srcdoc on the iframe, or a link to a page that allows embedding, as the starting page.\n5. Add a title above the iframe that tells what the learner is looking at.\n6. Tap Preview, then Submit.",
-    "starterCode": "<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>Split Screen</title>\n  <style>\n    iframe { border: 2px solid #333; }\n  </style>\n</head>\n<body>\n  <nav>\n    <!-- TODO: 3 links with target=\"viewer\" -->\n  </nav>\n  <iframe name=\"viewer\" width=\"100%\" height=\"300\" srcdoc=\"<p>Pick a link above.</p>\"></iframe>\n</body>\n</html>",
+    "instructions": "Show two pages on one screen with an iframe.\n1. Note: the old <frameset> tag no longer works in modern browsers. We use <iframe> instead.\n2. The starter has one iframe named viewer and three buttons. Each button holds a small page in a data-page attribute.\n3. Write a tiny script: when a button is clicked, set the iframe's srcdoc to that button's data-page text.\n4. Change the three small pages to your own: for example, Home, Schedule, and Contact, each with a heading and a sentence.\n5. Add a title above the iframe that tells what you are looking at.\n6. Tap Preview, then Submit.",
+    "starterCode": "<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>Split Screen</title>\n  <style>\n    iframe { border: 2px solid #333; width: 100%; height: 200px; }\n  </style>\n</head>\n<body>\n  <h1>TODO: Title</h1>\n  <nav>\n    <button data-page=\"<h2>Page 1</h2>\">Page 1</button>\n    <button data-page=\"<h2>Page 2</h2>\">Page 2</button>\n    <button data-page=\"<h2>Page 3</h2>\">Page 3</button>\n  </nav>\n  <iframe name=\"viewer\" srcdoc=\"<h2>Pick a page above.</h2>\"></iframe>\n  <script>\n    // TODO: on button click, set viewer srcdoc from data-page\n  </script>\n</body>\n</html>",
     "points": 10,
     "component": "written"
   },
@@ -230,7 +230,7 @@
     "title": "Gallery Grid Genius",
     "type": "code",
     "codeLang": "web",
-    "instructions": "Build an image gallery.\n1. Make a gallery with 6 images. Use image links you may use, or colored boxes if you do not have images.\n2. Put them in a grid with display: grid and 3 columns (2 columns on small screens).\n3. Give each image a border, a border-radius, and a caption.\n4. Add a hover effect that enlarges or brightens an image.\n5. Give a title to the gallery, for example, \"Our School Activities\".\n6. Tap Preview, then Submit.",
+    "instructions": "Build an image gallery.\n1. Make a gallery with 6 images. Use image links you may use, or colored boxes if you do not have images.\n2. Put them in a grid with display: grid and 3 columns (2 columns on small screens).\n3. Give each image a border, a border-radius, and a caption.\n4. Add a hover effect that enlarges or brightens an image.\n5. Give a title to the gallery, for example, \"Our School Activities\".\n6. On a phone, tap the element to see the hover effect.\n7. Tap Preview, then Submit.",
     "starterCode": "<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>Gallery</title>\n  <style>\n    .gallery { display: grid; /* TODO: columns and gap */ }\n    /* TODO: image, caption, hover */\n  </style>\n</head>\n<body>\n  <h1>TODO: Gallery title</h1>\n  <div class=\"gallery\">\n    <!-- TODO: 6 figures with image and figcaption -->\n  </div>\n</body>\n</html>",
     "points": 10,
     "component": "written"
@@ -244,7 +244,7 @@
     "title": "Hover Hero: Interactive Style",
     "type": "code",
     "codeLang": "web",
-    "instructions": "Add interactive style with pseudo-classes and pseudo-elements.\n1. Make a button and a list of 5 items.\n2. Use :hover and :active on the button to change color and size.\n3. Use :first-child, :last-child, and :nth-child(odd) on the list.\n4. Use ::before to add an icon or symbol to each item, and ::first-letter on a paragraph.\n5. Use :focus on an input field so it is easy to see where you are typing.\n6. Tap Preview, then Submit.",
+    "instructions": "Add interactive style with pseudo-classes and pseudo-elements.\n1. Make a button and a list of 5 items.\n2. Use :hover and :active on the button to change color and size.\n3. Use :first-child, :last-child, and :nth-child(odd) on the list.\n4. Use ::before to add an icon or symbol to each item, and ::first-letter on a paragraph.\n5. Use :focus on an input field so it is easy to see where you are typing.\n6. On a phone, tap the element to see the hover effect.\n7. Tap Preview, then Submit.",
     "starterCode": "<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>Hover Hero</title>\n  <style>\n    /* TODO: button:hover, li:nth-child, ::before, ::first-letter, input:focus */\n  </style>\n</head>\n<body>\n  <button>Click me</button>\n  <ul>\n    <li>One</li><li>Two</li><li>Three</li><li>Four</li><li>Five</li>\n  </ul>\n  <p>A paragraph for the first letter.</p>\n  <input placeholder=\"Type here\">\n</body>\n</html>",
     "points": 10,
     "component": "written"
@@ -258,7 +258,7 @@
     "title": "Responsive Web Hero",
     "type": "code",
     "codeLang": "web",
-    "instructions": "Make a page that adapts to phone and laptop.\n1. Make a header, a main area with 3 cards, and a footer.\n2. Use display: flex on the card container with flex-wrap and a gap.\n3. Use justify-content and align-items on the header.\n4. Write a @media (max-width: 600px) rule that stacks the cards in one column.\n5. Open Preview and compare. Add a comment about what changes on a small screen.\n6. Tap Preview, then Submit.",
+    "instructions": "Make a page that adapts to phone and laptop.\n1. Make a header, a main area with 3 cards, and a footer.\n2. Use display: flex on the card container with flex-wrap and a gap.\n3. Use justify-content and align-items on the header.\n4. Write a @media (max-width: 600px) rule that stacks the cards in one column.\n5. Rotate your phone to landscape, or temporarily change the 600px number, to see the layout change. Add a comment about what changes on a small screen.\n6. Tap Preview, then Submit.",
     "starterCode": "<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>Responsive Hero</title>\n  <style>\n    .cards { display: flex; /* TODO: wrap, gap */ }\n    /* TODO: @media (max-width: 600px) */\n  </style>\n</head>\n<body>\n  <header><h1>TODO: Site name</h1></header>\n  <main class=\"cards\">\n    <div class=\"card\">Card 1</div>\n    <div class=\"card\">Card 2</div>\n    <div class=\"card\">Card 3</div>\n  </main>\n  <footer>TODO: footer</footer>\n</body>\n</html>",
     "points": 10,
     "component": "written"
@@ -272,7 +272,7 @@
     "title": "Responsive Grid Master",
     "type": "code",
     "codeLang": "web",
-    "instructions": "Build a responsive layout with CSS Grid.\n1. Make a page with a header, a sidebar, a main area, and a footer.\n2. Use display: grid with grid-template-columns and grid-template-areas for the laptop layout.\n3. Use a media query at 700px so the sidebar moves below the main area on a phone.\n4. Make the images and text fit with max-width: 100% and relative units (%, rem, fr).\n5. Add a comment that names the three RWD ideas you used.\n6. Tap Preview, then Submit.",
+    "instructions": "Build a responsive layout with CSS Grid.\n1. Make a page with a header, a sidebar, a main area, and a footer.\n2. Use display: grid with grid-template-columns and grid-template-areas for the laptop layout.\n3. Use a media query at 700px so the sidebar moves below the main area on a phone.\n4. Make the images and text fit with max-width: 100% and relative units (%, rem, fr).\n5. Rotate your phone to landscape, or temporarily change the 700px number, to see the layout change.\n6. Add a comment that names the three RWD ideas you used.\n7. Tap Preview, then Submit.",
     "starterCode": "<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>Responsive Grid</title>\n  <style>\n    .layout { display: grid; /* TODO: columns, areas */ }\n    /* TODO: media query */\n  </style>\n</head>\n<body>\n  <div class=\"layout\">\n    <header>Header</header>\n    <aside>Sidebar</aside>\n    <main>Main</main>\n    <footer>Footer</footer>\n  </div>\n</body>\n</html>",
     "points": 10,
     "component": "written"
@@ -326,7 +326,7 @@
     "title": "Operator Arena: JS Math Challenge",
     "type": "code",
     "codeLang": "web",
-    "instructions": "Use operators to solve a canteen problem.\n1. Make variables for the price of one item and the quantity.\n2. Use arithmetic operators (+, -, *, /, %) to compute total, 10% student discount, and amount to pay.\n3. Use comparison operators to check if the payment is enough.\n4. Use && or || to check if the learner gets a discount (for example, a student and a total over 100 pesos).\n5. Show each result on the page.\n6. Tap Preview, then Submit.",
+    "instructions": "Use operators to solve a canteen problem.\n1. Make variables for the price of one item and the quantity.\n2. Use arithmetic operators (+, -, *, /, %) to compute total, 10% student discount, and amount to pay.\n3. Use comparison operators to check if the payment is enough.\n4. Use && or || to check if you get a discount (for example, you are a student and the total is over 100 pesos).\n5. Show each result on the page.\n6. Tap Preview, then Submit.",
     "starterCode": "<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>Operator Arena</title>\n</head>\n<body>\n  <ul id=\"out\"></ul>\n  <script>\n    // TODO: operators and results\n  </script>\n</body>\n</html>",
     "points": 10,
     "component": "written"
@@ -340,7 +340,7 @@
     "title": "Event Trigger Lab",
     "type": "code",
     "codeLang": "web",
-    "instructions": "Make a page react to the user.\n1. Add a button. Use addEventListener(\"click\", ...) to change the text of a <p> when it is clicked.\n2. Add an input. Use the \"input\" event to show what the learner types, live.\n3. Add a box that changes color on mouseover and goes back on mouseout.\n4. Add one onclick attribute and write a comment on how it differs from addEventListener.\n5. Try each action in Preview.\n6. Tap Preview, then Submit.",
+    "instructions": "Make a page react to the user.\n1. Add a button. Use addEventListener(\"click\", ...) to change the text of a <p> when it is clicked.\n2. Add an input. Use the \"input\" event to show what the learner types, live.\n3. Add a box that changes color on mouseover and goes back on mouseout.\n4. Add one onclick attribute and write a comment on how it differs from addEventListener.\n5. Try each action in Preview.\n6. On a phone, tap the element to see the hover effect.\n7. Tap Preview, then Submit.",
     "starterCode": "<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>Event Lab</title>\n  <style>\n    #box { width: 100px; height: 100px; background: #ccc; }\n  </style>\n</head>\n<body>\n  <button id=\"btn\">Click</button>\n  <p id=\"msg\">Waiting...</p>\n  <input id=\"name\" placeholder=\"Type your name\">\n  <p id=\"live\"></p>\n  <div id=\"box\"></div>\n  <script>\n    // TODO: click, input, mouseover, mouseout\n  </script>\n</body>\n</html>",
     "points": 10,
     "component": "written"
@@ -424,7 +424,7 @@
     "title": "Build Your First C# App",
     "type": "code",
     "codeLang": "csharp",
-    "instructions": "Write your first C# program.\n1. Keep the Program class and the Main method.\n2. Print a welcome line with Console.WriteLine.\n3. Ask for the learner's name with Console.Write and read it with Console.ReadLine().\n4. Print \"Hello, \" followed by the name, and the learner's school.\n5. Write one comment that says what Main does.\n6. Type your input in Program input, tap Run, then Submit.",
+    "instructions": "Write your first C# program.\n1. Keep the Program class and the Main method.\n2. Print a welcome line with Console.WriteLine.\n3. Ask for your name with Console.Write and read it with Console.ReadLine().\n4. Print \"Hello, \" followed by the name.\n5. Write one comment that says what Main does.\n6. Type your input in Program input, tap Run, then Submit.",
     "starterCode": "using System;\n\nclass Program {\n  static void Main() {\n    // TODO: welcome, read name, greet\n  }\n}",
     "points": 10,
     "component": "written"
@@ -438,7 +438,7 @@
     "title": "Data Detective: C# Variables",
     "type": "code",
     "codeLang": "csharp",
-    "instructions": "Make a sari-sari store receipt.\n1. Declare a string for the item name, an int for the quantity, and a double for the price.\n2. Declare a const for the discount rate (for example, 0.05).\n3. Read the item name, quantity, and price with Console.ReadLine() and convert the numbers with int.Parse and double.Parse.\n4. Compute the total and the discount. Print the receipt with string interpolation, for example $\"Total: {total:F2}\".\n5. Type three input lines (name, quantity, price) in Program input.\n6. Type your input in Program input, tap Run, then Submit.",
+    "instructions": "Make a sari-sari store receipt.\n1. Declare a string for the item name, an int for the quantity, and a double for the price.\n2. Declare a const for the discount rate (for example, 0.05).\n3. Read the item name, quantity, and price with Console.ReadLine() and convert the numbers with int.Parse and double.Parse. Type the three input lines (name, quantity, price) in Program input.\n4. Compute the total and the discount. Print the receipt with string interpolation, for example $\"Total: {total:F2}\".\n5. Type your input in Program input, tap Run, then Submit.",
     "starterCode": "using System;\n\nclass Program {\n  static void Main() {\n    const double Discount = 0.05;\n    // TODO: read item, quantity, price; compute; print receipt\n  }\n}",
     "points": 10,
     "component": "written"
@@ -480,8 +480,8 @@
     "title": "Class Creator: My First C# Blueprint",
     "type": "code",
     "codeLang": "csharp",
-    "instructions": "Make a Student class.\n1. Write a class named Student with fields for name, grade level, and section.\n2. Add a method Introduce() that prints a sentence with those values.\n3. Add a constructor that sets the three fields.\n4. In Main, create 2 Student objects with different values and call Introduce() on each.\n5. Tap Run, then Submit.",
-    "starterCode": "using System;\n\nclass Student {\n  // TODO: fields, constructor, Introduce()\n}\n\nclass Program {\n  static void Main() {\n    // TODO: create two Student objects\n  }\n}",
+    "instructions": "Make a Student class.\n1. Write a class named Student with fields for name, grade level, and section.\n2. Add a method Introduce() that prints a sentence with those values.\n3. Add a constructor that sets the three fields.\n4. In Main, create 2 Student objects with different values and call Introduce() on each.\n5. Add a struct named Subject with Name and Units. Make one Subject, print it, and write a comment on how a struct differs from a class.\n6. Tap Run, then Submit.",
+    "starterCode": "using System;\n\nclass Student {\n  // TODO: fields, constructor, Introduce()\n}\n\nstruct Subject {\n  // TODO: Name, Units\n}\n\nclass Program {\n  static void Main() {\n    // TODO: create two Student objects\n  }\n}",
     "points": 10,
     "component": "written"
   },
@@ -494,7 +494,7 @@
     "title": "Smart Array System",
     "type": "code",
     "codeLang": "csharp",
-    "instructions": "Process a list of grades with an array.\n1. Declare an int array of 5 grades. Fill it with 5 lines of input using a for loop.\n2. Compute and print the average, the highest, and the lowest grade.\n3. Count how many grades are 75 or above and print the number of passed.\n4. Type 5 grades on 5 lines in Program input.\n5. Type your input in Program input, tap Run, then Submit.",
+    "instructions": "Process a list of grades with an array.\n1. Declare an int array of 5 grades. Fill it with 5 lines of input using a for loop.\n2. Compute and print the average, the highest, and the lowest grade.\n3. Count how many grades are 75 or above and print the number of passed. Type the 5 grades on 5 lines in Program input.\n4. Type your input in Program input, tap Run, then Submit.",
     "starterCode": "using System;\n\nclass Program {\n  static void Main() {\n    int[] grades = new int[5];\n    // TODO: read, average, highest, lowest, passed\n  }\n}",
     "points": 10,
     "component": "written"
@@ -522,7 +522,7 @@
     "title": "File Flow: Save & Retrieve",
     "type": "code",
     "codeLang": "csharp",
-    "instructions": "Save and read a file.\n1. Use File.WriteAllText to save 3 lines (for example, learner names) to a file named list.txt.\n2. Use File.Exists to check the file, then File.ReadAllText or File.ReadAllLines to read it and print the lines.\n3. Use File.AppendAllText to add one more line, then read and print again.\n4. Use File.Delete to remove the file and print whether it still exists.\n5. Add a using System.IO; line at the top.\n6. Tap Run, then Submit.",
+    "instructions": "Save and read a file.\n1. Use File.WriteAllText to save 3 lines (for example, names of your classmates) to a file named list.txt.\n2. Use File.Exists to check the file, then File.ReadAllText or File.ReadAllLines to read it and print the lines.\n3. Use File.AppendAllText to add one more line, then read and print again.\n4. Use File.Delete to remove the file and print whether it still exists.\n5. Add a using System.IO; line at the top.\n6. Tap Run, then Submit.",
     "starterCode": "using System;\nusing System.IO;\n\nclass Program {\n  static void Main() {\n    // TODO: write, check, read, append, delete\n  }\n}",
     "points": 10,
     "component": "written"
@@ -559,7 +559,7 @@
     "competency": "Perform configurations of the routing process in directing an http request in an ASP.NET MVC project using controllers and actions",
     "title": "Route Finder: Controllers and Actions",
     "type": "project",
-    "instructions": "Set up routing in an ASP.NET MVC project. Do this on a school laptop.\n1. Create an ASP.NET MVC project named SchoolRoutes.\n2. Make a StudentsController with 3 actions: Index, Details(int id), and Search(string name).\n3. Set the default route in the route config. Add one custom route, for example, /grades/{section}/{id}.\n4. Make a simple view for each action so the pages show text, and test each URL in the browser.\n5. Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the project working, (c) screenshots of the main pages, saved in the same folder.",
+    "instructions": "Set up routing in an ASP.NET Core MVC project. Do this on a school laptop, using ASP.NET Core MVC (.NET 8) in Visual Studio Community (free).\n1. Create an MVC project named SchoolRoutes.\n2. Make a StudentsController with 3 actions: Index, Details(int id), and Search(string name).\n3. In Program.cs, check the default route in MapControllerRoute. Add one custom route, for example, grades/{section}/{id}.\n4. Make a simple view for each action so the pages show text, and test each URL in the browser.\n5. Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the project working, (c) screenshots of the main pages, saved in the same folder.",
     "points": 10,
     "component": "written"
   },
@@ -571,7 +571,7 @@
     "competency": "Use filters, selectors, and views in creating projects",
     "title": "View Master: Filter & Display",
     "type": "project",
-    "instructions": "Use filters and views in an ASP.NET MVC project. Do this on a school laptop.\n1. Create a project named LearnerList. Make a model Learner (Name, GradeLevel, Section).\n2. Make a LearnersController that sends a list of 8 learners to a view.\n3. Show the list in a table with a Razor foreach. Add a search box and a grade-level filter that uses a query string.\n4. Add one action filter, for example, [Authorize] or a custom logging filter, and write what it does in a comment.\n5. Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the project working, (c) screenshots of the main pages, saved in the same folder.",
+    "instructions": "Use filters and views in an ASP.NET Core MVC project. Do this on a school laptop, using ASP.NET Core MVC (.NET 8) in Visual Studio Community (free).\n1. Create a project named LearnerList. Make a model Learner (Name, GradeLevel, Section).\n2. Make a LearnersController that sends a list of 8 learners to a view.\n3. Show the list in a table with a Razor foreach. Add a search box and a grade-level filter that uses a query string.\n4. Add one custom action filter (a class that inherits ActionFilterAttribute) that logs the action name with Debug.WriteLine, apply it to the controller, and write what it does in a comment.\n5. Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the project working, (c) screenshots of the main pages, saved in the same folder.",
     "points": 10,
     "component": "written"
   },
@@ -583,7 +583,7 @@
     "competency": "Apply the ASP.NET MVC - data model",
     "title": "Model Builder: Student Records",
     "type": "project",
-    "instructions": "Build a model for student records. Do this on a school laptop.\n1. Create an MVC project named StudentRecords.\n2. Make a Student model with Id, FullName, GradeLevel, Section, and GeneralAverage.\n3. Make a controller that holds a list of at least 5 students and a view that shows them in a table.\n4. Add a Details page for one student.\n5. Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the project working, (c) screenshots of the main pages, saved in the same folder.",
+    "instructions": "Build a model for student records. Do this on a school laptop, using ASP.NET Core MVC (.NET 8) in Visual Studio Community (free).\n1. Create an MVC project named StudentRecords.\n2. Make a Student model with Id, FullName, GradeLevel, Section, and GeneralAverage.\n3. Make a controller that holds a list of at least 5 students and a view that shows them in a table.\n4. Add a Details page for one student.\n5. Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the project working, (c) screenshots of the main pages, saved in the same folder.",
     "points": 10,
     "component": "written"
   },
@@ -595,7 +595,7 @@
     "competency": "Use ASP.NET MVC – helpers in creating realistic HTML controls",
     "title": "Smart Form Builder: Helper Toolkit",
     "type": "project",
-    "instructions": "Use HTML helpers to make a form. Do this on a school laptop.\n1. Create an MVC project named SmartForm. Use the Student model from your last project, or make a new one.\n2. Make a Create page that uses Html.BeginForm, Html.LabelFor, Html.TextBoxFor, Html.DropDownListFor, Html.CheckBoxFor, and Html.TextAreaFor.\n3. Add a submit button and show the saved values on a confirmation page.\n4. Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the project working, (c) screenshots of the main pages, saved in the same folder.",
+    "instructions": "Use HTML helpers to make a form. Do this on a school laptop, using ASP.NET Core MVC (.NET 8) in Visual Studio Community (free).\n1. Create an MVC project named SmartForm. Use the Student model from your last project, or make a new one.\n2. Make a Create page that uses Html.BeginForm, Html.LabelFor, Html.TextBoxFor, Html.DropDownListFor, Html.CheckBoxFor, and Html.TextAreaFor.\n3. Add a submit button and show the saved values on a confirmation page.\n4. Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the project working, (c) screenshots of the main pages, saved in the same folder.",
     "points": 10,
     "component": "written"
   },
@@ -607,7 +607,7 @@
     "competency": "Create bridges between the http request and the action methods (Model Binding)",
     "title": "Data Binder Lab",
     "type": "project",
-    "instructions": "Practice model binding. Do this on a school laptop.\n1. Create an MVC project named DataBinder.\n2. Make an Enrollment model (Name, Strand, GradeLevel).\n3. Make a form that posts to an action. Show the model values on the next page.\n4. Make a second action that takes values from the query string and from the route, to compare the ways of binding.\n5. Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the project working, (c) screenshots of the main pages, saved in the same folder.",
+    "instructions": "Practice model binding. Do this on a school laptop, using ASP.NET Core MVC (.NET 8) in Visual Studio Community (free).\n1. Create an MVC project named DataBinder.\n2. Make an Enrollment model (Name, Strand, GradeLevel).\n3. Make a form that posts to an action. Show the model values on the next page.\n4. Make a second action that takes values from the query string and from the route, to compare the ways of binding.\n5. Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the project working, (c) screenshots of the main pages, saved in the same folder.",
     "points": 10,
     "component": "written"
   },
@@ -619,7 +619,7 @@
     "competency": "Discuss the framework of ASP.NET MVC – database and adding validation to a model",
     "title": "Smart Records System: Database & Validation",
     "type": "project",
-    "instructions": "Add a database and validation. Do this on a school laptop.\n1. Create an MVC project named SmartRecords with Entity Framework and a local database.\n2. Make a Learner model and add Required, StringLength, and Range validation attributes.\n3. Build Create, Read, Update, and Delete pages for learners.\n4. Show an error message when the form is not valid. Take screenshots of a failed and a good save.\n5. Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the project working, (c) screenshots of the main pages, saved in the same folder.",
+    "instructions": "Add a database and validation. Do this on a school laptop, using ASP.NET Core MVC (.NET 8) in Visual Studio Community (free).\n1. Create an MVC project named SmartRecords with Entity Framework Core and a local database (SQLite or LocalDB).\n2. Make a Learner model and add Required, StringLength, and Range validation attributes.\n3. Build Create, Read, Update, and Delete pages for learners.\n4. Show an error message when the form is not valid. Take screenshots of a failed and a good save.\n5. Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the project working, (c) screenshots of the main pages, saved in the same folder.",
     "points": 10,
     "component": "written"
   },
@@ -631,7 +631,7 @@
     "competency": "Execute security features in a web application",
     "title": "Secure Cache Builder",
     "type": "project",
-    "instructions": "Add security and caching. Do this on a school laptop.\n1. Open a project from a previous lesson, or make a new one named SecureCache.\n2. Add login with ASP.NET Identity or a simple authentication setup, and protect one page with [Authorize].\n3. Add output caching or memory caching to one page that shows data, and show the time it was made to prove the cache works.\n4. Write 3 sentences in the README about what you secured and why.\n5. Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the project working, (c) screenshots of the main pages, saved in the same folder.",
+    "instructions": "Add security and caching. Do this on a school laptop, using ASP.NET Core MVC (.NET 8) in Visual Studio Community (free).\n1. Open a project from a previous lesson, or make a new one named SecureCache.\n2. Add login with ASP.NET Identity or a simple authentication setup, and protect one page with [Authorize].\n3. Add output caching or memory caching to one page that shows data, and show the time it was made to prove the cache works.\n4. Write 3 sentences in the README about what you secured and why.\n5. Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the project working, (c) screenshots of the main pages, saved in the same folder.",
     "points": 10,
     "component": "written"
   },
@@ -643,7 +643,7 @@
     "competency": "Create ASP.NET MVC - web application program interface (API)",
     "title": "API Explorer: First RESTful Call",
     "type": "project",
-    "instructions": "Build and call a Web API. Do this on a school laptop.\n1. Create an ASP.NET Web API project named SchoolApi.\n2. Make a controller with GET (all and by id), POST, PUT, and DELETE for a list of learners or subjects.\n3. Test each call in the browser or in a tool like Postman, and take a screenshot of each result.\n4. Write the 5 URLs and what each one does in the README.\n5. Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the project working, (c) screenshots of the main pages, saved in the same folder.",
+    "instructions": "Build and call a Web API. Do this on a school laptop, using ASP.NET Core MVC (.NET 8) in Visual Studio Community (free).\n1. Create a project named SchoolApi with the ASP.NET Core Web API template.\n2. Make a controller with GET (all and by id), POST, PUT, and DELETE for a list of learners or subjects.\n3. Test each call in the browser or in a tool like Postman, and take a screenshot of each result.\n4. Write the 5 URLs and what each one does in the README.\n5. Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the API calls working, (c) screenshots of the API test results, saved in the same folder.",
     "points": 10,
     "component": "written"
   },
@@ -679,7 +679,7 @@
     "competency": "Suggested Performance Tasks (HTML & CSS)",
     "title": "Web Developer Bootcamp",
     "type": "project",
-    "instructions": "Web Developer Bootcamp: build a styled website from HTML to CSS. Work alone.\nRequired features:\n1. Install and set up an IDE; show a screenshot.\n2. A multi-page website with paragraphs, lists, multimedia, tables, links, iframe, and forms.\n3. CSS fundamentals and class and ID selectors for the design.\n4. A theme that fits a school or barangay topic.\nWhat to submit: Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the project working, (c) screenshots of the main pages, saved in the same folder.",
+    "instructions": "Web Developer Bootcamp: build a styled website from HTML to CSS. Work alone. Do this on a school laptop.\n1. Install and set up an IDE; show a screenshot.\n2. A multi-page website with paragraphs, lists, multimedia, tables, links, iframe, and forms.\n3. CSS fundamentals and class and ID selectors for the design.\n4. A theme that fits a school or barangay topic.\n5. Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the project working, (c) screenshots of the main pages, saved in the same folder.",
     "points": 50,
     "component": "performance"
   },
@@ -691,7 +691,7 @@
     "competency": "Suggested Performance Tasks (HTML & CSS)",
     "title": "Mini Web Agency Challenge",
     "type": "project",
-    "instructions": "Mini Web Agency Challenge: work as a web team and build, style, and present a website.\nOne member submits for the group; list all members' names in the project link's README or first slide.\nRequired features:\n1. Plan the site together: topic, pages, who does what.\n2. HTML: paragraphs, lists, multimedia, tables, links, iframe, and forms.\n3. CSS fundamentals and class and ID selectors.\n4. Present the finished site to the class.\nWhat to submit: Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the project working, (c) screenshots of the main pages, saved in the same folder.",
+    "instructions": "Mini Web Agency Challenge: work as a web team and build, style, and present a website. Do this on a school laptop.\n1. Plan the site together: topic, pages, who does what.\n2. HTML: paragraphs, lists, multimedia, tables, links, iframe, and forms.\n3. CSS fundamentals and class and ID selectors.\n4. Present the finished site to the class.\n5. Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the project working, (c) screenshots of the main pages, saved in the same folder. One member submits for the group; list all members' names in the project link's README or first slide.",
     "points": 50,
     "component": "performance"
   },
@@ -703,7 +703,7 @@
     "competency": "Suggested Performance Tasks (CSS & JavaScript)",
     "title": "Full Stack Front-End Builder",
     "type": "project",
-    "instructions": "Full Stack Front-End Builder: design a responsive site and add working JavaScript. Work alone.\nRequired features:\n1. A responsive website that uses CSS for text, fonts, colors, gradients, the box model, lists, links, positioning, flexbox, grid, pseudo-classes, an image gallery, and media queries.\n2. JavaScript with variables, data types, and functions.\n3. A short algorithm, pseudocode, and flowchart of one feature, as images in the folder.\nWhat to submit: Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the project working, (c) screenshots of the main pages, saved in the same folder.",
+    "instructions": "Full Stack Front-End Builder: design a responsive site and add working JavaScript. Work alone. A school laptop is recommended.\n1. A responsive website that uses CSS for text, fonts, colors, gradients, the box model, lists, links, positioning, flexbox, grid, pseudo-classes, an image gallery, and media queries.\n2. JavaScript with variables, data types, and functions.\n3. A short algorithm, pseudocode, and flowchart of one feature, as images in the folder.\n4. Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the project working, (c) screenshots of the main pages, saved in the same folder.",
     "points": 50,
     "component": "performance"
   },
@@ -715,7 +715,7 @@
     "competency": "Suggested Performance Tasks (CSS & JavaScript)",
     "title": "Web Development Studio",
     "type": "project",
-    "instructions": "Web Development Studio: plan and build a responsive, interactive site as a team.\nOne member submits for the group; list all members' names in the project link's README or first slide.\nRequired features:\n1. A responsive site with CSS layout, flexbox, grid, RWD, and effects.\n2. JavaScript with variables, data types, and functions.\n3. Algorithm, pseudocode, and flowchart for the system logic.\n4. A working prototype shown to the class.\nWhat to submit: Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the project working, (c) screenshots of the main pages, saved in the same folder.",
+    "instructions": "Web Development Studio: plan and build a responsive, interactive site as a team. A school laptop is recommended.\n1. A responsive site with CSS layout, flexbox, grid, RWD, and effects.\n2. JavaScript with variables, data types, and functions.\n3. Algorithm, pseudocode, and flowchart for the system logic.\n4. A working prototype shown to the class.\n5. Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the project working, (c) screenshots of the main pages, saved in the same folder. One member submits for the group; list all members' names in the project link's README or first slide.",
     "points": 50,
     "component": "performance"
   },
@@ -727,7 +727,7 @@
     "competency": "Suggested Performance Tasks (JavaScript & C#)",
     "title": "Full-Stack Logic Builder",
     "type": "project",
-    "instructions": "Full-Stack Logic Builder: join JavaScript and C# in one web app that stores data. Work alone.\nRequired features:\n1. A web app with JavaScript for the screen: operators, events, loops, arrays, objects, DOM, and control flow.\n2. C# for the logic: variables, data types, operators, loops, classes, and OOP.\n3. File I/O in C# to store and retrieve data.\n4. A README that explains how to run it.\nWhat to submit: Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the project working, (c) screenshots of the main pages, saved in the same folder.",
+    "instructions": "Full-Stack Logic Builder: join JavaScript and C# in one web app that stores data. Work alone. Do this on a school laptop.\n1. A web app with JavaScript for the screen: operators, events, loops, arrays, objects, DOM, and control flow.\n2. C# for the logic: variables, data types, operators, loops, classes, and OOP.\n3. File I/O in C# to store and retrieve data.\n4. A README that explains how to run it.\n5. Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the project working, (c) screenshots of the main pages, saved in the same folder.",
     "points": 50,
     "component": "performance"
   },
@@ -739,7 +739,7 @@
     "competency": "Suggested Performance Tasks (JavaScript & C#)",
     "title": "Web Dev Studio: Build, Code, and Store",
     "type": "project",
-    "instructions": "Web Dev Studio: Build, Code, and Store. Build a web-based system as a team.\nOne member submits for the group; list all members' names in the project link's README or first slide.\nRequired features:\n1. JavaScript for the screen: events, DOM, loops, arrays, objects, and control flow.\n2. C# for the back end: OOP, file I/O, data types, classes, and decision logic.\n3. Data that is saved and read back.\n4. A working prototype shown to the class.\nWhat to submit: Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the project working, (c) screenshots of the main pages, saved in the same folder.",
+    "instructions": "Web Dev Studio: Build, Code, and Store. Build a web-based system as a team. Do this on a school laptop.\n1. JavaScript for the screen: events, DOM, loops, arrays, objects, and control flow.\n2. C# for the back end: OOP, file I/O, data types, classes, and decision logic.\n3. Data that is saved and read back.\n4. A working prototype shown to the class.\n5. Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the project working, (c) screenshots of the main pages, saved in the same folder. One member submits for the group; list all members' names in the project link's README or first slide.",
     "points": 50,
     "component": "performance"
   },
@@ -751,7 +751,7 @@
     "competency": "Suggested Performance Tasks (ASP.NET MVC)",
     "title": "Full ASP.NET MVC Web Solutions",
     "type": "project",
-    "instructions": "Full ASP.NET MVC Web Solutions: from build to mobile. Do this on a school laptop. Work alone.\nRequired features:\n1. An ASP.NET MVC web app with routing, controllers, filters, models, helpers, model binding, and validation.\n2. Security, caching, and a Web API.\n3. A mobile version made with a third-party tool.\n4. A cost estimate with direct and indirect costs (a Google Sheet link in the README).\nWhat to submit: Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the project working, (c) screenshots of the main pages, saved in the same folder.",
+    "instructions": "Full ASP.NET MVC Web Solutions: from build to mobile. Work alone. Do this on a school laptop, using ASP.NET Core MVC (.NET 8) in Visual Studio Community (free).\n1. An ASP.NET Core MVC web app with routing, controllers, filters, models, helpers, model binding, and validation.\n2. Security, caching, and a Web API.\n3. A mobile version made with a third-party tool.\n4. A cost estimate with direct and indirect costs (a Google Sheet link in the README).\n5. Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the project working, (c) screenshots of the main pages, saved in the same folder.",
     "points": 50,
     "component": "performance"
   },
@@ -763,7 +763,7 @@
     "competency": "Suggested Performance Tasks (ASP.NET MVC)",
     "title": "Web Dev Agency Simulation",
     "type": "project",
-    "instructions": "Web Dev Agency Simulation: act as a web company. Do this on a school laptop.\nOne member submits for the group; list all members' names in the project link's README or first slide.\nRequired features:\n1. An MVC system with routing, models, views, APIs, security, and validation.\n2. A mobile app version.\n3. A cost estimate with direct and indirect costs (a Google Sheet link in the README).\n4. A final presentation to the class.\nWhat to submit: Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the project working, (c) screenshots of the main pages, saved in the same folder.",
+    "instructions": "Web Dev Agency Simulation: act as a web company. Do this on a school laptop, using ASP.NET Core MVC (.NET 8) in Visual Studio Community (free).\n1. An MVC system with routing, models, views, APIs, security, and validation.\n2. A mobile app version.\n3. A cost estimate with direct and indirect costs (a Google Sheet link in the README).\n4. A final presentation to the class.\n5. Submit: (a) your GitHub repo or Drive folder link, (b) a link to a 1-3 minute screen recording that shows the project working, (c) screenshots of the main pages, saved in the same folder. One member submits for the group; list all members' names in the project link's README or first slide.",
     "points": 50,
     "component": "performance"
   }
