@@ -16,9 +16,11 @@ import {
 import { getEmailConfig, saveEmailConfig, notifySection } from "./notify.js";
 import { toEmbedUrl, toPrintUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=7";
 import { loadWorkbook, readExamScores, pickBestSheet } from "./class-record.js?v=2";
-import { runJava } from "./runner.js";
+import { runCode } from "./runner.js?v=1";
+import { CODE_LANGS, langOf } from "./code-langs.js?v=1";
+import { mountPreview } from "./webpreview.js?v=1";
 import { setScreenshotBlock } from "./app-bridge.js?v=4";
-import { codeBlockHtml, highlightWithin } from "./highlight.js";
+import { codeBlockHtml, highlightWithin } from "./highlight.js?v=1";
 import { ttlForKey, STRUCTURE_KEYS, MISSING_TTL_MS, subjectShown, patchedDoc, approvedHeadcount } from "./teacher-reads.js?v=2";
 
 // AI rubric-check is hidden (not deleted) - per-call Gemini cost isn't
@@ -3575,6 +3577,18 @@ function syncQuizBuilderVisibility(prefix) {
   if (isQuiz && isAssignment && !quizBuilders.has(hostId)) {
     mountQuizBuilder(hostId, { topic: el(`${prefix}assignment-title`).value });
   }
+  const isCode = el(`${prefix}assignment-filetype`).value === "code";
+  el(`${prefix}assignment-code-wrap`).classList.toggle("hidden", !(isCode && isAssignment));
+}
+
+// Code assignments carry their language + optional starter code; other types
+// carry neither (so switching away from Code doesn't leave stale fields).
+function codeFields(prefix, filetype) {
+  if (filetype !== "code") return { codeLang: deleteField(), starterCode: deleteField() };
+  return {
+    codeLang: el(`${prefix}assignment-codelang`).value,
+    starterCode: el(`${prefix}assignment-starter`).value.replace(/\s+$/, ""),
+  };
 }
 el("assignment-filetype").addEventListener("change", () => syncQuizBuilderVisibility(""));
 el("edit-assignment-filetype").addEventListener("change", () => syncQuizBuilderVisibility("edit-"));
@@ -3681,6 +3695,7 @@ el("add-assignment-form").addEventListener("submit", async (e) => {
     totalPoints: Number(el("assignment-total-points").value) || 0,
     rubricReferenceLink: el("assignment-rubric-link").value.trim(),
   };
+  if (payload.allowedFileTypes === "code") Object.assign(payload, codeFields("", "code"));
   const quizData = payload.allowedFileTypes === "quiz" ? readQuizBuilder("assignment-quiz-builder") : null;
   if (payload.allowedFileTypes === "quiz") {
     if (!quizData) return;
@@ -3859,6 +3874,8 @@ async function openAssignment(assignmentId) {
   el("edit-assignment-component").value = data.component || "written";
   el("edit-assignment-due").value = data.dueDate || "";
   el("edit-assignment-filetype").value = data.allowedFileTypes || "document";
+  el("edit-assignment-codelang").value = langOf(data);
+  el("edit-assignment-starter").value = data.starterCode || "";
   el("edit-assignment-total-points").value = data.totalPoints ?? "";
   el("edit-assignment-rubric-link").value = data.rubricReferenceLink || "";
   // A material's edit form hides the graded-only fields, and points must not
@@ -3929,6 +3946,7 @@ el("edit-assignment-form").addEventListener("submit", async (e) => {
     totalPoints: Number(el("edit-assignment-total-points").value) || 0,
     rubricReferenceLink: el("edit-assignment-rubric-link").value.trim(),
   };
+  if (!isMaterial) Object.assign(payload, codeFields("edit-", payload.allowedFileTypes));
   if (!isMaterial && payload.allowedFileTypes === "quiz") {
     const quizData = readQuizBuilder("edit-assignment-quiz-builder");
     if (!quizData) return;
@@ -4702,11 +4720,16 @@ async function loadSubmissions(opts = {}) {
     // Pasted-code submissions (Code assignments): show the source highlighted,
     // the student's saved run output, and a Run button so the teacher can
     // re-run it here without leaving the review screen.
+    const lang = langOf(a);
+    const info = CODE_LANGS[lang];
     const codeBlock = s.code
-      ? codeBlockHtml(s.code, "java")
+      ? codeBlockHtml(s.code, info.hl)
         + (s.codeOutput ? `<div class="muted">Student's saved output</div><pre class="code-output">${escAttr(s.codeOutput)}</pre>` : "")
-        + `<div class="code-run"><button type="button" class="secondary" data-run-code="${d.id}">&#9654; Run this</button></div>`
-        + `<pre class="code-output hidden" data-teacher-output="${d.id}"></pre>`
+        + `<div class="code-run"><button type="button" class="secondary" data-run-code="${d.id}" data-lang="${lang}">${info.mode === "preview" ? "&#128065; Preview" : "&#9654; Run this"}</button></div>`
+        + `<pre class="code-output hidden" data-teacher-output="${d.id}"></pre><div class="hidden" data-teacher-preview="${d.id}"></div>`
+      : "";
+    const demoBlock = isHttpUrl(s.demoLink)
+      ? `<div class="muted">Demo video</div>${embedBlockFor(String(s.demoLink).trim(), { label: "Open demo video" })}`
       : "";
     const quizBlock = quiz ? quizResultHtml(d.id, s, a, quiz) : "";
     row.innerHTML = `
@@ -4718,6 +4741,7 @@ async function loadSubmissions(opts = {}) {
       ${quizBlock}
       ${quiz ? "" : codeBlock}
       ${quiz ? "" : linkBlock}
+      ${quiz ? "" : demoBlock}
       ${archivedNote}
       <div id="detail-${d.id}"></div>
       <div style="margin-top:0.5rem;">
@@ -4739,13 +4763,18 @@ async function loadSubmissions(opts = {}) {
       const codeEl = rowEl && rowEl.querySelector(".code-block code");
       const outPane = rowEl && rowEl.querySelector(`[data-teacher-output="${b.dataset.runCode}"]`);
       if (!codeEl || !outPane) return;
+      const runLang = b.dataset.lang || "java";
+      if (CODE_LANGS[runLang].mode === "preview") {
+        mountPreview(rowEl.querySelector(`[data-teacher-preview="${b.dataset.runCode}"]`), codeEl.textContent);
+        return;
+      }
       const original = b.textContent;
       b.disabled = true;
       b.textContent = "Running...";
       outPane.classList.remove("hidden");
       outPane.textContent = "Running...";
       try {
-        const { output } = await runJava(codeEl.textContent);
+        const { output } = await runCode(runLang, codeEl.textContent);
         outPane.textContent = output;
       } catch (err) {
         outPane.textContent = "Couldn't run: " + err.message;
@@ -5043,7 +5072,7 @@ async function renderPreviousAttempts(submissionId, assignmentId) {
       const work = attPages.length > 0
         ? `<div class="photo-thumbs">${attPages.map((p, n) => `<button type="button" class="photo-thumb-btn" data-photo-src="${escAttr(p)}" title="previous attempt - page ${n + 1}"><img src="${escAttr(p)}" /></button>`).join("")}</div>`
         : att.code
-          ? codeBlockHtml(att.code, "java") + (att.codeOutput ? `<div class="muted">Saved output</div><pre class="code-output">${escAttr(att.codeOutput)}</pre>` : "")
+          ? codeBlockHtml(att.code, CODE_LANGS[langOf(null)].hl) + (att.codeOutput ? `<div class="muted">Saved output</div><pre class="code-output">${escAttr(att.codeOutput)}</pre>` : "")
           : att.link
             ? (embedUrl
               ? `<iframe src="${escAttr(embedUrl)}" class="submission-preview"></iframe>`

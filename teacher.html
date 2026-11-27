@@ -427,10 +427,21 @@
             <select id="assignment-filetype">
               <option value="document">Document (Google Doc/PDF - "anyone with link")</option>
               <option value="code">Code (students paste &amp; run their code in-app; Gist/Doc link also OK)</option>
+              <option value="project">Project (laptop build: repo/Drive link + demo video + screenshots)</option>
               <option value="image">Image / slides (Drive or Slides link, "anyone with link")</option>
               <option value="video">Video (YouTube, unlisted)</option>
               <option value="quiz" hidden>Quiz</option>
             </select>
+            <div id="assignment-code-wrap" class="hidden">
+              <label>Code language</label>
+              <select id="assignment-codelang">
+                <option value="java">Java (Run)</option>
+                <option value="csharp">C# (Run)</option>
+                <option value="web">Web page: HTML, CSS, JavaScript (Preview)</option>
+              </select>
+              <label>Starter code (optional - learners see this in their code box)</label>
+              <textarea id="assignment-starter" rows="8" spellcheck="false"></textarea>
+            </div>
             </div>
             <div id="assignment-quiz-builder" class="hidden"></div>
             <div id="assignment-points-wrap">
@@ -504,10 +515,21 @@
             <select id="edit-assignment-filetype">
               <option value="document">Document (Google Doc/PDF - "anyone with link")</option>
               <option value="code">Code (students paste &amp; run their code in-app; Gist/Doc link also OK)</option>
+              <option value="project">Project (laptop build: repo/Drive link + demo video + screenshots)</option>
               <option value="image">Image / slides (Drive or Slides link, "anyone with link")</option>
               <option value="video">Video (YouTube, unlisted)</option>
               <option value="quiz" hidden>Quiz</option>
             </select>
+            <div id="edit-assignment-code-wrap" class="hidden">
+              <label>Code language</label>
+              <select id="edit-assignment-codelang">
+                <option value="java">Java (Run)</option>
+                <option value="csharp">C# (Run)</option>
+                <option value="web">Web page: HTML, CSS, JavaScript (Preview)</option>
+              </select>
+              <label>Starter code (optional - learners see this in their code box)</label>
+              <textarea id="edit-assignment-starter" rows="8" spellcheck="false"></textarea>
+            </div>
             </div>
             <div id="edit-assignment-quiz-builder" class="hidden"></div>
             <div id="edit-assignment-points-wrap">
