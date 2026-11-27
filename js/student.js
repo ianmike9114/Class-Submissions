@@ -1398,6 +1398,8 @@ function openAssignment(assignmentId) {
   const list = el("assignments-list");
   const card = list.querySelector(`[data-assignment-id="${assignmentId}"]`);
   if (!card) return;
+  // The list lives in #assignments-panel; a remembered Quizzes tab hides it, so Open would do nothing visible.
+  if (el("assignments-panel")?.classList.contains("hidden")) setStudentTab("assignments");
   list.querySelectorAll(".card.is-open").forEach((c) => c.classList.remove("is-open"));
   card.classList.add("is-open");
   el("assignment-empty")?.classList.add("hidden");
@@ -2655,7 +2657,7 @@ el("sign-out").addEventListener("click", signOutUser);
 // while the student has unsaved photos, typed code/link, or a quiz on screen
 // (then a toast asks them to refresh after submitting). A sessionStorage marker
 // stops a reload loop if a cached shell keeps serving the old version.
-const APP_VERSION = 6;
+const APP_VERSION = 7;
 let versionToastShown = false;
 
 function hasTypedWork() {

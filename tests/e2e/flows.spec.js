@@ -635,3 +635,37 @@ test("activity bank fills the assignment form", async ({ page }) => {
   await expect(page.locator("#assignment-starter")).toHaveValue(/static void Main/);
   await expect(page.locator("#assignment-total-points")).toHaveValue("10");
 });
+
+test("Open in the To-do box switches from the Quizzes tab to the Assignments tab", async ({ page }) => {
+  const errors = trackPageErrors(page);
+  const t = await page.context().browser().newPage();
+  await blockProduction(t);
+  t.on("dialog", (d) => d.accept());
+  await signIn(t, TEACHER, "Teacher One");
+  await t.waitForURL(/teacher\.html/);
+  await t.locator("#subjects-list [data-open]").first().click();
+  await t.locator("#sections-list [data-open]").first().click();
+  await t.locator("#view-section summary", { hasText: "Create" }).click();
+  await t.locator('[data-create-type="assignment"]').click();
+  await t.fill("#assignment-title", "E2E Tab Test");
+  await t.fill("#assignment-total-points", "5");
+  await t.locator("#create-submit-btn").click();
+  await expect(t.locator("#assignments-list")).toContainText("E2E Tab Test");
+  await t.close();
+
+  await signIn(page, STUDENT, "Juan Dela Cruz");
+  await page.waitForURL(/student\.html/);
+  await page.evaluate(() => localStorage.setItem("studentTab", "quizzes"));
+  await page.reload();
+  await expect(page.locator("#assignments-panel")).toBeHidden();
+
+  const jump = page.locator(".attn-card", { hasText: "E2E Tab Test" }).locator("[data-attn-jump]");
+  const id = await jump.getAttribute("data-attn-jump");
+  await jump.click();
+  await expect(page.locator("#assignments-panel")).toBeVisible();
+  await expect(page.locator("#tab-assignments")).toHaveAttribute("aria-selected", "true");
+  const card = page.locator(`#assignments-list [data-assignment-id="${id}"]`);
+  await expect(card).toHaveClass(/is-open/);
+  await expect(card).toBeVisible();
+  expect(errors, errors.join(" | ")).toEqual([]);
+});

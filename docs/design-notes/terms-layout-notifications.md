@@ -101,3 +101,5 @@ non-quiz, current-term map, so materials, quizzes and hidden-term sections are
 excluded. 5 per group, then "Show all (N)"; hidden when empty. Zero extra reads.
 **Up next** (`renderUpNext()`) now lists only unread materials, so no assignment
 shows in two adjacent boxes. Styles `.attn-*` in `css/style.css` (stacks at 640px).
+
+`openAssignment()` switches to the Assignments tab first when `#assignments-panel` is hidden (a remembered `studentTab` of "quizzes"), so every Open/Resubmit jump shows its card.
