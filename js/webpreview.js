@@ -10,9 +10,13 @@ function send(kind,args){try{parent.postMessage({__lmsPreview:1,kind:kind,text:A
 window.addEventListener("error",function(e){send("error",[e.message+(e.lineno?" (line "+e.lineno+")":"")])});
 })();<\/script>`;
 
+const KINDS = ["log", "info", "warn", "error"];
+export function safeKind(k) { return KINDS.includes(k) ? k : "log"; }
+const MAX_ENTRIES = 200;
+
 export function buildPreviewDoc(source) {
   const src = String(source || "");
-  const headOpen = src.match(/<head[^>]*>/i);
+  const headOpen = src.match(/<head(\s[^>]*)?>/i);
   if (headOpen) {
     const at = headOpen.index + headOpen[0].length;
     return src.slice(0, at) + CONSOLE_BRIDGE + src.slice(at);
@@ -29,10 +33,19 @@ export function mountPreview(container, source) {
   frame.setAttribute("title", "Preview of your web page");
   const log = document.createElement("ol");
   log.className = "web-console hidden";
+  let count = 0;
   const onMsg = (e) => {
     if (e.source !== frame.contentWindow || !e.data || e.data.__lmsPreview !== 1) return;
+    if (count > MAX_ENTRIES) return;
+    count++;
     const li = document.createElement("li");
-    li.className = `web-console-${e.data.kind}`;
+    if (count > MAX_ENTRIES) {
+      li.className = "web-console-warn";
+      li.textContent = "…more messages hidden";
+      log.appendChild(li);
+      return;
+    }
+    li.className = `web-console-${safeKind(e.data.kind)}`;
     li.textContent = String(e.data.text).slice(0, 500);
     log.appendChild(li);
     log.classList.remove("hidden");
