@@ -572,7 +572,7 @@ test("code lab: C# run, web preview and project submit on a phone", async ({ pag
   const openItem = async (title) => {
     const item = sp.locator(`.outline-item[data-title="${title}"]`).first();
     await item.waitFor({ state: "attached" });
-    await sp.evaluate(() => document.querySelectorAll("#course-outline details").forEach((d) => { d.open = true; }));
+    await sp.evaluate(() => document.querySelectorAll("#course-outline, #course-outline details").forEach((d) => { d.open = true; }));
     await item.click();
   };
 
