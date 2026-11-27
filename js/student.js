@@ -846,7 +846,7 @@ async function loadEverything() {
           <strong>${a.title}</strong> <span class="status-ai-drafted">Material</span>
           ${isDone ? '<span class="status-published"> ✓ Done</span>' : ""}
           ${isNew ? '<span class="status-pending"> New</span>' : ""}
-          ${instructionsText(a) ? `<p>${instructionsText(a)}</p>` : ""}
+          ${instructionsText(a) ? `<p class="instructions-text">${esc(instructionsText(a))}</p>` : ""}
           ${materialBlock(a)}
           <div style="margin-top:0.6rem;">
             <button type="button" class="${isDone ? "secondary" : ""}" data-toggle-done="${aDoc.id}" data-section="${a.sectionId}">
@@ -861,7 +861,7 @@ async function loadEverything() {
         row.innerHTML = `
           <strong>${a.title}</strong> <span class="muted">due ${a.dueDate || "no date"}</span>
           ${isNew ? '<span class="status-pending"> New</span>' : ""}
-          ${instructionsText(a) ? `<p>${instructionsText(a)}</p>` : ""}
+          ${instructionsText(a) ? `<p class="instructions-text">${esc(instructionsText(a))}</p>` : ""}
           ${instructionsFileBlock}
           ${uploadFolderBlock}
           ${a.allowedFileTypes === "quiz" ? "" : `<div class="muted">Type: ${a.allowedFileTypes}</div>`}
@@ -1936,6 +1936,11 @@ function wireSubmitForm(form) {
     const demoLink = demoEl ? demoEl.value.trim() : "";
     const extra = demoEl ? { demoLink } : {}; // only project forms carry demoLink
 
+    if (demoEl && !link) {
+      alert("Add your project link (GitHub repo or Drive folder) first.");
+      return;
+    }
+
     if (!link && !code && !demoLink && photoPages.length === 0) {
       alert(codeEl ? "Write your own code (change the starter), add a link, or take a photo first." : "Add a link or take a photo first.");
       return;
@@ -2009,14 +2014,17 @@ function wireCodeFileInput(input) {
     if (!textarea) return;
     const reader = new FileReader();
     reader.onerror = () => alert("Couldn't read that file.");
-    reader.onload = () => { textarea.value = String(reader.result || ""); };
+    reader.onload = () => {
+      textarea.value = String(reader.result || "");
+      pendingCodeOutput.delete(input.dataset.assignment); // new file -> old Run output is stale
+    };
     reader.readAsText(file);
     input.value = ""; // allow re-picking the same file after edits
   });
 }
 
 // The "Run" button for a code assignment: sends the pasted source to the free
-// Piston runner (js/runner.js) and shows the output. The result is stashed in
+// Wandbox runner (js/runner.js) and shows the output. The result is stashed in
 // pendingCodeOutput so it saves onto the submission when the student submits.
 function wireRunButton(btn) {
   // Edited code makes any earlier Run output stale, so don't save it.

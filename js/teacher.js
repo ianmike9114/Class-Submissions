@@ -3712,6 +3712,9 @@ el("bank-use").addEventListener("click", () => {
   if (f.codeLang) {
     el("assignment-codelang").value = f.codeLang;
     el("assignment-starter").value = f.starterCode;
+  } else {
+    el("assignment-codelang").value = "java";
+    el("assignment-starter").value = "";
   }
   syncQuizBuilderVisibility("");
   el("bank-picker").open = false;
@@ -3901,7 +3904,7 @@ function renderAssignmentContext(a) {
       <summary><strong>Instructions &amp; rubric (reference)</strong></summary>
       <div style="margin-top:0.75rem;">
         ${nothingToShow ? '<p class="muted">No instructions or rubric reference set for this assignment.</p>' : ""}
-        ${a.instructions ? `<p>${a.instructions}</p>` : ""}
+        ${a.instructions ? `<p class="instructions-text">${escAttr(a.instructions)}</p>` : ""}
         ${embedBlockFor(instructionsLink, { label: "Instructions file" })}
         ${a.uploadFolderLink ? `<div class="muted"><a href="${a.uploadFolderLink}" target="_blank" rel="noopener">Upload folder</a>${openInChromeButton(a.uploadFolderLink)}</div>` : ""}
         ${a.rubricReferenceLink ? `
@@ -4778,7 +4781,7 @@ async function loadSubmissions(opts = {}) {
     const codeBlock = s.code
       ? codeBlockHtml(s.code, info.hl)
         + (s.codeOutput ? `<div class="muted">Student's saved output</div><pre class="code-output">${escAttr(s.codeOutput)}</pre>` : "")
-        + `<div class="code-run"><button type="button" class="secondary" data-run-code="${d.id}" data-lang="${lang}">${info.mode === "preview" ? "&#128065; Preview" : "&#9654; Run this"}</button></div>`
+        + `<div class="code-run">${info.mode === "run" ? `<textarea class="code-stdin" rows="2" spellcheck="false" placeholder="Program input (optional, one answer per line)" data-teacher-stdin="${d.id}"></textarea>` : ""}<button type="button" class="secondary" data-run-code="${d.id}" data-lang="${lang}">${info.mode === "preview" ? "&#128065; Preview" : "&#9654; Run this"}</button></div>`
         + `<pre class="code-output hidden" data-teacher-output="${d.id}"></pre><div class="hidden" data-teacher-preview="${d.id}"></div>`
       : "";
     const demoBlock = isHttpUrl(s.demoLink)
@@ -4809,7 +4812,7 @@ async function loadSubmissions(opts = {}) {
   highlightWithin(list);
   const highlighted = list.querySelector('[data-search-highlight="true"]');
   if (highlighted) highlighted.scrollIntoView({ behavior: "smooth", block: "center" });
-  // Teacher-side Run of a pasted-code submission (reuses the Piston runner).
+  // Teacher-side Run of a pasted-code submission (reuses the Wandbox runner).
   list.querySelectorAll("[data-run-code]").forEach((b) =>
     b.addEventListener("click", async () => {
       const rowEl = b.closest(".card");
@@ -4827,7 +4830,8 @@ async function loadSubmissions(opts = {}) {
       outPane.classList.remove("hidden");
       outPane.textContent = "Running...";
       try {
-        const { output } = await runCode(runLang, codeEl.textContent);
+        const stdin = rowEl.querySelector(`[data-teacher-stdin="${b.dataset.runCode}"]`)?.value || "";
+        const { output } = await runCode(runLang, codeEl.textContent, stdin ? stdin.replace(/\s*$/, "\n") : "");
         outPane.textContent = output;
       } catch (err) {
         outPane.textContent = "Couldn't run: " + err.message;
@@ -5107,7 +5111,7 @@ async function runAiCheck(submissionId) {
 // like every other teacher read; sorted newest-first client-side so no
 // composite index is needed. Best-effort: any read error shows a friendly line
 // rather than breaking the review card.
-async function renderPreviousAttempts(submissionId, assignmentId) {
+async function renderPreviousAttempts(submissionId, assignmentId, a) {
   const host = el(`attempts-${submissionId}`);
   if (!host) return;
   try {
@@ -5125,7 +5129,7 @@ async function renderPreviousAttempts(submissionId, assignmentId) {
       const work = attPages.length > 0
         ? `<div class="photo-thumbs">${attPages.map((p, n) => `<button type="button" class="photo-thumb-btn" data-photo-src="${escAttr(p)}" title="previous attempt - page ${n + 1}"><img src="${escAttr(p)}" /></button>`).join("")}</div>`
         : att.code
-          ? codeBlockHtml(att.code, CODE_LANGS[langOf(null)].hl) + (att.codeOutput ? `<div class="muted">Saved output</div><pre class="code-output">${escAttr(att.codeOutput)}</pre>` : "")
+          ? codeBlockHtml(att.code, CODE_LANGS[langOf(a)].hl) + (att.codeOutput ? `<div class="muted">Saved output</div><pre class="code-output">${escAttr(att.codeOutput)}</pre>` : "")
           : att.link
             ? (embedUrl
               ? `<iframe src="${escAttr(embedUrl)}" class="submission-preview"></iframe>`
@@ -5194,7 +5198,7 @@ async function openReview(submissionId) {
     attemptsDetails.addEventListener("toggle", () => {
       if (attemptsDetails.open && !attemptsDetails.dataset.loaded) {
         attemptsDetails.dataset.loaded = "true";
-        renderPreviousAttempts(submissionId, s.assignmentId);
+        renderPreviousAttempts(submissionId, s.assignmentId, a);
       }
     }, { once: false });
   }

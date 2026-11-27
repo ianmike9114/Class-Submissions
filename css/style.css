@@ -1701,3 +1701,5 @@ body.quiz-open { overflow: hidden; }
 .web-console-error { color: var(--destructive); }
 .web-console-warn { color: var(--warning-text); }
 .code-stdin { font-family: var(--font-mono); }
+
+.instructions-text { white-space: pre-line; }

@@ -56,3 +56,4 @@ when needed. Read before editing this area; add new notes for this area here.
   and PTs; Swing weeks use `project`, Scanner-based starters for run items), then
   add a "Computer Programming (Java)" option to `#bank-subject` in `teacher.html`.
   No other code changes: loader, picker and fields are subject-agnostic.
+- **CSP note.** The CSP is report-only today. If it is ever enforced, srcdoc previews inherit `default-src 'self'` / `form-action 'self'`, so learner pages could not load outside images, CSS or forms.
