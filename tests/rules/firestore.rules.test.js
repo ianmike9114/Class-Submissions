@@ -348,6 +348,26 @@ describe("submissions: create field list and size checks", () => {
 });
 
 describe("submissions: student edits are field-limited and status-gated", () => {
+  it("student can set a demoLink on create and edit (project submissions)", async () => {
+    const db = ctxFor("student9", "s9@x.com");
+    await assertSucceeds(setDoc(doc(db, "submissions", "a1_student9"), {
+      assignmentId: "a1", studentUID: "student9", ownerEmail: TEACHER_A, status: "pending",
+      link: "https://github.com/x/y", demoLink: "https://youtu.be/demo", submittedAt: 1,
+    }));
+    const db1 = ctxFor("student1", "s1@x.com");
+    await assertSucceeds(updateDoc(doc(db1, "submissions", "subA_stud1"), {
+      demoLink: "https://youtu.be/new", status: "pending", submittedAt: 2,
+    }));
+  });
+  it("demoLink must be a short string", async () => {
+    const db1 = ctxFor("student1", "s1@x.com");
+    await assertFails(updateDoc(doc(db1, "submissions", "subA_stud1"), {
+      demoLink: "x".repeat(2000), status: "pending", submittedAt: 2,
+    }));
+    await assertFails(updateDoc(doc(db1, "submissions", "subA_stud1"), {
+      demoLink: 5, status: "pending", submittedAt: 2,
+    }));
+  });
   it("student can edit their own pending submission's link (re-queues it)", async () => {
     const db = ctxFor("student1", "s1@x.com");
     await assertSucceeds(

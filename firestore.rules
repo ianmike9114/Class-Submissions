@@ -165,14 +165,17 @@ service cloud.firestore {
                     && !request.resource.data.keys().hasAny(['finalGrade', 'returnCount', 'publishedAt', 'aiDraft'])
                     // Only the fields the client's two create paths write (file
                     // submit + quiz submit), plus legacy photoData from pages
-                    // that predate photoPages. Anything else is rejected.
+                    // that predate photoPages, plus demoLink (the demo video link
+                    // on project submissions). Anything else is rejected.
                     && request.resource.data.keys().hasOnly([
                          'assignmentId', 'studentUID', 'studentName', 'ownerEmail', 'status',
-                         'link', 'code', 'codeOutput', 'photoPages', 'photoData', 'submittedAt',
+                         'link', 'demoLink', 'code', 'codeOutput', 'photoPages', 'photoData', 'submittedAt',
                          'quizAnswers', 'quizServed', 'quizLog', 'quizSubmittedAt'
                        ])
                     && (!('link' in request.resource.data)
                         || (request.resource.data.link is string && request.resource.data.link.size() < 2000))
+                    && (!('demoLink' in request.resource.data)
+                        || (request.resource.data.demoLink is string && request.resource.data.demoLink.size() < 2000))
                     && (!('photoPages' in request.resource.data)
                         || (request.resource.data.photoPages is list && request.resource.data.photoPages.size() <= 15));
       // The owner branch is spelled out as a DIRECT
@@ -209,9 +212,11 @@ service cloud.firestore {
                         && resource.data.studentUID == request.auth.uid
                         && (resource.data.status == "pending" || resource.data.status == "returned")
                         && request.resource.data.status == "pending"
-                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['link', 'code', 'codeOutput', 'photoPages', 'status', 'submittedAt'])
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['link', 'demoLink', 'code', 'codeOutput', 'photoPages', 'status', 'submittedAt'])
                         && (!('link' in request.resource.data)
                             || (request.resource.data.link is string && request.resource.data.link.size() < 2000))
+                        && (!('demoLink' in request.resource.data)
+                            || (request.resource.data.demoLink is string && request.resource.data.demoLink.size() < 2000))
                         && (!('photoPages' in request.resource.data)
                             || (request.resource.data.photoPages is list && request.resource.data.photoPages.size() <= 15)))
                     || (isSignedIn()
