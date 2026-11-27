@@ -1926,7 +1926,10 @@ function wireSubmitForm(form) {
     const originalLabel = btn.textContent;
     const link = form.querySelector(".submission-link").value.trim();
     const codeEl = form.querySelector(".submission-code");
-    const code = codeEl ? codeEl.value.trim() : "";
+    let code = codeEl ? codeEl.value.trim() : "";
+    // On a first submit, an untouched starter is not the student's work.
+    const starter = String(assignmentsById.get(assignmentId)?.starterCode || "").trim();
+    if (!submissionId && code && starter && code === starter) code = "";
     const codeOutput = code ? (pendingCodeOutput.get(assignmentId) || "") : "";
     const photoPages = pendingPhotos.get(assignmentId) || [];
     const demoEl = form.querySelector(".submission-demo");
@@ -1934,7 +1937,7 @@ function wireSubmitForm(form) {
     const extra = demoEl ? { demoLink } : {}; // only project forms carry demoLink
 
     if (!link && !code && !demoLink && photoPages.length === 0) {
-      alert(codeEl ? "Paste your code, add a link, or take a photo first." : "Add a link or take a photo first.");
+      alert(codeEl ? "Write your own code (change the starter), add a link, or take a photo first." : "Add a link or take a photo first.");
       return;
     }
 
@@ -2016,6 +2019,9 @@ function wireCodeFileInput(input) {
 // Piston runner (js/runner.js) and shows the output. The result is stashed in
 // pendingCodeOutput so it saves onto the submission when the student submits.
 function wireRunButton(btn) {
+  // Edited code makes any earlier Run output stale, so don't save it.
+  const codeBox = btn.closest(".submit-form")?.querySelector(".submission-code");
+  if (codeBox) codeBox.addEventListener("input", () => pendingCodeOutput.delete(btn.dataset.assignment));
   btn.addEventListener("click", async () => {
     const assignmentId = btn.dataset.assignment;
     const form = btn.closest(".submit-form");

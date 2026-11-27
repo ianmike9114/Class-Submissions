@@ -570,6 +570,9 @@ test("code lab: C# run, web preview and project submit on a phone", async ({ pag
   await cs.locator(".submission-run").click();
   await expect(cs.locator(".code-output")).toHaveText("Hi Ana");
   await cs.locator('button[type="submit"]').click();
+  // Wait until the C# card re-rendered as submitted, then re-open the outline.
+  await expect(sp.locator(".card", { hasText: "E2E CSharp" }).first()).toContainText("Submitted, pending review");
+  await sp.evaluate(() => document.querySelectorAll("#course-outline details").forEach((d) => { d.open = true; }));
 
   const web = sp.locator(".submit-form").filter({ hasText: "Web page" }).first();
   await web.locator(".submission-run").click();
@@ -581,7 +584,9 @@ test("code lab: C# run, web preview and project submit on a phone", async ({ pag
   await proj.locator(".submission-link").fill("https://github.com/juan/mvc-app");
   await proj.locator(".submission-demo").fill("https://youtu.be/dQw4w9WgXcQ");
   await proj.locator('button[type="submit"]').click();
-  await expect(sp.locator("body")).toContainText("Submitted");
+  const projCard = sp.locator(".card", { hasText: "E2E Project" }).first();
+  await expect(projCard).toContainText("Submitted, pending review");
+  await expect(projCard).toContainText("Open your demo video");
   await phone.close();
   expect(errors, errors.join(" | ")).toEqual([]);
 });
