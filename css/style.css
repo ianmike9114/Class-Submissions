@@ -1693,3 +1693,11 @@ body.quiz-open { overflow: hidden; }
   .scores-matrix input.manual-score,
   .material-viewer-head a.material-download { min-height: 44px; }
 }
+
+/* Code Lab: live web preview (js/webpreview.js). Tokens flip with .dark; the
+   frame itself stays white because learner pages assume a light canvas. */
+.web-preview { width: 100%; height: 320px; border: 1px solid var(--border); border-radius: var(--radius-md); background: #fff; }
+.web-console { margin: 0.4rem 0 0; padding: 0.4rem 0.6rem 0.4rem 1.8rem; font: 0.8rem/1.4 var(--font-mono); color: var(--foreground); background: var(--muted); border: 1px solid var(--border); border-radius: var(--radius-md); max-height: 160px; overflow: auto; }
+.web-console-error { color: var(--destructive); }
+.web-console-warn { color: var(--warning-text); }
+.code-stdin { font-family: var(--font-mono); }

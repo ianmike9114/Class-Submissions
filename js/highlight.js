@@ -37,9 +37,12 @@ async function ensureHljs() {
       document.head.appendChild(link);
     }
     const core = await import(`${CDN}/es/core.min.js`);
-    const java = await import(`${CDN}/es/languages/java.min.js`);
     const hljs = core.default;
-    hljs.registerLanguage("java", java.default);
+    const langs = { java: "java", csharp: "csharp", xml: "xml", css: "css", javascript: "javascript" };
+    await Promise.all(Object.entries(langs).map(async ([name, file]) => {
+      const mod = await import(`${CDN}/es/languages/${file}.min.js`);
+      hljs.registerLanguage(name, mod.default);
+    }));
     _hljs = hljs;
   } catch (e) {
     console.warn("highlight.js failed to load - code shows unhighlighted:", e.message);
