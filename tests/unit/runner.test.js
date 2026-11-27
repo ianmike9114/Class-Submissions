@@ -9,7 +9,7 @@
 // (fast, offline, deterministic) - we only assert its never-throws contract.
 
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { stripTopLevelPublic, runJava } from "../../js/runner.js";
+import { stripTopLevelPublic, runJava, runCode } from "../../js/runner.js";
 
 describe("stripTopLevelPublic", () => {
   it("strips public from a top-level class", () => {
@@ -99,5 +99,46 @@ describe("runJava (mocked fetch, never throws)", () => {
     const r = await runJava("class Main { int x }");
     expect(r.ok).toBe(false);
     expect(r.output).toMatch(/expected/);
+  });
+});
+
+describe("runCode", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("sends C# to the mono compiler with stdin, source untouched", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      json: async () => ({ status: "0", program_output: "Hi Ana\n" }),
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+    const src = "public class Program { static void Main() {} }";
+    const r = await runCode("csharp", src, "Ana\n");
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(body).toEqual({ compiler: "mono-6.12.0.199", code: src, stdin: "Ana\n" });
+    expect(r).toEqual({ ok: true, output: "Hi Ana" });
+  });
+
+  it("strips top-level public only for java", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ status: "0" }) });
+    vi.stubGlobal("fetch", fetchSpy);
+    await runCode("java", "public class Main {}");
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body).code).toBe("class Main {}");
+  });
+
+  it("refuses web (preview-only) without calling the network", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const r = await runCode("web", "<p>x</p>");
+    expect(r.ok).toBe(false);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("explains the top-level-statements error for C#", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      json: async () => ({ status: "1", compiler_error: "prog.cs(1,0): error CS1525: Unexpected symbol `System'\n" }),
+    }));
+    const r = await runCode("csharp", "System.Console.WriteLine(1);");
+    expect(r.output).toMatch(/class Program/);
   });
 });

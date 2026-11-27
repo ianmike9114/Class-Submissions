@@ -151,6 +151,7 @@ not here, so they are not loaded into every session.
 | Terms, layout and notifications | `docs/design-notes/terms-layout-notifications.md` | current-term filter, organized layout, mobile breakpoint, new-joins bell, Email class (Gmail) |
 | Security | `docs/design-notes/security.md` | what the rules enforce, known residuals, Vercel headers + CSP report-only, Firebase console checklist (also for the graduate tracer) |
 | Agents | `docs/design-notes/agents.md` | Module Publisher + Auto-Grader agents, `tools/lms-agent/` admin scripts, owner lock, auto-publish guardrails, audit/undo, answer-key rule |
+| Code Lab (.NET/Java) | `docs/design-notes/code-lab.md` | code languages, C# run, web preview sandbox, project submissions, activity bank |
 
 **Sync rule:** a change that adds or alters a deliberate limitation or feature
 decision must update the matching `docs/design-notes/` file in the same

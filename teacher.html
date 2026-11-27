@@ -29,7 +29,7 @@
       if (t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches) document.documentElement.classList.add("dark"); })();
   </script>
   <script src="js/theme.js?v=1" defer></script>
-  <link rel="stylesheet" href="css/style.css?v=63" />
+  <link rel="stylesheet" href="css/style.css?v=64" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="theme-color" content="#ffffff" />
   <link rel="apple-touch-icon" href="/icons/icon-192.png" />
@@ -395,6 +395,22 @@
             Creating: <strong id="create-type-label">Assignment</strong>
             <button type="button" class="secondary" id="create-type-change" style="margin-left:0.5rem;">Change</button>
           </p>
+          <div class="assignment-only">
+            <details id="bank-picker" class="not-quiz" style="margin:0.5rem 0;">
+              <summary>&#128218; Use a ready activity (Budget of Work)</summary>
+              <label>Subject</label>
+              <select id="bank-subject">
+                <option value="">Choose...</option>
+                <option value="dotnet">Computer Programming (.NET Technology)</option>
+              </select>
+              <label>Week</label>
+              <select id="bank-week" disabled></select>
+              <label>Activity</label>
+              <select id="bank-activity" disabled></select>
+              <p class="muted" id="bank-competency"></p>
+              <button type="button" class="secondary" id="bank-use" disabled>Fill in the form</button>
+            </details>
+          </div>
           <label>Title</label>
           <input id="assignment-title" required placeholder="e.g. Performance Task 1" />
           <label>Topic (groups this in the student's course outline)</label>
@@ -427,10 +443,21 @@
             <select id="assignment-filetype">
               <option value="document">Document (Google Doc/PDF - "anyone with link")</option>
               <option value="code">Code (students paste &amp; run their code in-app; Gist/Doc link also OK)</option>
+              <option value="project">Project (laptop build: repo/Drive link + demo video + screenshots)</option>
               <option value="image">Image / slides (Drive or Slides link, "anyone with link")</option>
               <option value="video">Video (YouTube, unlisted)</option>
               <option value="quiz" hidden>Quiz</option>
             </select>
+            <div id="assignment-code-wrap" class="hidden">
+              <label>Code language</label>
+              <select id="assignment-codelang">
+                <option value="java">Java (Run)</option>
+                <option value="csharp">C# (Run)</option>
+                <option value="web">Web page: HTML, CSS, JavaScript (Preview)</option>
+              </select>
+              <label>Starter code (optional - learners see this in their code box)</label>
+              <textarea id="assignment-starter" rows="8" spellcheck="false"></textarea>
+            </div>
             </div>
             <div id="assignment-quiz-builder" class="hidden"></div>
             <div id="assignment-points-wrap">
@@ -504,10 +531,21 @@
             <select id="edit-assignment-filetype">
               <option value="document">Document (Google Doc/PDF - "anyone with link")</option>
               <option value="code">Code (students paste &amp; run their code in-app; Gist/Doc link also OK)</option>
+              <option value="project">Project (laptop build: repo/Drive link + demo video + screenshots)</option>
               <option value="image">Image / slides (Drive or Slides link, "anyone with link")</option>
               <option value="video">Video (YouTube, unlisted)</option>
               <option value="quiz" hidden>Quiz</option>
             </select>
+            <div id="edit-assignment-code-wrap" class="hidden">
+              <label>Code language</label>
+              <select id="edit-assignment-codelang">
+                <option value="java">Java (Run)</option>
+                <option value="csharp">C# (Run)</option>
+                <option value="web">Web page: HTML, CSS, JavaScript (Preview)</option>
+              </select>
+              <label>Starter code (optional - learners see this in their code box)</label>
+              <textarea id="edit-assignment-starter" rows="8" spellcheck="false"></textarea>
+            </div>
             </div>
             <div id="edit-assignment-quiz-builder" class="hidden"></div>
             <div id="edit-assignment-points-wrap">
@@ -554,7 +592,7 @@
     <button type="button" id="photo-lightbox-close" aria-label="Close preview">&times;</button>
   </div>
 
-  <script type="module" src="js/teacher.js?v=127"></script>
+  <script type="module" src="js/teacher.js?v=128"></script>
 
   <!-- PWA: register the service worker (see sw.js). Failure swallowed. -->
   <script>
