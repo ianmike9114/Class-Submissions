@@ -590,3 +590,22 @@ test("code lab: C# run, web preview and project submit on a phone", async ({ pag
   await phone.close();
   expect(errors, errors.join(" | ")).toEqual([]);
 });
+
+test("activity bank fills the assignment form", async ({ page }) => {
+  await signIn(page, TEACHER, "Teacher One");
+  await page.waitForURL(/teacher\.html/);
+  await page.locator("#subjects-list [data-open]").first().click();
+  await page.locator("#sections-list [data-open]").first().click();
+  await page.locator("#view-section summary", { hasText: "Create" }).click();
+  await page.locator('[data-create-type="assignment"]').click();
+  await page.locator("#bank-picker summary").click();
+  await page.selectOption("#bank-subject", "dotnet");
+  await page.selectOption("#bank-week", "6");
+  await page.selectOption("#bank-activity", "net-w6-02");
+  await page.locator("#bank-use").click();
+  await expect(page.locator("#assignment-title")).toHaveValue("Decision Engine: C# Logic Builder");
+  await expect(page.locator("#assignment-filetype")).toHaveValue("code");
+  await expect(page.locator("#assignment-codelang")).toHaveValue("csharp");
+  await expect(page.locator("#assignment-starter")).toHaveValue(/static void Main/);
+  await expect(page.locator("#assignment-total-points")).toHaveValue("10");
+});

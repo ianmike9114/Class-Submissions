@@ -395,6 +395,22 @@
             Creating: <strong id="create-type-label">Assignment</strong>
             <button type="button" class="secondary" id="create-type-change" style="margin-left:0.5rem;">Change</button>
           </p>
+          <div class="assignment-only">
+            <details id="bank-picker" class="not-quiz" style="margin:0.5rem 0;">
+              <summary>&#128218; Use a ready activity (Budget of Work)</summary>
+              <label>Subject</label>
+              <select id="bank-subject">
+                <option value="">Choose...</option>
+                <option value="dotnet">Computer Programming (.NET Technology)</option>
+              </select>
+              <label>Week</label>
+              <select id="bank-week" disabled></select>
+              <label>Activity</label>
+              <select id="bank-activity" disabled></select>
+              <p class="muted" id="bank-competency"></p>
+              <button type="button" class="secondary" id="bank-use" disabled>Fill in the form</button>
+            </details>
+          </div>
           <label>Title</label>
           <input id="assignment-title" required placeholder="e.g. Performance Task 1" />
           <label>Topic (groups this in the student's course outline)</label>

@@ -17,6 +17,7 @@ import { getEmailConfig, saveEmailConfig, notifySection } from "./notify.js";
 import { toEmbedUrl, toPrintUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=7";
 import { loadWorkbook, readExamScores, pickBestSheet } from "./class-record.js?v=2";
 import { runCode } from "./runner.js?v=1";
+import { loadBank, weeksOf, toAssignmentFields } from "./activity-bank.js?v=1";
 import { CODE_LANGS, langOf } from "./code-langs.js?v=1";
 import { mountPreview } from "./webpreview.js?v=1";
 import { setScreenshotBlock } from "./app-bridge.js?v=4";
@@ -3658,12 +3659,64 @@ function resetCreateType() {
   form.reset();
   resetQuizBuilder("assignment-quiz-builder");
   syncQuizBuilderVisibility("");
+  el("bank-week").innerHTML = ""; el("bank-activity").innerHTML = "";
+  el("bank-week").disabled = el("bank-activity").disabled = el("bank-use").disabled = true;
+  el("bank-competency").textContent = "";
+  el("bank-picker").open = false;
   form.classList.add("hidden");
   el("create-type-choice").classList.remove("hidden");
 }
 document.querySelectorAll("[data-create-type]").forEach((b) =>
   b.addEventListener("click", () => setCreateType(b.dataset.createType)));
 el("create-type-change").addEventListener("click", resetCreateType);
+
+// Activity Bank: fills the add-assignment form from a ready BOW activity. It
+// never saves - the teacher reviews and presses Add, so the normal create path
+// (touchSection, notifications) runs unchanged.
+let bankEntries = [];
+el("bank-subject").addEventListener("change", async () => {
+  const subject = el("bank-subject").value;
+  el("bank-week").innerHTML = ""; el("bank-activity").innerHTML = "";
+  el("bank-week").disabled = el("bank-activity").disabled = el("bank-use").disabled = true;
+  el("bank-competency").textContent = "";
+  if (!subject) return;
+  try { bankEntries = await loadBank(subject); }
+  catch (err) { alert(err.message); return; }
+  el("bank-week").innerHTML = `<option value="">Choose...</option>` +
+    weeksOf(bankEntries).map((w) => `<option value="${w}">Week ${w}</option>`).join("");
+  el("bank-week").disabled = false;
+});
+el("bank-week").addEventListener("change", () => {
+  const week = Number(el("bank-week").value);
+  const list = bankEntries.filter((e) => e.week === week);
+  el("bank-activity").innerHTML = `<option value="">Choose...</option>` +
+    list.map((e) => `<option value="${escAttr(e.id)}">${escAttr(e.title)}</option>`).join("");
+  el("bank-activity").disabled = !list.length;
+  el("bank-use").disabled = true;
+  el("bank-competency").textContent = "";
+});
+el("bank-activity").addEventListener("change", () => {
+  const entry = bankEntries.find((e) => e.id === el("bank-activity").value);
+  el("bank-competency").textContent = entry ? `Competency: ${entry.competency}` : "";
+  el("bank-use").disabled = !entry;
+});
+el("bank-use").addEventListener("click", () => {
+  const entry = bankEntries.find((e) => e.id === el("bank-activity").value);
+  if (!entry) return;
+  const f = toAssignmentFields(entry);
+  el("assignment-title").value = f.title;
+  el("assignment-instructions").value = f.instructions;
+  el("assignment-filetype").value = f.allowedFileTypes;
+  el("assignment-total-points").value = f.totalPoints;
+  el("assignment-component").value = f.component;
+  if (f.codeLang) {
+    el("assignment-codelang").value = f.codeLang;
+    el("assignment-starter").value = f.starterCode;
+  }
+  syncQuizBuilderVisibility("");
+  el("bank-picker").open = false;
+  toast("Filled in - check the details, set a due date, then add it.");
+});
 
 el("add-assignment-form").addEventListener("submit", async (e) => {
   e.preventDefault();
