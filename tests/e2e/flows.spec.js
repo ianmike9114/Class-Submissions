@@ -669,3 +669,31 @@ test("Open in the To-do box switches from the Quizzes tab to the Assignments tab
   await expect(card).toBeVisible();
   expect(errors, errors.join(" | ")).toEqual([]);
 });
+
+// Regression (Nov 2026): with two LMS tabs open, every page load made Firebase
+// move the saved session from localStorage to IndexedDB and back (getAuth()'s
+// default store + setPersistence(local)). The brief localStorage delete reached
+// the OTHER tab as "signed out", so its guardPage() bounced to the login page,
+// and the two tabs kept knocking each other out. One fixed store stops it.
+test("a second open tab does not knock the first tab back to the login page", async ({ page }) => {
+  const errors = trackPageErrors(page);
+  await signIn(page, STUDENT, "Juan Dela Cruz");
+  await page.waitForURL(/student\.html/);
+  await expect(page.locator("#sign-out")).toBeVisible();
+  const hitLogin = [];
+  page.on("framenavigated", (f) => { if (f === page.mainFrame() && /index\.html/.test(f.url())) hitLogin.push(f.url()); });
+
+  const tab2 = await page.context().newPage();
+  await blockProduction(tab2);
+  for (let i = 0; i < 3; i++) {
+    await tab2.goto("/student.html?emu=1");
+    await expect(tab2.locator("#sign-out")).toBeVisible();
+  }
+  await page.waitForTimeout(1500);
+  expect(hitLogin, "first tab was sent to the login page").toEqual([]);
+  await expect(page).toHaveURL(/student\.html/);
+  await page.reload();
+  await expect(page).toHaveURL(/student\.html/);
+  await tab2.close();
+  expect(errors, errors.join(" | ")).toEqual([]);
+});

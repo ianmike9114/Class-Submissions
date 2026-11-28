@@ -52,6 +52,16 @@ when needed. Read before editing this area; add new notes for this area here.
   shows `#app-email-link`, where the student sends the link and **pastes** it
   back (`completeEmailLinkSignIn(email, href)` takes the pasted link) - tapping
   it would complete sign-in in the browser, not the app.
+- **One fixed session store (`initializeAuth`, not `getAuth` + `setPersistence`).**
+  `js/firebase-config.js` creates auth with `persistence: [browserLocalPersistence,
+  indexedDBLocalPersistence]`. The old pair made every page load move the session
+  localStorage -> IndexedDB (SDK default) -> localStorage; the brief localStorage
+  delete reached every other open tab as "signed out", its `guardPage()` sent it to
+  the login page, and two open tabs kept knocking each other out ("dashboard, then
+  back to login", Brave, Nov 2026). localStorage stays first because that is where
+  existing sessions live, so nobody is signed out by the change. Do not add
+  `setPersistence()` back. Regression test: the two-tab test at the end of
+  `tests/e2e/flows.spec.js`.
 - **"Remember this device" + sign-in bounce breaker.** `js/auth.js` stores
   the signed-in email (`lms.rememberEmail`, email only — no token) when the
   login page's "Remember this device" box is ticked (default; opt-out per
