@@ -14,6 +14,8 @@ import {
   extractFirstEmbeddableUrl,
   embedBlockFor,
   openInChromeButton,
+  isIOS,
+  usesIosFileCard,
 } from "../../js/embed.js";
 
 describe("extractDriveFileId", () => {
@@ -139,6 +141,36 @@ describe("embedBlockFor", () => {
     expect(html).toContain("<a href=");
     expect(html).toContain("Open gist");
     expect(html).not.toContain("<iframe");
+  });
+
+  it("iPhone: a Drive file gets the picture + Open card, not the iframe", () => {
+    vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)" });
+    const link = "https://drive.google.com/file/d/ABC123/view?usp=sharing";
+    const html = embedBlockFor(link, { variant: "material" });
+    expect(html).not.toContain("<iframe");
+    expect(html).toContain("ios-file-card");
+    expect(html).toContain("drive.google.com/thumbnail?id=ABC123");
+    expect(html).toContain(`href="${link}"`);
+    expect(usesIosFileCard(link)).toBe(true);
+  });
+
+  it("iPhone: Docs links and protected Drive files keep the iframe", () => {
+    vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)" });
+    expect(embedBlockFor("https://docs.google.com/document/d/DOC1/edit")).toContain("<iframe");
+    const bare = embedBlockFor("https://drive.google.com/file/d/ABC123/view", { bare: true });
+    expect(bare).toContain("<iframe");
+    expect(bare).not.toContain("ios-file-card");
+    expect(usesIosFileCard("https://docs.google.com/document/d/DOC1/edit")).toBe(false);
+  });
+
+  it("isIOS: iPadOS (Mac UA + touch) yes, real Mac and Android no", () => {
+    vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", maxTouchPoints: 5 });
+    expect(isIOS()).toBe(true);
+    vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", maxTouchPoints: 0 });
+    expect(isIOS()).toBe(false);
+    vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (Linux; Android 14)" });
+    expect(isIOS()).toBe(false);
+    expect(embedBlockFor("https://drive.google.com/file/d/ABC123/view")).toContain("<iframe");
   });
 
   it("returns empty string for no link", () => {

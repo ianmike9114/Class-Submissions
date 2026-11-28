@@ -44,6 +44,18 @@ when needed. Read before editing this area; add new notes for this area here.
   as `index.html`'s in-app-browser escape hatch. Renders nothing on
   iOS — Apple gives pages no way to pick handler app, so no equivalent
   fix there (same conclusion as iOS Code Scanner QR issue).
+- **iPhone/iPad: Drive files show a picture + Open button, not the iframe.**
+  Safari (every iOS browser is WebKit) blocks Google's cookies inside our
+  page, so Drive's `/file/d/<id>/preview` frame often shows "Couldn't preview
+  file / There was a problem loading this page" (reported Nov 2026, Tagalog
+  UI, mostly uploaded .docx/.pptx and big PDFs); the page can't detect it.
+  `js/embed.js`'s `embedBlockFor()` therefore returns `iosFileCard()` on iOS
+  (`isIOS()`, iPadOS Mac UA + touch included) for single Drive files: the
+  `drive.google.com/thumbnail?id=` first page (hidden if it fails) and a big
+  "Open the file" button. Docs/Slides/Sheets, folders and YouTube keep the
+  iframe. Protected files (`bare`) keep the iframe too, since no link may be
+  handed out. `materialBlock()` skips its "Open it directly" footer then
+  (`usesIosFileCard()`).
 - **Download button on module/worksheet files (offline reading).**
   `js/student.js`'s `materialBlock()` adds "⬇ Download" to the file viewer of
   materials and graded assignments, using `js/embed.js`'s `toDownloadUrl()`

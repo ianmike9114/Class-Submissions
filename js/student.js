@@ -6,7 +6,7 @@ import { startApkDownload } from "./pwa-install.js?v=3";
 import {
   collection, addDoc, setDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, query, where, arrayUnion, arrayRemove, serverTimestamp, documentId, onSnapshot,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { toEmbedUrl, toDownloadUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=7";
+import { toEmbedUrl, toDownloadUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor, usesIosFileCard } from "./embed.js?v=8";
 import { runCode } from "./runner.js?v=1";
 import { codeBlockHtml, highlightWithin } from "./highlight.js?v=1";
 import { CODE_LANGS, langOf } from "./code-langs.js?v=1";
@@ -1533,7 +1533,8 @@ function materialBlock(a) {
     // Explicit escape hatch under the embed - a Drive preview can render blank
     // or dark (system dark mode) inside its cross-origin frame, which we can't
     // restyle, so give the student a one-tap way to open the real file.
-    const foot = embedded
+    // The iPhone Drive card (embedBlockFor) is already one big Open button.
+    const foot = embedded && !usesIosFileCard(url)
       ? `<div class="muted" style="padding:0.55rem 0.9rem; border-top:1px solid var(--gray-border); font-size:0.9em;">Can't see the preview? <a href="${url}" target="_blank" rel="noopener">Open it directly &#8599;</a>${openInChromeButton(url)}</div>`
       : "";
     html += `<div class="material-viewer">${head}${body}${foot}</div>`;
@@ -2657,7 +2658,7 @@ el("sign-out").addEventListener("click", signOutUser);
 // while the student has unsaved photos, typed code/link, or a quiz on screen
 // (then a toast asks them to refresh after submitting). A sessionStorage marker
 // stops a reload loop if a cached shell keeps serving the old version.
-const APP_VERSION = 7;
+const APP_VERSION = 8;
 let versionToastShown = false;
 
 function hasTypedWork() {
