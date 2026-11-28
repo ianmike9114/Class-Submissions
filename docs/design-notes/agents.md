@@ -86,6 +86,13 @@ preview. `drive-upload.mjs` now rewrites it (`normalizeDriveLink()`) to
 `https://drive.google.com/file/d/<id>/view`. `js/embed.js` `extractDriveFileId()` also
 accepts `open?id=` and `uc?...id=`, so links posted earlier embed too (no migration).
 
+**Students get a PDF, not the .docx.** iPhones (Safari/WebKit) fail to show an image-heavy
+`.docx` even on drive.google.com itself ("Could not preview the file… Retrying", Module 11
+UCSP, Nov 2026), because Drive converts Word files page by page. For `module`/`worksheet`
+`.docx` files `drive-upload.mjs` runs `docx-to-pdf.ps1` (installed Word via COM, no new
+software), uploads the PDF beside the `.docx` (the teacher's editable copy) and returns the
+PDF's link. Answer keys are never converted. `--no-pdf` opts out.
+
 ## Drive layout
 
 `tools/lms-agent/drive-layout.json` mirrors the teacher's real Drive tree:

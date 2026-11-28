@@ -264,6 +264,34 @@ describe("drive-upload", () => {
     await expect(upload.uploadToDrive({ ...real, kind: "module", class: "Grade 7 - Nope" })).rejects.toThrow(/--class must be one of/);
     await expect(upload.uploadToDrive({ ...real, kind: "module", folder: undefined })).rejects.toThrow(/--folder is required/);
   });
+  it("module .docx also uploads a PDF made by Word, and the link points to the PDF", async () => {
+    const m = mk();
+    const r = await upload.uploadToDrive({ ...base, file: "C:/x/Module 9.docx", kind: "module", exec: m.exec });
+    expect(r.pdf).toBe(true);
+    const conv = m.calls.find((c) => c[0] === "powershell");
+    expect(conv).toContain("C:/x/Module 9.docx");
+    expect(conv.some((a) => /docx-to-pdf\.ps1$/.test(a))).toBe(true);
+    const copies = m.calls.filter((c) => c[1] === "copy");
+    expect(copies).toHaveLength(2);
+    expect(copies[1][2]).toMatch(/Module 9\.pdf$/);
+    expect(m.calls.find((c) => c[1] === "link")[2]).toBe("gdrive:S/ICT/G11/Q1/W2/Module 9.pdf");
+  });
+  it("no PDF for answer keys, --no-pdf, non-docx files, or a dry run", async () => {
+    for (const opts of [{ kind: "answer-key" }, { kind: "module", noPdf: true }, { kind: "worksheet", file: "C:/x/W.pdf" }]) {
+      const m = mk();
+      await upload.uploadToDrive({ ...base, ...opts, exec: m.exec });
+      expect(m.calls.some((c) => c[0] === "powershell")).toBe(false);
+      expect(m.calls.filter((c) => c[1] === "copy")).toHaveLength(1);
+    }
+    const m = mk();
+    const r = await upload.uploadToDrive({ ...base, kind: "module", dryRun: true, exec: m.exec });
+    expect(r.pdf).toBe(true);
+    expect(m.calls).toHaveLength(0);
+  });
+  it("explains a failed Word conversion", async () => {
+    const exec = async (cmd) => { if (cmd === "powershell") throw new Error("COM busy"); return { stdout: "" }; };
+    await expect(upload.uploadToDrive({ ...base, kind: "module", exec })).rejects.toThrow(/--no-pdf/);
+  });
   it("gives a setup hint when rclone is missing", async () => {
     const exec = async () => { const e = new Error("x"); e.code = "ENOENT"; throw e; };
     await expect(upload.uploadToDrive({ ...base, kind: "module", exec })).rejects.toThrow(/rclone not found/);
