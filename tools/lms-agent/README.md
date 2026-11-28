@@ -29,7 +29,8 @@ node tools/lms-agent/post-material.mjs --section <id> --title "Module 1" --link 
 node tools/lms-agent/subs-pull.mjs --assignment <id> --out tools/lms-agent/out/<id>
 node tools/lms-agent/grade-publish.mjs --assignment <id> --grades tools/lms-agent/out/<id>/grades.json [--dry-run] [--min-confidence 0.7]
 node tools/lms-agent/grade-undo.mjs --audit tools/lms-agent/out/<id>/audit-<timestamp>.jsonl [--dry-run]
-node tools/lms-agent/drive-upload.mjs --file module.docx --kind module|worksheet|answer-key --term 2 --sy 2026-2027 --class "Grade 10 - Orchid - CSS" --folder "November 16, 2026" [--dry-run]
+node tools/lms-agent/drive-upload.mjs --file module.docx --kind module|worksheet|answer-key --term 2 --sy 2026-2027 --class "Grade 10 - Orchid - CSS" --folder "November 16, 2026" [--dry-run] [--no-pdf]
+# module/worksheet .docx: also uploads a Word-made PDF; the share link is the PDF (iPhone-safe)
 ```
 
 `grades.json` is an array of `{ "submissionId", "action": "publish"|"return"|"skip", "score"?, "feedback", "confidence", "reason"? }`
