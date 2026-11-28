@@ -5,7 +5,7 @@
 // plan by using links (Drive/YouTube/Gist) instead of file uploads, and
 // calling Gemini directly from the browser (see js/gemini.js).
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getAuth, setPersistence, browserLocalPersistence, connectAuthEmulator } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { initializeAuth, browserLocalPersistence, indexedDBLocalPersistence, connectAuthEmulator } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, connectFirestoreEmulator } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -64,15 +64,18 @@ const USE_EMULATOR = (() => {
 if (USE_EMULATOR) firebaseConfig.projectId = "demo-lms-e2e";
 
 export const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
+// ONE fixed store, chosen at start-up. The old getAuth() + setPersistence(local)
+// pair made every page load move the session localStorage -> IndexedDB (SDK
+// default) -> back to localStorage. The brief localStorage delete reached every
+// OTHER open tab as "signed out", so its guardPage() bounced to the login page
+// and two open tabs kept knocking each other out (Nov 2026, Brave). Listing
+// localStorage first keeps everyone's existing session (that is where it is
+// now); IndexedDB second only picks up an old session left there, once.
+// Sign-in is Google Identity Services + signInWithCredential (js/auth.js), so
+// no popupRedirectResolver is needed.
+export const auth = initializeAuth(app, { persistence: [browserLocalPersistence, indexedDBLocalPersistence] });
 export const db = getFirestore(app);
 if (USE_EMULATOR) {
   connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
   connectFirestoreEmulator(db, "127.0.0.1", 8080);
 }
-
-// Explicit instead of relying on the SDK's implicit default - guarantees
-// the session survives a browser restart (IndexedDB-backed) instead of
-// silently falling back to a weaker persistence mode in some environments,
-// which showed up as teachers/students having to sign in again every time.
-setPersistence(auth, browserLocalPersistence);
