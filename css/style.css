@@ -611,6 +611,36 @@ textarea.submission-code {
   border-radius: 0;
   display: block;
 }
+/* iPhone/iPad: Drive's inline viewer often fails in Safari, so a single
+   Drive file shows its first page as a picture plus one big Open button. */
+.ios-file-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.6rem;
+  padding: 0.9rem;
+}
+.ios-file-thumb img {
+  display: block;
+  width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+  background: var(--gray-bg);
+  border: 1px solid var(--gray-border);
+  border-radius: var(--radius-sm);
+}
+.ios-file-card a.ios-file-open {
+  background: var(--blue);
+  color: var(--primary-foreground);
+  border-radius: var(--radius-sm);
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  text-decoration: none;
+}
+.ios-file-card .muted { font-size: 0.9em; text-align: center; }
 
 .photo-preview {
   max-width: 100%;

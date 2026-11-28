@@ -101,6 +101,14 @@ export function extractFirstEmbeddableUrl(text) {
 export function embedBlockFor(link, { variant = "", label = "Open file", bare = false } = {}) {
   if (!link) return "";
   const embed = toEmbedUrl(link);
+  // iPhone/iPad: Safari (every iOS browser is WebKit) blocks Google's cookies
+  // inside our page, so Drive's /preview frame often shows "Couldn't preview
+  // file" (seen in the field, mostly uploaded .docx/.pptx and big PDFs) and we
+  // can't detect it. For a single Drive file, show a first-page picture plus a
+  // big Open button instead. Protected (bare) files keep the iframe - no link
+  // may be handed out. Docs/Slides/Sheets, folders, YouTube keep the iframe.
+  const iosDriveId = !bare && isIOS() ? extractDriveFileId(link) : null;
+  if (iosDriveId) return iosFileCard(link, iosDriveId);
   if (embed) {
     const cls = variant ? `submission-preview ${variant}` : "submission-preview";
     // bare = protected file: the iframe only, no link that hands out the raw file.
@@ -114,6 +122,34 @@ export function embedBlockFor(link, { variant = "", label = "Open file", bare = 
   }
   if (bare) return `<div class="muted">This file can't be shown here. Ask your teacher for it.</div>`;
   return `<div class="muted"><a href="${link}" target="_blank" rel="noopener">${label}</a>${openInChromeButton(link)}</div>`;
+}
+
+// iPhone, iPod or iPad. iPadOS 13+ reports a Mac user agent, so a "Macintosh"
+// with a touch screen counts too (real Macs have no touch points).
+export function isIOS() {
+  const nav = typeof navigator !== "undefined" ? navigator : null;
+  if (!nav) return false;
+  const ua = nav.userAgent || "";
+  if (/iPhone|iPad|iPod/i.test(ua)) return true;
+  return /Macintosh/i.test(ua) && (nav.maxTouchPoints || 0) > 1;
+}
+
+// True when embedBlockFor() would show the iPhone tap-to-open card for this
+// link (so callers can skip their own duplicate "Open it directly" line).
+export function usesIosFileCard(link) {
+  return !!link && isIOS() && !!extractDriveFileId(link);
+}
+
+// The iPhone card: Drive's thumbnail endpoint (works for "Anyone with the link"
+// files without cookies) as a first-page picture, hidden if it fails, and one
+// big Open button. The id is from extractDriveFileId's [\w-] / [^/?#] match.
+function iosFileCard(link, id) {
+  const thumb = `https://drive.google.com/thumbnail?id=${encodeURIComponent(id)}&sz=w1000`;
+  return `<div class="ios-file-card">
+      <a href="${link}" target="_blank" rel="noopener" class="ios-file-thumb"><img src="${thumb}" alt="First page of the file" loading="lazy" onerror="this.parentNode.remove()"></a>
+      <a href="${link}" target="_blank" rel="noopener" class="button ios-file-open">&#128196; Open the file</a>
+      <div class="muted">On iPhone, the file opens in Google Drive. Tap the button to read it.</div>
+    </div>`;
 }
 
 // Android-only escape hatch for links that don't embed (toEmbedUrl() above

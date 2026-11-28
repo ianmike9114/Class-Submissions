@@ -14,7 +14,7 @@ import {
   balanceAnswerPositions, answerPatternWarning,
 } from "./quiz.js?v=8";
 import { getEmailConfig, saveEmailConfig, notifySection } from "./notify.js";
-import { toEmbedUrl, toPrintUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=7";
+import { toEmbedUrl, toPrintUrl, openInChromeButton, wireOpenInChromeButtons, extractFirstEmbeddableUrl, embedBlockFor } from "./embed.js?v=8";
 import { loadWorkbook, readExamScores, pickBestSheet } from "./class-record.js?v=2";
 import { runCode } from "./runner.js?v=1";
 import { loadBank, weeksOf, toAssignmentFields } from "./activity-bank.js?v=1";
